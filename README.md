@@ -1,0 +1,104 @@
+# Operation Dustfall
+
+A tactical first-person shooter built for phones. You play in landscape with touch controls, and after the first load it runs completely offline. You hold a desert compound against waves of squad-based enemies that take cover, flank you, suppress you and throw grenades.
+
+![Gameplay](docs/screenshot.jpg)
+
+## Play it on your phone
+
+The game is a static web app that installs itself as a Progressive Web App. It needs no app store and no server-side code.
+
+1. **Host it with GitHub Pages (one time, free).** On GitHub open this repo, then go to **Settings → Pages**. Under *Build and deployment* choose **Deploy from a branch**, pick the branch with the game (`main` once merged, or `claude/mobile-offline-fps-game-we0og0`) and the **/ (root)** folder, then **Save**. About a minute later the game is live at
+   `https://thomaspercival22-ui.github.io/Fps-shooter/`
+2. **Open that link on your phone** while you're online. The first load downloads about 5 MB and caches everything.
+3. **Install it:**
+   - **Android (Chrome):** menu ⋮ → **Install app** (or **Add to Home screen**).
+   - **iPhone (Safari):** Share → **Add to Home Screen**.
+4. Launch it from the home-screen icon. It opens fullscreen in landscape and works in airplane mode.
+
+> Tip: set **Graphics → Auto** (the default) and the game adjusts its render resolution to keep the frame rate smooth on your phone.
+
+## What's in it
+
+- **Modern weapons, modelled in detail:** an M4A1 carbine with a holographic sight, M-LOK rail, laser and light; an M1014 semi-auto shotgun with a side saddle and shell-by-shell reloads; a bolt-action sniper in a chassis stock with an 8x scope and working bolt; and a Glock 17 sidearm. Every gun has ADS, recoil you have to control, sway, bob, a sprint pose, tactical and empty reloads, ejected brass and dropped mags.
+- **Grenades:**
+  - **Frag:** it bounces, rolls and has a fuse. The damage respects cover, and it sets off red fuel barrels.
+  - **Flashbang:** it blinds every enemy looking toward it for several seconds. Blinded enemies stagger, cover their eyes and spray blindly. It will also white-out *your* screen (with a burned-in afterimage) and ring your ears if you look at it.
+- **Smart enemy squads:**
+  - **Senses:** they have vision cones and a detection meter. They are slower to spot you when you're crouched and quicker when you're moving or firing. They hear your gunshots, sprinting footsteps and even your reloads.
+  - **Cover:** they pick real cover by testing it against your position, then alternate between hiding and peeking to fire bursts. They lead moving targets and suppress your last known position.
+  - **Tactics:** a squad director sends flankers around by routes you're not looking at. When you reload, get flashed or run low on health, they rush you. They flush out campers with frags or flashbangs, dodge your grenades, fall back when wounded, and call out on the radio ("Flanking!", "Reloading, cover me!", "Frag out!").
+  - **Enemy types:** Riflemen, shotgun Assaulters who close distance, Marksmen with scope glint, and armoured LMG Heavies.
+- **Realism details:**
+  - **Ballistics:** bullets travel and drop, damage falls off with range, and headshots are deadly. Rounds punch through wood crates, sheet metal and containers, but concrete stops them.
+  - **Visuals:** CC0 photo-scanned PBR textures, a real HDR sky for lighting, sun shadows, impact dust, sparks and bullet holes.
+  - **Sound:** every sound is synthesized, with sound-travel delay, wall occlusion, bullet cracks and whizzes, and a tinnitus effect.
+- **HUD:** a minimap that shows enemies who just fired, directional damage indicators, grenade warnings, a kill feed and scoring.
+- **Difficulty levels:** Recruit, Regular, Veteran and Realism.
+
+## Controls
+
+**Touch**
+
+| Action | How |
+| --- | --- |
+| Move | Put your thumb anywhere on the left side (floating joystick). Push past the rim to sprint. |
+| Look | Drag anywhere on the right side. |
+| Fire | The big red button. Keep holding it and slide your thumb to aim while firing. There's a second fire button on the left. |
+| Aim (ADS / scope) | The ◎ button (toggle). |
+| Reload, jump, crouch, switch weapon | The matching buttons. You can also tap the ammo counter to switch. |
+| Frag / flashbang | The grenade buttons (they throw where you're looking). |
+
+In settings you can adjust sensitivity, FOV, aim assist, and gyro aiming (off, while aiming, or always).
+
+**Keyboard & mouse:** WASD, Shift sprint, Space jump, C crouch, mouse aim, LMB fire, RMB aim, R reload, Q/1/2 switch, G frag, F flashbang, Esc pause.
+
+## Running it locally (development)
+
+```bash
+npm install          # only needed for the tools below
+npm run serve        # http://localhost:8080
+```
+
+Browsers only allow the offline service worker on `https://` or `localhost`. If you open the game from another device on your Wi-Fi, it will play, but it won't install for offline use. Use GitHub Pages for that.
+
+After changing any game file, regenerate the offline cache list so installed copies update:
+
+```bash
+npm run build-sw
+```
+
+Other tools: `npm run fetch-assets` re-downloads and recompresses the textures and models, `npm run vendor` re-copies three.js into `vendor/`, and `npm run icons` redraws the app icons.
+
+## Project layout
+
+```
+index.html, style.css      page, HUD and menus
+manifest.webmanifest, sw.js   PWA: install + offline cache
+src/
+  main.js      boot, menus, settings
+  game.js      main loop, waves, scoring, explosions, flashbangs
+  level.js     the compound map, collision boxes, nav grid, cover points
+  physics.js   collision world, ray casts, character movement
+  nav.js       A* pathfinding
+  player.js    movement, camera, health
+  weapons.js   viewmodel animation, firing, reloading, grenade throws
+  gunmodels.js procedural weapon + arm models
+  ballistics.js  bullets, penetration, hit detection, tracers
+  ai.js        enemy perception, decisions, squad director
+  soldier.js   enemy character model and animation
+  effects.js   particles, decals, brass, lights
+  grenades.js  grenade physics
+  audio.js     synthesized sound engine + radio voices
+  input.js     touch, gyro, keyboard, mouse
+  hud.js       HUD, minimap, scope, flash effects
+  textures.js  procedural textures
+assets/        CC0 textures, props and sky (from Poly Haven)
+vendor/three/  three.js (bundled so nothing loads from the internet)
+```
+
+## Credits
+
+- 3D engine: [three.js](https://threejs.org) (MIT license, see `vendor/three/LICENSE`).
+- Textures, props (barrels, tyres, ammo box, medical box) and the sky: [Poly Haven](https://polyhaven.com), released as CC0 (public domain).
+- Weapons, soldiers, sandbags, HESCO barriers, all effects and all audio are generated in code.

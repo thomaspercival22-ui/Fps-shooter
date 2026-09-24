@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0d0f0c">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Dustfall">
+  <meta name="description" content="Operation Dustfall: a realistic first-person shooter that runs offline on your phone.">
+  <title>Operation Dustfall</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./vendor/three/build/three.module.min.js",
+        "three/addons/": "./vendor/three/addons/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <canvas id="afterimage"></canvas>
+
+  <!-- ============ HUD ============ -->
+  <div id="hud" class="hidden">
+    <div id="vignette"></div>
+    <canvas id="damage-overlay"></canvas>
+    <div id="scope" class="hidden">
+      <canvas id="scope-reticle"></canvas>
+    </div>
+    <div id="crosshair">
+      <i class="ch t"></i><i class="ch b"></i><i class="ch l"></i><i class="ch r"></i><i class="dot"></i>
+    </div>
+    <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
+    <div id="dmg-indicators"></div>
+    <div id="grenade-indicators"></div>
+
+    <canvas id="minimap" width="300" height="300"></canvas>
+    <div id="wave-info"><div id="wave-label">WAVE 1</div><div id="hostiles">HOSTILES 0</div></div>
+    <div id="score-box"><span id="score">0</span><small>SCORE</small></div>
+    <div id="killfeed"></div>
+    <div id="radio"></div>
+    <div id="banner" class="hidden"><div id="banner-title"></div><div id="banner-sub"></div></div>
+    <div id="pickup-msg"></div>
+
+    <div id="health-box">
+      <div id="health-bar"><div id="health-fill"></div></div>
+      <div id="health-num">100</div>
+    </div>
+    <div id="weapon-box">
+      <div id="weapon-name">M4A1</div>
+      <div id="ammo"><span id="ammo-mag">30</span><span id="ammo-res">/ 120</span></div>
+      <div id="reload-hint" class="hidden">RELOAD</div>
+    </div>
+    <div id="fps"></div>
+
+    <!-- touch controls -->
+    <div id="touch" class="hidden">
+      <div id="stick-zone"></div>
+      <div id="stick"><div id="stick-knob"></div></div>
+      <button class="tbtn" id="btn-pause" aria-label="Pause"><svg viewBox="0 0 24 24"><path d="M7 5h3v14H7zM14 5h3v14h-3z"/></svg></button>
+      <button class="tbtn" id="btn-fire" aria-label="Fire"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5" stroke-width="2" stroke="currentColor" fill="none"/></svg></button>
+      <button class="tbtn" id="btn-fire2" aria-label="Fire"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5" stroke-width="2" stroke="currentColor" fill="none"/></svg></button>
+      <button class="tbtn" id="btn-ads" aria-label="Aim"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="2"/></svg></button>
+      <button class="tbtn" id="btn-reload" aria-label="Reload"><svg viewBox="0 0 24 24"><path d="M12 4a8 8 0 1 0 8 8h-2.5A5.5 5.5 0 1 1 12 6.5V9l4-3.5L12 2z"/></svg></button>
+      <button class="tbtn" id="btn-jump" aria-label="Jump"><svg viewBox="0 0 24 24"><path d="M12 4l7 8h-4v8H9v-8H5z"/></svg></button>
+      <button class="tbtn" id="btn-crouch" aria-label="Crouch"><svg viewBox="0 0 24 24"><path d="M12 20l-7-8h4V4h6v8h4z"/></svg></button>
+      <button class="tbtn" id="btn-swap" aria-label="Switch weapon"><svg viewBox="0 0 24 24"><path d="M4 8h12l-3-3 1.4-1.4L20 9l-5.6 5.4L13 13l3-3H4zM20 16H8l3 3-1.4 1.4L4 15l5.6-5.4L11 11l-3 3h12z"/></svg></button>
+      <button class="tbtn" id="btn-frag" aria-label="Frag grenade"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="14" rx="6" ry="7"/><rect x="10" y="3" width="4" height="4" rx="1"/><path d="M14 5h4v2h-4z"/></svg><b id="frag-count">2</b></button>
+      <button class="tbtn" id="btn-flash" aria-label="Flashbang"><svg viewBox="0 0 24 24"><rect x="8" y="6" width="8" height="15" rx="2"/><rect x="10" y="2" width="4" height="4"/><path d="M3 9l3 1M3 15l3-1M21 9l-3 1M21 15l-3-1" stroke="currentColor" stroke-width="1.6"/></svg><b id="flash-count">2</b></button>
+    </div>
+    <div id="pause-hint" class="desktop-only">ESC to pause</div>
+  </div>
+
+  <!-- ============ Menus ============ -->
+  <div id="loading" class="screen">
+    <div class="title-block">
+      <div class="kicker">Operation</div>
+      <h1>DUSTFALL</h1>
+    </div>
+    <div id="load-bar"><div id="load-fill"></div></div>
+    <div id="load-text">Loading assets...</div>
+  </div>
+
+  <div id="menu" class="screen hidden">
+    <div class="menu-left">
+      <div class="title-block">
+        <div class="kicker">Operation</div>
+        <h1>DUSTFALL</h1>
+        <p class="tag">Hold the compound. Survive the waves.</p>
+      </div>
+      <button class="mbtn primary" id="btn-deploy">DEPLOY</button>
+      <button class="mbtn" id="btn-loadout">LOADOUT</button>
+      <button class="mbtn" id="btn-settings">SETTINGS</button>
+      <button class="mbtn" id="btn-howto">HOW TO PLAY</button>
+      <div id="best-score"></div>
+    </div>
+    <div class="menu-right">
+      <div class="panel" id="panel-loadout">
+        <h2>Primary weapon</h2>
+        <div class="choices" id="primary-choices"></div>
+        <h2>Difficulty</h2>
+        <div class="choices" id="difficulty-choices"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="settings" class="screen hidden">
+    <div class="panel wide">
+      <h2>Settings</h2>
+      <div class="settings-grid" id="settings-grid"></div>
+      <button class="mbtn" id="btn-settings-close">BACK</button>
+    </div>
+  </div>
+
+  <div id="howto" class="screen hidden">
+    <div class="panel wide scroll">
+      <h2>How to play</h2>
+      <div class="howto-cols">
+        <div>
+          <h3>Touch</h3>
+          <ul>
+            <li><b>Left thumb</b> anywhere on the left side: move. Push to the edge to sprint.</li>
+            <li><b>Right thumb</b> drag: look around. Hold <b>fire</b> and slide your thumb to aim while shooting.</li>
+            <li><b>Aim</b> button: aim down sights (sniper: scope).</li>
+            <li>Tap the <b>weapon panel</b> or the arrows to switch to your pistol.</li>
+            <li><b>Frag</b> and <b>Flashbang</b> buttons throw grenades where you look.</li>
+          </ul>
+          <h3>Keyboard &amp; mouse</h3>
+          <ul>
+            <li>WASD move, Shift sprint, Space jump, C crouch</li>
+            <li>Mouse look, left click fire, right click aim</li>
+            <li>R reload, Q / 1 / 2 switch, G frag, F flashbang, Esc pause</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Tactics</h3>
+          <ul>
+            <li>Enemies work as a squad. They take cover, suppress you, flank, and throw grenades if you camp.</li>
+            <li>They hear gunfire, sprinting and reloading. When you reload close to them, they may rush you.</li>
+            <li><b>Flashbangs</b> blind every enemy looking toward the blast for a few seconds. Push while they're stunned. Look away from your own flashbang.</li>
+            <li>Red dots on the minimap are enemies who just fired.</li>
+            <li>Bullets travel and drop. Wood and thin metal can be shot through. Concrete stops rounds.</li>
+            <li>Health regenerates after a few seconds out of fire. Dead enemies may drop ammo or medkits.</li>
+            <li>The ammo crate in the headquarters building refills ammo and grenades.</li>
+          </ul>
+        </div>
+      </div>
+      <button class="mbtn" id="btn-howto-close">BACK</button>
+    </div>
+  </div>
+
+  <div id="pause" class="screen hidden">
+    <div class="panel">
+      <h2>Paused</h2>
+      <button class="mbtn primary" id="btn-resume">RESUME</button>
+      <button class="mbtn" id="btn-pause-settings">SETTINGS</button>
+      <button class="mbtn" id="btn-quit">QUIT TO MENU</button>
+    </div>
+  </div>
+
+  <div id="gameover" class="screen hidden">
+    <div class="panel">
+      <h2 id="go-title">K.I.A.</h2>
+      <div id="go-stats"></div>
+      <button class="mbtn primary" id="btn-retry">REDEPLOY</button>
+      <button class="mbtn" id="btn-go-menu">MAIN MENU</button>
+    </div>
+  </div>
+
+  <div id="rotate" class="screen">
+    <svg viewBox="0 0 64 64" width="84" height="84"><rect x="20" y="8" width="24" height="44" rx="4" fill="none" stroke="currentColor" stroke-width="3"/><path d="M10 40a24 24 0 0 0 20 16" fill="none" stroke="currentColor" stroke-width="3"/><path d="M26 52l5 4-5 4" fill="none" stroke="currentColor" stroke-width="3"/></svg>
+    <p>Rotate your phone to landscape</p>
+  </div>
+
+  <div id="error" class="screen hidden"><div class="panel"><h2>Something went wrong</h2><pre id="error-text"></pre></div></div>
+
+  <script>
+    // Surface errors on screen: there is no dev console on a phone.
+    window.addEventListener('error', (e) => {
+      const el = document.getElementById('error');
+      document.getElementById('error-text').textContent = (e.message || e) + '\n' + (e.filename || '') + ':' + (e.lineno || '');
+      el.classList.remove('hidden');
+    });
+  </script>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

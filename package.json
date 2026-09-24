@@ -1,0 +1,18 @@
+{
+  "name": "fps-shooter",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Offline mobile first-person shooter (installable PWA)",
+  "type": "module",
+  "scripts": {
+    "serve": "node tools/serve.mjs",
+    "fetch-assets": "node tools/fetch-assets.mjs",
+    "vendor": "node tools/vendor-three.mjs",
+    "build-sw": "node tools/build-sw.mjs",
+    "icons": "node tools/make-icons.mjs"
+  },
+  "devDependencies": {
+    "sharp": "^0.33.5",
+    "three": "0.180.0"
+  }
+}
