@@ -1,4 +1,6 @@
-# Operation Dustfall
+# Operation TIPS Mania
+
+*TIPS ultimate FPS shooter game*
 
 A tactical first-person shooter built for phones. You play in landscape with touch controls, and after the first load it runs completely offline. You hold a desert compound against waves of squad-based enemies that take cover, flank you, suppress you and throw grenades.
 
@@ -11,7 +13,7 @@ The game is a static web app that installs itself as a Progressive Web App. It n
 1. **Host it with GitHub Pages (one time, free).** On GitHub open this repo, then go to **Settings → Pages**. Under *Build and deployment* choose **Deploy from a branch**, pick the branch with the game (`main` once merged, or `claude/mobile-offline-fps-game-we0og0`) and the **/ (root)** folder, then **Save**. About a minute later the game is live at
    `https://thomaspercival22-ui.github.io/Fps-shooter/`
 2. **Open that link on your phone** while you're online. The first load downloads about 5 MB and caches everything.
-3. **Install it:**
+3. **Install it** (this gives you a home-screen shortcut you can tap to play any time). The menu's **Add to Home Screen** button does this for you on Android, or shows the steps:
    - **Android (Chrome):** menu ⋮ → **Install app** (or **Add to Home screen**).
    - **iPhone (Safari):** Share → **Add to Home Screen**.
 4. Launch it from the home-screen icon. It opens fullscreen in landscape and works in airplane mode.
@@ -49,7 +51,7 @@ The game is a static web app that installs itself as a Progressive Web App. It n
 | Reload, jump, crouch, switch weapon | The matching buttons. You can also tap the ammo counter to switch. |
 | Frag / flashbang | The grenade buttons (they throw where you're looking). |
 
-In settings you can adjust sensitivity, FOV, aim assist, and gyro aiming (off, while aiming, or always).
+In settings you can adjust sensitivity, FOV, aim assist, and gyro aiming (off, while aiming, or always). **On-screen joystick & buttons → Always** also shows the touch controls on tablets and computers that don't report a touch screen.
 
 **Keyboard & mouse:** WASD, Shift sprint, Space jump, C crouch, mouse aim, LMB fire, RMB aim, R reload, Q/1/2 switch, G frag, F flashbang, Esc pause.
 

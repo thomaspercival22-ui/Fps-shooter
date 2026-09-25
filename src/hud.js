@@ -41,7 +41,8 @@ export class HUD {
     this.spread = 0;
   }
 
-  show(on) { this.el.hud.classList.toggle('hidden', !on); document.getElementById('touch').classList.toggle('hidden', !on || !this.game.input.touchMode); }
+  show(on) { this.el.hud.classList.toggle('hidden', !on); document.getElementById('touch').classList.toggle('hidden', !on || !this.game.input.touchMode);
+    document.getElementById('pause-hint').classList.toggle('hidden', this.game.input.touchMode); }
 
   resize(w, h) {
     this.damageCanvas.width = Math.ceil(w / 3); this.damageCanvas.height = Math.ceil(h / 3);

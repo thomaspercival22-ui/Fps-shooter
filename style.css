@@ -199,6 +199,10 @@ body.desktop .desktop-only { display: block; }
 .panel h3 { margin: 10px 0 4px; font: 700 12px var(--font); letter-spacing: .2em; text-transform: uppercase; color: var(--accent); }
 .panel ul { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.45; color: #d6d3c8; }
 #panel-loadout { width: min(400px, 52vw); }
+.panel-title { font: 900 17px var(--font); letter-spacing: .06em; color: #fff; text-transform: uppercase; border-bottom: 1px solid var(--line); padding-bottom: 8px; margin-bottom: 2px; }
+.mbtn.install { border-color: rgba(127,212,106,.6); color: #cfeec4; }
+.install-text { margin: 0; font-size: 13px; line-height: 1.45; color: #d6d3c8; }
+#install { background: rgba(6,7,5,.72); }
 .choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 6px; }
 .choice {
   pointer-events: auto; text-align: left; padding: 8px 10px; border-radius: 3px;

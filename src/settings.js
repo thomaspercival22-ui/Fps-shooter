@@ -17,6 +17,7 @@ export const DEFAULTS = {
   primary: 'm4',
   difficulty: 'regular',
   controlsOpacity: 0.85,
+  onscreen: 'auto',       // auto | always (on-screen joystick + buttons)
 };
 
 function load() {

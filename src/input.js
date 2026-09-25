@@ -14,7 +14,8 @@ export class Input {
     this.ads = false;
     this.jump = false;
     this.events = new Set(); // one-shot actions: reload, swap, crouch, frag, flash, pause
-    this.touchMode = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+    this.hasTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    this.touchMode = this.hasTouch || settings.onscreen === 'always';
     this.keys = new Set();
     this.mouseDown = false; this.rmb = false;
     this.pointers = new Map();
@@ -46,7 +47,7 @@ export class Input {
     const lookScale = () => 0.2 * DEG * settings.lookSens;
 
     const onDown = (e) => {
-      if (!this.enabled || e.pointerType === 'mouse') return;
+      if (!this.enabled || (e.pointerType === 'mouse' && !this.touchMode)) return;
       e.preventDefault();
       const w = window.innerWidth, h = window.innerHeight;
       if (e.clientX < w * 0.42 && e.clientY > h * 0.28 && this.stick.id === null) {
@@ -59,7 +60,7 @@ export class Input {
       }
     };
     const onMove = (e) => {
-      if (!this.enabled || e.pointerType === 'mouse') return;
+      if (!this.enabled || (e.pointerType === 'mouse' && !this.touchMode)) return;
       if (e.pointerId === this.stick.id) {
         const R = 58;
         let dx = e.clientX - this.stick.cx, dy = e.clientY - this.stick.cy;
@@ -134,6 +135,13 @@ export class Input {
     tap('btn-flash', () => this.events.add('flash'));
     tap('btn-pause', () => this.events.add('pause'));
     document.getElementById('weapon-box').addEventListener('pointerdown', (e) => { if (this.enabled && this.touchMode) { e.preventDefault(); this.events.add('swap'); } });
+  }
+
+  /** Show / hide the on-screen joystick and buttons. */
+  setTouchMode(on) {
+    this.touchMode = on;
+    document.body.classList.toggle('desktop', !on);
+    if (this.game.state === 'playing') this.game.hud.show(true);
   }
 
   _knob(x, y) { document.getElementById('stick-knob').style.transform = `translate(${x}px, ${y}px)`; }

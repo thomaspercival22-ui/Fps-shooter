@@ -1,7 +1,7 @@
 {
-  "name": "Operation Dustfall",
-  "short_name": "Dustfall",
-  "description": "Realistic tactical first-person shooter that runs offline on your phone.",
+  "name": "Operation TIPS Mania",
+  "short_name": "TIPS Mania",
+  "description": "TIPS ultimate FPS shooter game. Runs offline on your phone.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "fullscreen",

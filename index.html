@@ -7,9 +7,9 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Dustfall">
-  <meta name="description" content="Operation Dustfall: a realistic first-person shooter that runs offline on your phone.">
-  <title>Operation Dustfall</title>
+  <meta name="apple-mobile-web-app-title" content="TIPS Mania">
+  <meta name="description" content="Operation TIPS Mania: TIPS ultimate FPS shooter game. Runs offline on your phone.">
+  <title>Operation TIPS Mania</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
@@ -82,7 +82,7 @@
   <div id="loading" class="screen">
     <div class="title-block">
       <div class="kicker">Operation</div>
-      <h1>DUSTFALL</h1>
+      <h1>TIPS MANIA</h1>
     </div>
     <div id="load-bar"><div id="load-fill"></div></div>
     <div id="load-text">Loading assets...</div>
@@ -92,17 +92,19 @@
     <div class="menu-left">
       <div class="title-block">
         <div class="kicker">Operation</div>
-        <h1>DUSTFALL</h1>
+        <h1>TIPS MANIA</h1>
         <p class="tag">Hold the compound. Survive the waves.</p>
       </div>
       <button class="mbtn primary" id="btn-deploy">DEPLOY</button>
       <button class="mbtn" id="btn-loadout">LOADOUT</button>
       <button class="mbtn" id="btn-settings">SETTINGS</button>
       <button class="mbtn" id="btn-howto">HOW TO PLAY</button>
+      <button class="mbtn install" id="btn-install">ADD TO HOME SCREEN</button>
       <div id="best-score"></div>
     </div>
     <div class="menu-right">
       <div class="panel" id="panel-loadout">
+        <div class="panel-title">TIPS ultimate FPS shooter game</div>
         <h2>Primary weapon</h2>
         <div class="choices" id="primary-choices"></div>
         <h2>Difficulty</h2>
@@ -177,6 +179,16 @@
   <div id="rotate" class="screen">
     <svg viewBox="0 0 64 64" width="84" height="84"><rect x="20" y="8" width="24" height="44" rx="4" fill="none" stroke="currentColor" stroke-width="3"/><path d="M10 40a24 24 0 0 0 20 16" fill="none" stroke="currentColor" stroke-width="3"/><path d="M26 52l5 4-5 4" fill="none" stroke="currentColor" stroke-width="3"/></svg>
     <p>Rotate your phone to landscape</p>
+  </div>
+
+  <div id="install" class="screen hidden">
+    <div class="panel">
+      <h2>Add to home screen</h2>
+      <p class="install-text"><b>iPhone / iPad (Safari):</b> tap the Share button, then <b>Add to Home Screen</b>.</p>
+      <p class="install-text"><b>Android (Chrome):</b> tap the menu (three dots), then <b>Install app</b> or <b>Add to Home screen</b>.</p>
+      <p class="install-text">Then start the game from the new icon whenever you want. It works with no internet.</p>
+      <button class="mbtn" id="btn-install-close">BACK</button>
+    </div>
   </div>
 
   <div id="error" class="screen hidden"><div class="panel"><h2>Something went wrong</h2><pre id="error-text"></pre></div></div>

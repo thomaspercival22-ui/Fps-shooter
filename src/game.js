@@ -165,7 +165,7 @@ export class Game {
     this.hud.show(true);
     this.hud.setScore(0);
     this.hud.setWave(1, 0);
-    this.hud.banner('OPERATION DUSTFALL', 'Hold the compound', 3.5);
+    this.hud.banner('OPERATION TIPS MANIA', 'Hold the compound', 3.5);
     this.audio.startAmbience();
     this.flashAmount = 0;
   }

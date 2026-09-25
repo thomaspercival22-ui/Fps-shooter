@@ -103,6 +103,19 @@ function setupUI(game) {
   $('btn-pause-settings').onclick = () => { click(); settingsReturn = 'pause'; buildSettings(game); show('pause', false); show('settings'); };
   $('btn-settings-close').onclick = () => { click(); show('settings', false); show(settingsReturn); };
   $('btn-howto').onclick = () => { click(); show('menu', false); show('howto'); };
+  // home-screen shortcut
+  const standalone = matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches || navigator.standalone;
+  if (standalone) show('btn-install', false);
+  $('btn-install').onclick = async () => {
+    click();
+    if (installPrompt) {
+      installPrompt.prompt();
+      const r = await installPrompt.userChoice.catch(() => null);
+      if (r && r.outcome === 'accepted') show('btn-install', false);
+      installPrompt = null;
+    } else { show('menu', false); show('install'); }
+  };
+  $('btn-install-close').onclick = () => { click(); show('install', false); show('menu'); };
   $('btn-howto-close').onclick = () => { click(); show('howto', false); show('menu'); };
   $('btn-resume').onclick = () => {
     click(); show('pause', false); game.resume();
@@ -170,6 +183,7 @@ function buildSettings(game) {
   seg('Invert look', 'invertY', [[false, 'Off'], [true, 'On']]);
   range('Volume', 'volume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`);
   seg('Enemy voice callouts', 'voices', [[true, 'On'], [false, 'Off']]);
+  seg('On-screen joystick & buttons', 'onscreen', [['auto', 'Auto'], ['always', 'Always']], (v) => game.input.setTouchMode(game.input.hasTouch || v === 'always'));
   seg('Show FPS', 'showFps', [[false, 'Off'], [true, 'On']]);
 }
 
@@ -181,6 +195,11 @@ async function enterFullscreen(touch) {
   } catch { /* iOS Safari has no fullscreen API; installed PWA is fullscreen anyway */ }
   try { await screen.orientation?.lock?.('landscape'); } catch { /* not supported */ }
 }
+
+// Android/Chrome offers a native install prompt; keep it for the menu button.
+let installPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; });
+window.addEventListener('appinstalled', () => { installPrompt = null; $('btn-install')?.classList.add('hidden'); });
 
 let wakeLock = null;
 async function keepAwake() {
