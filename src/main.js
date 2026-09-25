@@ -6,6 +6,9 @@ import { Game } from './game.js';
 import { settings, saveSettings, getBest, textureCap } from './settings.js';
 import { WEAPONS, DIFFICULTY } from './config.js';
 
+const LOADING_KEY = 'dustfall.loading';
+const QUALITY_NAMES = { ultra: 'Ultra', high: 'High', medium: 'Medium', low: 'Low', auto: 'Auto' };
+
 const $ = (id) => document.getElementById(id);
 const show = (id, on = true) => $(id).classList.toggle('hidden', !on);
 
@@ -14,7 +17,25 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 
+/**
+ * If the previous launch never reached the menu, the browser most likely
+ * killed the page for using too much memory: step the graphics down one
+ * level before loading again, so the game always ends up starting.
+ */
+function recoverFromCrashedLoad() {
+  let crashed = false;
+  try { crashed = localStorage.getItem(LOADING_KEY) === settings.quality; localStorage.setItem(LOADING_KEY, settings.quality); } catch { return null; }
+  if (!crashed) return null;
+  const next = { ultra: 'high', high: 'medium', auto: 'medium', medium: 'low' }[settings.quality];
+  if (!next) return null;
+  settings.quality = next;
+  saveSettings();
+  try { localStorage.setItem(LOADING_KEY, next); } catch { /* ignore */ }
+  return `Your device ran out of memory loading the last graphics level, so it was lowered to ${QUALITY_NAMES[next]}. You can change it in Settings.`;
+}
+
 async function boot() {
+  const lowered = recoverFromCrashedLoad();
   const canvas = $('game');
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false });
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -46,6 +67,9 @@ async function boot() {
   setupUI(game);
   show('loading', false);
   show('menu', true);
+  if (lowered) { $('menu-note').textContent = lowered; show('menu-note', true); }
+  // a few rendered frames later the heavy allocations are done: this launch counts as good
+  setTimeout(() => { try { localStorage.removeItem(LOADING_KEY); } catch { /* ignore */ } }, 4000);
 }
 
 function setupUI(game) {

@@ -199,6 +199,7 @@ body.desktop .desktop-only { display: block; }
 .menu-left .title-block { margin-bottom: 12px; }
 .menu-right { display: flex; align-items: center; justify-content: flex-end; flex: 1; min-width: 0; }
 #best-score { font: 12px var(--mono); color: var(--muted); margin-top: 6px; }
+#menu-note { font-size: 12px; line-height: 1.4; color: #e8c66a; border-left: 2px solid #e8c66a; padding: 4px 0 4px 8px; }
 
 .mbtn {
   pointer-events: auto; display: block; width: 100%; text-align: left;

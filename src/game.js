@@ -1,7 +1,7 @@
 // Game orchestration: scene, renderer settings, the main loop, waves,
 // scoring, pickups, explosions and flashbangs.
 import * as THREE from 'three';
-import { settings, getBest, setBest } from './settings.js';
+import { settings, getBest, setBest, MOBILE } from './settings.js';
 import { SUN_INTENSITY, ENV_INTENSITY } from './assets.js';
 import { DIFFICULTY, SCORE, GRENADES } from './config.js';
 import { buildLevel } from './level.js';
@@ -34,6 +34,8 @@ const QUALITY = {
   ultra: { scale: 2.5, shadows: true, shadowSize: 4096, soft: true },
   auto: { scale: 1.35, shadows: true, shadowSize: 2048, soft: true },
 };
+// phones: every full-screen HDR buffer scales with the pixel count, so cap the render scale
+const MOBILE_SCALE = { ultra: 2.0, high: 1.5, auto: 1.35, medium: 1.0, low: 0.7 };
 
 export class Game {
   constructor(renderer, assets, audio, voices) {
@@ -124,7 +126,8 @@ export class Game {
   // ---------------- setup ----------------
   applyQuality() {
     const name = QUALITY[settings.quality] ? settings.quality : 'medium';
-    const q = QUALITY[name];
+    const q = { ...QUALITY[name] };
+    if (MOBILE) { q.scale = Math.min(q.scale, MOBILE_SCALE[name]); q.shadowSize = Math.min(q.shadowSize, 2048); }
     const dpr = window.devicePixelRatio || 1;
     this.maxScale = Math.min(dpr, q.scale);
     this.renderScale = name === 'auto' ? Math.min(1.0, this.maxScale) : Math.min(dpr, q.scale);
