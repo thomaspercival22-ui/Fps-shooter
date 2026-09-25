@@ -284,13 +284,13 @@ export class SniperMission extends Mission {
   }
 
   /** Radio from the spotter after a delay (paused with the game; silent once he is down). */
-  say(text, delay = 0.5, cond = null) { this.calls.push({ t: this.t + delay, text, cond }); }
+  say(text, delay = 0.5, cond = null, fx = null) { this.calls.push({ t: this.t + delay, text, cond, fx }); }
   _radio(dt) {
     for (let i = this.calls.length - 1; i >= 0; i--) {
       const c = this.calls[i];
       if (this.t < c.t) continue;
       this.calls.splice(i, 1);
-      if (this.spotterAlive && (!c.cond || c.cond())) this.game.hud.radio('SPOTTER', c.text);
+      if (this.spotterAlive && (!c.cond || c.cond())) { if (c.text) this.game.hud.radio('SPOTTER', c.text); c.fx?.(); }
     }
   }
   /** Clock direction the wind blows from, seen from the hide looking at the compound. */
@@ -300,7 +300,7 @@ export class SniperMission extends Mission {
     return `${((Math.round((Math.PI * 2 - rel) / (Math.PI / 6)) + 11) % 12) + 1} o'clock`;
   }
 
-  dispose() { this.spotter?.dispose(); }
+  dispose() { this.spotter?.dispose(); this.game.hud.scopeMark(null); }
 
   _line() {
     const h = this.hostiles.filter((e) => e.alive).length;
@@ -423,15 +423,18 @@ export class SniperMission extends Mission {
     else this.counterT -= 4;
     // who was on the reticle? the spotter follows that round
     const cam = g.camera, o = cam.position, f = _v.set(0, 0, -1).applyQuaternion(cam.quaternion);
+    // the reticle at the moment of the shot, to plot the splash against
+    const aim = { o: o.clone(), f: f.clone(), r: new THREE.Vector3(1, 0, 0).applyQuaternion(cam.quaternion), u: new THREE.Vector3(0, 1, 0).applyQuaternion(cam.quaternion) };
     let best = null, bestA = 0.009;
     const consider = (who, kind) => {
       const c = who.hb.neck.clone().lerp(who.hb.hips, 0.45).sub(o);
-      const R = c.length(), a = Math.acos(Math.min(1, f.dot(c) / R));
-      if (a < bestA) { bestA = a; best = { target: who, kind, R, dir: c.normalize(), best: Infinity, off: new THREE.Vector3(), hit: null, zero: g.weapons.zero } };
+      const R = c.length(), D = f.dot(c), a = Math.acos(Math.min(1, D / R));
+      if (a < bestA) { bestA = a; best = { target: who, kind, R, D, aim, hit: null, splash: null, tgt: null, struck: false, zero: g.weapons.zero } };
     };
     for (const e of g.enemies.list) if (e.alive) consider(e, 'enemy');
     for (const c of g.civilians.list) if (c.alive && !c.gone) consider(c, c.hvt ? 'hvt' : 'civ');
     this.pendingSpot = best;
+    g.hud.scopeMark('stale');
   }
   /** Ballistics picks up the spotting job for the next player round. */
   takeSpot() { const s = this.pendingSpot; this.pendingSpot = null; return s; }
@@ -439,24 +442,45 @@ export class SniperMission extends Mission {
   /** The spotter's call once the round has landed. */
   onShotResult(s) {
     if (!this.spotterAlive || this.over) return;
+    const g = this.game, m = this._mils(s.aim, s.splash);
+    const mark = (kind, label) => () => g.hud.scopeMark({ x: m.x, y: m.y, kind, label });
     if (s.hit) {
-      if (s.hit.who !== s.target) { this.say(s.hit.who.hvt ? 'You hit the HVT!' : s.hit.who.alive === false ? 'You dropped the man next to him.' : 'You hit the man next to him.', 0.7); return; }
-      if (s.kind === 'enemy') this.say(s.hit.killed ? pick(['Hit. Target down.', 'Good hit, he\'s down.', 'Centre mass. Target down.']) : 'Hit. He\'s still moving, send another.', 0.7);
+      const civ = !s.hit.who.hvt && g.civilians.list.includes(s.hit.who);
+      if (s.hit.who !== s.target) { this.say(s.hit.who.hvt ? 'You hit the HVT!' : s.hit.who.alive === false ? 'You dropped the man next to him.' : 'You hit the man next to him.', 0.7, null, mark(civ ? 'civ' : 'hit', civ ? 'CIVILIAN' : s.hit.who.hvt ? 'HVT HIT' : 'WRONG MAN')); return; }
+      if (s.kind === 'enemy') this.say(s.hit.killed ? pick(['Hit. Target down.', 'Good hit, he\'s down.', 'Centre mass. Target down.']) : 'Hit. He\'s still moving, send another.', 0.7, null, mark('hit', 'HIT'));
+      else this.say(null, 0.7, null, mark(civ ? 'civ' : 'hit', civ ? 'CIVILIAN' : 'HVT HIT'));
       return;
     }
-    if (!isFinite(s.best)) return;
-    const right = _w.crossVectors(s.dir, UP).normalize(), up = new THREE.Vector3().crossVectors(right, s.dir);
-    const hi = s.off.dot(up), rt = s.off.dot(right), mil = (m) => (Math.abs(m) / s.R * 1000).toFixed(1);
-    if (s.best > 6) {
-      const R = Math.round(s.R / 25) * 25;
-      this.say(`Way off, I lost the splash. Target is ${Math.round(s.R)} m, you're dialled for ${s.zero}.${Math.abs(R - s.zero) >= 50 ? ` Dial ${R}.` : ''}`, 0.8);
+    // the miss, measured at the target's range: splash against where he was as the round arrived
+    const t = this._mils(s.aim, s.tgt), R = s.tgt.distanceTo(s.aim.o), dx = m.x - t.x, dy = m.y - t.y;
+    const hi = dy * R / 1000, rt = dx * R / 1000, short = s.struck && s.aim.f.dot(_w.copy(s.splash).sub(s.aim.o)) < s.D - 2;
+    if (Math.hypot(dx, dy) > 12) {
+      const dial = Math.round(s.R / 25) * 25;
+      this.say(`Way off, I lost the splash. Target is ${Math.round(s.R)} m, you're dialled for ${s.zero}.${Math.abs(dial - s.zero) >= 50 ? ` Dial ${dial}.` : ''}`, 0.8, null, () => g.hud.scopeMark(null));
       return;
     }
-    const miss = [], hold = [];
-    if (Math.abs(hi) > 0.08) { miss.push(`${metres(hi)} ${hi > 0 ? 'high' : 'low'}`); hold.push(`${hi > 0 ? 'down' : 'up'} ${mil(hi)}`); }
-    if (Math.abs(rt) > 0.08) { miss.push(`${metres(rt)} ${rt > 0 ? 'right' : 'left'}`); hold.push(`${rt > 0 ? 'left' : 'right'} ${mil(rt)}`); }
-    if (!miss.length) this.say('Just missed him, a hair off. Same hold, send it.', 0.8);
-    else this.say(`Miss, ${miss.join(', ')}. Hold ${hold.join(' and ')} mil.`, 0.8);
+    const miss = [];
+    if (Math.abs(hi) > 0.08) miss.push(`${metres(hi)} ${hi > 0 ? 'high' : 'low'}`);
+    if (Math.abs(rt) > 0.08) miss.push(`${metres(rt)} ${rt > 0 ? 'right' : 'left'}`);
+    // where the round went on the reticle: the dot he marks is the hold for the next one
+    const where = [], tag = [];
+    if (Math.abs(m.y) >= 0.1) { where.push(`${Math.abs(m.y).toFixed(1)} mil ${m.y > 0 ? 'high' : 'low'}`); tag.push(`${Math.abs(m.y).toFixed(1)} ${m.y > 0 ? 'HIGH' : 'LOW'}`); }
+    if (Math.abs(m.x) >= 0.1) { where.push(`${Math.abs(m.x).toFixed(1)} mil ${m.x > 0 ? 'right' : 'left'}`); tag.push(`${Math.abs(m.x).toFixed(1)} ${m.x > 0 ? 'RIGHT' : 'LEFT'}`); }
+    const label = tag.length ? tag.join(' · ') : 'ON CROSSHAIR';
+    let text;
+    if (short && miss.length < 2 && Math.hypot(dx, dy) < 1.5) text = `Miss, ${miss.length ? `${miss[0]}, ` : ''}you hit the cover in front of him. Wait for a clear shot.`;
+    else if (!miss.length) text = 'Just missed him, a hair off. Same hold, send it.';
+    else if (!where.length) text = `Miss, ${miss.join(', ')}. Round went right where your crosshair was, fix your hold.`;
+    else if (!this.markedOnce) text = `Miss, ${miss.join(', ')}. I've marked your splash on the reticle, ${where.join(', ')}. Put that dot on him and send it.`;
+    else text = `Miss, ${miss.join(', ')}. Splash ${where.join(', ')}. Hold the dot on him.`;
+    this.markedOnce = true;
+    this.say(text, 0.8, null, mark('miss', label));
+  }
+
+  /** A point seen through the scope: mils right and up of where the crosshair sat when the shot broke. */
+  _mils(a, pt) {
+    const p = _v.copy(pt).sub(a.o), z = Math.max(1e-3, p.dot(a.f));
+    return { x: Math.atan2(p.dot(a.r), z) * 1000, y: Math.atan2(p.dot(a.u), z) * 1000 };
   }
 
   _updateSpotter(dt) {
@@ -472,6 +496,7 @@ export class SniperMission extends Mission {
   _killSpotter() {
     const g = this.game, m = this.marksman;
     this.spotterAlive = false;
+    g.hud.scopeMark(null);
     this.calls.length = 0;
     const from = m ? m.pos : g.enemies.farThreat;
     const dx = this.spotter.root.position.x - from.x, dz = this.spotter.root.position.z - from.z, l = Math.hypot(dx, dz) || 1;

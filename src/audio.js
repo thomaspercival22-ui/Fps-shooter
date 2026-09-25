@@ -98,6 +98,19 @@ class BQ {
   }
 }
 
+/** Copies a buffer to another sample rate (linear interpolation). A ConvolverNode only takes buffers at its context's own rate, and phones run at 48 kHz. */
+function atRate(buf, rate) {
+  if (buf.sampleRate === rate) return buf;
+  const k = buf.sampleRate / rate, len = Math.max(1, Math.floor(buf.length / k));
+  const out = new AudioBuffer({ length: len, numberOfChannels: buf.numberOfChannels, sampleRate: rate });
+  for (let c = 0; c < buf.numberOfChannels; c++) {
+    const src = buf.getChannelData(c), dst = new Float32Array(len), last = src.length - 1;
+    for (let i = 0; i < len; i++) { const x = i * k, i0 = Math.min(last, x | 0), f = x - i0; dst[i] = src[i0] + (src[Math.min(last, i0 + 1)] - src[i0]) * f; }
+    out.copyToChannel(dst, c);
+  }
+  return out;
+}
+
 function toBuffer(ch) {
   const len = ch[0].length;
   const b = new AudioBuffer({ length: len, numberOfChannels: ch.length, sampleRate: SR });
@@ -526,9 +539,14 @@ export class AudioEngine {
     this.envKind = kind;
     if (!this.ctx || !this.conv) return;
     this.irs = this.irs || {};
-    if (!this.irs[kind]) this.irs[kind] = impulse(kind);
-    if (this.conv.buffer !== this.irs[kind]) this.conv.buffer = this.irs[kind];
-    this.revOut.gain.value = kind === 'indoor' ? 1.0 : kind === 'ridge' ? 0.85 : 0.75;
+    try {
+      if (!this.irs[kind]) this.irs[kind] = atRate(impulse(kind), this.ctx.sampleRate);
+      if (this.conv.buffer !== this.irs[kind]) this.conv.buffer = this.irs[kind];
+      this.revOut.gain.value = kind === 'indoor' ? 1.0 : kind === 'ridge' ? 0.85 : 0.75;
+    } catch {
+      // no reverb rather than no game
+      this.revOut.gain.value = 0;
+    }
   }
 
   async generate(onProgress) {

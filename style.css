@@ -260,6 +260,14 @@ body.has-zoom #zero-label.scopebtn { display: block !important; }
 #zero-label b { font: 800 13px var(--mono); letter-spacing: 0; }
 body.sniper-mission #btn-frag, body.sniper-mission #btn-flash, body.sniper-mission #btn-mode, body.sniper-mission #minimap { display: none !important; }
 #scope-data { position: absolute; left: 50%; bottom: 7%; transform: translateX(-50%); font: 700 12px var(--mono); letter-spacing: .06em; color: #d9e4d2; text-shadow: 0 1px 2px #000; white-space: nowrap; }
+/* the spotter's splash mark: where the last round went, on the reticle */
+#scope-mark { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; color: #ffa12e; transition: opacity .5s; }
+#scope-mark::before { content: ''; position: absolute; left: -6px; top: -6px; width: 8px; height: 8px; border: 2px solid currentColor; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,.55), 0 0 6px currentColor; }
+#scope-mark::after { content: ''; position: absolute; left: -1.5px; top: -1.5px; width: 3px; height: 3px; border-radius: 50%; background: currentColor; }
+#scope-mark span { position: absolute; left: 10px; top: -19px; font: 700 10px var(--mono); letter-spacing: .06em; white-space: nowrap; text-shadow: 0 1px 2px #000, 0 0 3px #000; }
+#scope-mark.hit { color: #62ff84; }
+#scope-mark.civ { color: #ff4b3c; }
+#scope-mark.stale { opacity: .35; }
 #obj-warn { font: 800 12px var(--font); letter-spacing: .2em; color: #ff5a4a; margin-top: 3px; min-height: 0; animation: warnblink 0.8s steps(2) infinite; }
 #obj-warn:empty { display: none; }
 @keyframes warnblink { 50% { opacity: .35; } }

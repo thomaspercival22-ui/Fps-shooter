@@ -77,12 +77,13 @@ export class Ballistics {
         dir.divideScalar(len);
         const hw = W.raycast(start.x, start.y, start.z, dir.x, dir.y, dir.z, len, RAY_BULLET);
         let tMax = hw ? hw.t : len;
-        if (b.spot) {
-          // closest approach to the intended target on this step
-          const hb = b.spot.target.hb, cx = (hb.neck.x + hb.hips.x) / 2, cy = hb.neck.y * 0.55 + hb.hips.y * 0.45, cz = (hb.neck.z + hb.hips.z) / 2;
-          const t = Math.max(0, Math.min(tMax, (cx - start.x) * dir.x + (cy - start.y) * dir.y + (cz - start.z) * dir.z));
-          const px = start.x + dir.x * t - cx, py = start.y + dir.y * t - cy, pz = start.z + dir.z * t - cz, d = Math.hypot(px, py, pz);
-          if (d < b.spot.best) { b.spot.best = d; b.spot.off.set(px, py, pz); }
+        const s = b.spot;
+        if (s && !s.splash) {
+          // the splash the spotter sees: where the round crossed the target's range, or struck something short of it
+          const fd = dir.x * s.aim.f.x + dir.y * s.aim.f.y + dir.z * s.aim.f.z;
+          const a0 = (start.x - s.aim.o.x) * s.aim.f.x + (start.y - s.aim.o.y) * s.aim.f.y + (start.z - s.aim.o.z) * s.aim.f.z;
+          if (fd > 0 && a0 + fd * tMax >= s.D) { const tc = Math.max(0, (s.D - a0) / fd); this._splash(s, start.x + dir.x * tc, start.y + dir.y * tc, start.z + dir.z * tc, false); }
+          else if (hw) this._splash(s, hw.x, hw.y, hw.z, true);
         }
         // save world-hit data before other queries overwrite the shared hit object
         const wh = hw ? { t: hw.t, x: hw.x, y: hw.y, z: hw.z, nx: hw.nx, ny: hw.ny, nz: hw.nz, box: hw.box, exitT: hw.exitT, mat: hw.mat } : null;
@@ -202,12 +203,20 @@ export class Ballistics {
       }
       if (!alive || b.traveled > 1200 || b.pos.y < (g.level.rainFloor ?? -5)) {
         this.bullets.splice(i, 1);
-        if (b.spot) g.mission?.onShotResult?.(b.spot);
+        if (b.spot) { if (!b.spot.splash) this._splash(b.spot, b.pos.x, b.pos.y, b.pos.z, false); g.mission?.onShotResult?.(b.spot); }
       }
       else if (b.tracer) b.tracerAlive = true;
       if (!alive && b.tracer) this._fadeTracer(b);
     }
     this._drawTracers(dt);
+  }
+
+  /** Records the splash and where the spotted target was as the round got there. */
+  _splash(s, x, y, z, struck) {
+    const hb = s.target.hb;
+    s.splash = new THREE.Vector3(x, y, z);
+    s.tgt = new THREE.Vector3((hb.neck.x + hb.hips.x) / 2, hb.neck.y * 0.55 + hb.hips.y * 0.45, (hb.neck.z + hb.hips.z) / 2);
+    s.struck = struck;
   }
 
   _falloff(b) {

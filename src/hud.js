@@ -19,7 +19,9 @@ export class HUD {
       osdSpd: $('osd-spd'), osdHome: $('osd-home'), osdArmed: $('osd-armed'), osdHorizon: $('osd-horizon'), modeLabel: $('mode-label'),
       droneCount: $('drone-count'), btnDrone: $('btn-drone'), btnNvg: $('btn-nvg'), btnThermal: $('btn-thermal'),
       objWarn: $('obj-warn'), range: $('range-readout'), scopeData: $('scope-data'), btnZoom: $('btn-zoom'), zeroLabel: $('zero-label'),
+      scopeMark: $('scope-mark'),
     };
+    this.mark = null;
     this.rangeT = 0;
     this.rangeText = '';
     this.cross = [...this.el.cross.querySelectorAll('.ch')];
@@ -53,7 +55,7 @@ export class HUD {
   resize(w, h) {
     this.damageCanvas.width = Math.ceil(w / 3); this.damageCanvas.height = Math.ceil(h / 3);
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    this.scopeCanvas.width = w * dpr; this.scopeCanvas.height = h * dpr;
+    this.scopeCanvas.width = w * dpr; this.scopeCanvas.height = h * dpr; this.scopeDpr = dpr;
     this.after.width = Math.ceil(w / 2); this.after.height = Math.ceil(h / 2);
     this._drawScope();
     this.last.dmgDraw = -1;
@@ -131,7 +133,7 @@ export class HUD {
     el.innerHTML = `<i>${name}:</i>`;
     el.appendChild(document.createTextNode(text));
     this.el.radio.appendChild(el);
-    setTimeout(() => el.remove(), 3300);
+    setTimeout(() => el.remove(), Math.max(3300, text.length * 65));
     while (this.el.radio.children.length > 4) this.el.radio.firstChild.remove();
   }
 
@@ -249,6 +251,7 @@ export class HUD {
     if (this.last.scoped !== scoped) { e.scope.classList.toggle('hidden', !scoped); this.last.scoped = scoped; }
     const kind = scoped ? `${w.def.scope}|${g.night}|${w.scopeZoom}|${Math.round(g.camera.fov * 100)}` : this.last.scopeKind;
     if (scoped && this.last.scopeKind !== kind) { this.last.scopeKind = kind; this._drawScope(); }
+    if (this.mark) this._placeMark(scoped);
     // sniper data: magnification, zero, last range, wind (the Kestrel on the stock)
     if (this.rangeT > 0) { this.rangeT -= dt; if (this.rangeT <= 0) this.el.range.style.opacity = 0; }
     const hasZoom = !!d.zooms;
@@ -411,6 +414,27 @@ export class HUD {
     ctx.restore();
   }
 
+  /** The spotter's splash mark on the reticle: {x, y} mils right/up of the crosshair when the shot broke. 'stale' dims it as the next round goes. */
+  scopeMark(m) {
+    const el = this.el.scopeMark;
+    if (m === 'stale') { if (this.mark) el.classList.add('stale'); return; }
+    this.mark = m ? { ...m, t: this.game.time } : null;
+    el.className = m ? m.kind : 'hidden';
+    if (!m) return;
+    el.firstChild.textContent = m.label;
+    this.last.markPos = '';
+  }
+  _placeMark(scoped) {
+    const G = this.scopeGeom, m = this.mark;
+    if (this.game.time - m.t > 25) { this.scopeMark(null); return; }
+    if (!scoped || !G) return;
+    let dx = m.x * G.mil, dy = -m.y * G.mil;
+    const d = Math.hypot(dx, dy), lim = G.r * 0.92;
+    if (d > lim) { dx *= lim / d; dy *= lim / d; }
+    const pos = `translate(${(G.cx + dx).toFixed(1)}px,${(G.cy + dy).toFixed(1)}px)`;
+    if (pos !== this.last.markPos) { this.el.scopeMark.style.transform = pos; this.last.markPos = pos; }
+  }
+
   _drawScope() {
     const c = this.scopeCanvas, ctx = c.getContext('2d');
     const w = c.width, h = c.height, r = Math.min(w, h) * 0.47, cx = w / 2, cy = h / 2;
@@ -427,6 +451,8 @@ export class HUD {
     const fov = this.game.camera.fov * Math.PI / 180;
     const mil = Math.max(r * 0.02, (h / 2) / Math.tan(fov / 2) / 1000);
     const posts = Math.min(r * 0.95, mil * 10.5);
+    const k = this.scopeDpr || 1;
+    this.scopeGeom = { mil: mil / k, r: r / k, cx: cx / k, cy: cy / k };
     const thick = Math.max(2, r * 0.012), thin = Math.max(1, r * 0.0028);
     ctx.lineWidth = thick;
     ctx.beginPath();
