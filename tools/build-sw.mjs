@@ -6,11 +6,12 @@ import path from 'path';
 import crypto from 'crypto';
 
 const roots = ['index.html', 'style.css', 'manifest.webmanifest', 'src', 'vendor', 'assets', 'icons'];
+const buildOnly = new Set(['src/sdf.js', 'src/sdfmodels.js']); // mesh-building sources, not loaded by the game
 const files = [];
 const walk = (p) => {
   const st = fs.statSync(p);
   if (st.isDirectory()) for (const f of fs.readdirSync(p).sort()) walk(path.join(p, f));
-  else if (!p.endsWith('LICENSE') && !path.basename(p).startsWith('.')) files.push(p.split(path.sep).join('/'));
+  else if (!p.endsWith('LICENSE') && !path.basename(p).startsWith('.') && !buildOnly.has(p.split(path.sep).join('/'))) files.push(p.split(path.sep).join('/'));
 };
 for (const r of roots) walk(r);
 const hash = crypto.createHash('sha256');

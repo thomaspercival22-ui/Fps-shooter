@@ -370,6 +370,8 @@ export class AudioEngine {
     const add = (name, p) => jobs.push(p.then((b) => { R[name] = b; }));
     const gun = {
       m4: { crack: 1, crackHp: 2000, lp0: 6500, lp1: 520, bodyDecay: 0.2, f0: 135, f1: 45, boom: 0.8, tail: 0.22 },
+      // suppressed 5.56: the supersonic bullet still cracks, but the blast is a muffled thump and the action clatters
+      m4s: { crack: 0.55, crackHp: 2800, lp0: 2600, lp1: 380, body: 0.45, bodyDecay: 0.07, f0: 150, f1: 70, boom: 0.3, boomDecay: 0.08, tail: 0.06, tailDecay: 0.6, mechF: 2300, drive: 1.8 },
       ak: { crack: 0.85, crackHp: 1600, lp0: 4800, lp1: 380, bodyDecay: 0.25, f0: 115, f1: 40, boom: 0.9, tail: 0.25, mechF: 2600 },
       pistol: { crack: 0.9, crackHp: 2500, lp0: 5200, lp1: 700, bodyDecay: 0.13, f0: 190, f1: 65, boom: 0.5, tail: 0.14, mechF: 3800 },
       shotgun: { crack: 0.85, crackHp: 1200, lp0: 3800, lp1: 260, bodyDecay: 0.34, f0: 95, f1: 34, boom: 1.1, boomDecay: 0.3, tail: 0.35, drive: 3.2 },

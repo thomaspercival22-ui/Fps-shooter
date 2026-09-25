@@ -16,7 +16,7 @@ import { Input } from './input.js';
 import { RAY_ALL } from './physics.js';
 import { PostFX, MODE, SHADOW, thermalMaterial, withThermal } from './post.js';
 import { Drone } from './drone.js';
-import { soldierOptions } from './soldier.js';
+import { soldierOptions, Soldier } from './soldier.js';
 import { nightSkyTexture } from './textures.js';
 import { Rain } from './weather.js';
 
@@ -87,6 +87,11 @@ export class Game {
     this.post = new PostFX(renderer);
     this.drone = new Drone(this);
     this.rain = new Rain(this, this.level.ao);
+    // the player's own body: seen from the FPV drone, and casting the player's shadow
+    this.playerBody = new Soldier(scene, 'tan', 'rifle');
+    this.playerBody.root.traverse((o) => { o.layers.set(2); o.userData.fixedLayer = true; });
+    this.playerBody.root.visible = false;
+    sun.shadow.camera.layers.enable(2);
     this.weather = 'clear';
     this.viewMode = 'normal';
     this.thermalPalette = 0;
@@ -173,7 +178,7 @@ export class Game {
       this.onResize();
     } else {
       for (const s of Object.values(this.weapons.slots)) {
-        s.ammo = s.def.mag + (s.def.chamber ? 1 : 0); s.boltReady = true; s.heat = 0; s.jammed = false; s.dustOpen = false;
+        s.ammo = s.def.mag + (s.def.chamber ? 1 : 0); s.boltReady = true; s.heat = 0; s.suppHeat = 0; s.jammed = false; s.dustOpen = false;
         if (s.mags) this.weapons._fillMags(s); else s.reserve = s.def.reserve;
       }
       this.weapons.frags = GRENADES.startFrag; this.weapons.flashes = GRENADES.startFlash;
@@ -652,6 +657,7 @@ export class Game {
   }
 
   _updateWorld(dt) {
+    this._updatePlayerBody(dt);
     this.enemies.update(dt);
     this.grenades.update(dt);
     this.ballistics.update(dt);
@@ -806,25 +812,28 @@ export class Game {
     r.clear();
     d.model.visible = !d.active; // the FPV camera sits inside the drone
     r.shadowMap.needsUpdate = r.shadowMap.enabled;
-    if (thermal) this._renderThermal(this.scene, cam);
+    if (thermal) { cam.layers.enableAll(); cam.layers.disable(2); this._renderThermal(this.scene, cam); }
     else if (P.ao) {
       // 1) opaque world  2) AO + atmosphere  3) particles, tracers, decals and glows on top
       this._splitLayers();
       cam.layers.set(0);
+      if (droneView) cam.layers.enable(2);
       r.render(this.scene, cam);
       const A = this.atmos, gu = this.level.groundUniforms;
       A.wet = this.weather === 'rain' ? 1 : 0;
       A.contact = !this.night && this.weather !== 'rain' ? 1 : 0.35;
       A.heightMap = gu.heightMap.value; A.macroMap = gu.macroMap.value;
       P.world(cam, A);
-      cam.layers.set(1);
+      cam.layers.set(1); cam.layers.enable(3);
       const bg = this.scene.background;
       this.scene.background = null;
       r.render(this.scene, cam);
       this.scene.background = bg;
       cam.layers.enableAll();
+      if (!droneView) cam.layers.disable(2);
     } else {
       cam.layers.enableAll();
+      if (!droneView) cam.layers.disable(2);
       r.render(this.scene, cam);
     }
     if (playing && !droneView && this.player.alive && this.weapons.rig.visible) {
@@ -872,10 +881,26 @@ export class Game {
     this.hud.captureAfterimage(r.domElement);
   }
 
+  /** Poses the player's body from the player state (visible to the drone camera and in shadows). */
+  _updatePlayerBody(dt) {
+    const b = this.playerBody, p = this.player;
+    b.root.visible = this.state === 'playing' && p.alive;
+    if (!b.root.visible) return;
+    b.setPosition(p.pos.x, p.pos.y, p.pos.z);
+    b.yaw = p.yaw + Math.PI;
+    const P = b.pose;
+    P.aim = 1; P.pitch = -p.pitch; P.crouch += ((p.crouched ? 1 : 0) - P.crouch) * Math.min(1, dt * 8); P.yawOff = 0;
+    const c = Math.cos(-b.yaw), sn = Math.sin(-b.yaw);
+    const lx = p.vel.x * c - p.vel.z * sn, lz = p.vel.x * sn + p.vel.z * c, sp = Math.hypot(lx, lz);
+    b.move.speed = sp; b.move.fx = sp > 0.05 ? lx / sp : 0; b.move.fz = sp > 0.05 ? lz / sp : 0;
+    b.update(dt, this.level.world, this.camera.position);
+  }
+
   /** Puts particles, tracers, sprites and other transparent things on layer 1 (drawn after AO/fog); lights on both. */
   _splitLayers() {
     this.scene.traverse((o) => {
       if (o.isLight) { o.layers.enableAll(); return; }
+      if (o.userData.muzzleFlash || o.userData.fixedLayer) return;
       if (!o.isMesh && !o.isPoints && !o.isSprite && !o.isLine) return;
       const m = o.material;
       o.layers.set(o.isPoints || o.isSprite || (m && !Array.isArray(m) && m.transparent) ? 1 : 0);
@@ -893,10 +918,17 @@ export class Game {
     scene.background = scene === this.scene ? this.thermalSky : null;
     scene.fog = null;
     scene.overrideMaterial = thermalMaterial;
+    const mask = cam.layers.mask;
+    cam.layers.disable(3);
     withThermal(() => this.renderer.render(scene, cam), this.night ? 0.16 : 0.3);
     scene.overrideMaterial = null;
-    scene.background = bg; scene.fog = fog;
     for (const o of hidden) o.visible = true;
+    // muzzle flashes are burning gas: add them on top, where they read as the hottest thing in view
+    scene.background = null;
+    cam.layers.set(3);
+    this.renderer.render(scene, cam);
+    cam.layers.mask = mask;
+    scene.background = bg; scene.fog = fog;
   }
 }
 

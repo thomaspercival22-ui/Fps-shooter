@@ -60,6 +60,11 @@ export class WeaponSystem {
     this.flash.visible = false;
     this.flashTime = 0;
     this.scene.add(this.flash);
+    // hot propellant gas leaving the muzzle: invisible to the eye (above all through a
+    // suppressor) but a bright bloom to thermal imagers and, fainter, to night vision
+    this.gas = new THREE.Sprite(new THREE.SpriteMaterial({ map: TX.glowTexture(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+    this.gas.visible = false; this.gas.renderOrder = 5; this.gasT = 0; this.gasLife = 0.1; this.gasSize = 0.1;
+    this.scene.add(this.gas);
 
     // grenade meshes held during throws
     this.heldFrag = buildFragMesh();
@@ -71,12 +76,15 @@ export class WeaponSystem {
     const m = gunMaterialsRef();
     this.scene.traverse((o) => {
       if (!o.isMesh) return;
-      if (o.material === m.glove || o.material === m.knuckle) o.userData.heat = 0.9;
+      if (o.material === m.glove || o.material === m.knuckle || o.userData.hand) o.userData.heat = 0.9;
       else if (o.material === m.sleeve) o.userData.heat = 0.8;
       else o.userData.heat = 0.34;
       if (o.material.transparent || o.material.blending === THREE.AdditiveBlending) o.userData.noThermal = true;
     });
-    this.flash.traverse((o) => { o.userData.noThermal = true; });
+    // muzzle flashes live on layer 3: drawn on top of the thermal image too (hot gas)
+    this.flash.traverse((o) => { o.userData.muzzleFlash = true; o.layers.set(3); });
+    this.gas.userData.muzzleFlash = true; this.gas.layers.set(3);
+    this.camera.layers.enableAll();
 
     this.state = 'draw';
     this.stateT = 0;
@@ -106,10 +114,15 @@ export class WeaponSystem {
     // optional digital night vision scope on the M4 (3.5x, day colour / night mono)
     const nv = key === 'm4' && settings.optic === 'nv';
     if (nv) def = { ...def, name: 'M4A1 NV', scope: 'digital', adsZoom: 3.5, adsTime: 0.26, desc: def.desc };
-    const model = BUILDERS[key](nv ? { optic: 'nv' } : undefined);
+    // the player's carbine carries a suppressor
+    if (key === 'm4') def = { ...def, suppressed: true, sound: 'm4s' };
+    const model = BUILDERS[key](key === 'm4' ? { optic: nv ? 'nv' : 'holo', suppressed: true } : undefined);
     const slot = { key, def, model, ammo: def.mag + (def.chamber ? 1 : 0), reserve: def.reserve, boltReady: true, heat: 0, jammed: false, dustOpen: false };
     if (!def.shellReload) this._fillMags(slot);
     slot.meshes = [];
+    slot.suppHeat = 0;
+    slot.suppMeshes = [];
+    if (model.parts.supp) model.parts.supp.traverse((o) => { if (o.isMesh) { slot.suppMeshes.push(o); o.userData.supp = true; } });
     model.root.traverse((o) => { if (o.isMesh) slot.meshes.push(o); });
     return slot;
   }
@@ -264,13 +277,22 @@ export class WeaponSystem {
       if (t > 1.05) { c.jammed = false; this.state = 'idle'; c.boltReady = true; }
     }
     // barrel heat: cools slowly, smokes after a long string of fire
-    for (const s of Object.values(this.slots)) s.heat = Math.max(0, s.heat - dt * 0.045);
-    if (c.heat > 0.22 && g.time - this.lastShot > 0.3 && Math.random() < c.heat * dt * 14) {
+    for (const s of Object.values(this.slots)) {
+      s.heat = Math.max(0, s.heat - dt * 0.045);
+      s.suppHeat = Math.max(0, (s.suppHeat || 0) - dt * 0.0045); // a suppressor holds its heat for minutes
+    }
+    const smoke = Math.max(c.heat, (c.suppHeat || 0) * 0.8);
+    if (smoke > 0.22 && g.time - this.lastShot > 0.3 && Math.random() < smoke * dt * 14) {
       const mp = this.muzzleWorld(new THREE.Vector3());
       g.effects.dust.emit({ x: mp.x, y: mp.y, z: mp.z, vx: (Math.random() - 0.5) * 0.1, vy: 0.25 + Math.random() * 0.2, vz: (Math.random() - 0.5) * 0.1,
         size: 0.025, grow: 5, drag: 0.8, grav: -0.05, maxLife: 1.6 + Math.random(), r: 0.8, g: 0.8, b: 0.8, a: 0.22 * c.heat, fade: 1.2, spin: 0.5 });
     }
-    for (const mesh of c.meshes) if (mesh.userData.heat !== undefined && mesh.userData.heat < 0.85) mesh.userData.heat = 0.34 + c.heat * 0.5;
+    for (const mesh of c.meshes) if (!mesh.userData.supp && mesh.userData.heat !== undefined && mesh.userData.heat < 0.85) mesh.userData.heat = 0.34 + c.heat * 0.5;
+    // the can soaks up the gas heat: white-hot through thermal, dull red glow after mag dumps
+    const sh = Math.min(1, c.suppHeat || 0);
+    for (const mesh of c.suppMeshes) mesh.userData.heat = 0.32 + sh * 0.75;
+    // visible glow only after mag dumps; faint in daylight, obvious at night (the exposure does the rest)
+    if (c.suppMeshes.length) c.suppMeshes[0].material.emissiveIntensity = Math.max(0, ((c.suppHeat || 0) - 0.6) / 0.6) ** 2 * 0.3;
 
     // bolt cycling (sniper)
     if (this.state === 'bolt') {
@@ -336,16 +358,22 @@ export class WeaponSystem {
     this.flash.visible = true;
     this.flashTime = 0.045;
     this.flashFront.rotation.z = Math.random() * Math.PI;
-    const s = d.pellets > 1 ? 0.16 : d.scope ? 0.14 : 0.1;
+    // a suppressor traps the flash: only a faint glow at the cap, a bigger "first round pop" after a rest
+    const firstPop = d.suppressed && g.time - (this._prevShot ?? -9) > 1.2;
+    this._prevShot = g.time;
+    const s = d.suppressed ? (firstPop ? 0.05 : 0.026) : d.pellets > 1 ? 0.16 : d.scope ? 0.14 : 0.1;
     this.flashFront.scale.setScalar(s * (0.8 + Math.random() * 0.5));
-    const side = s * (1.1 + Math.random() * 0.8);
+    const side = d.suppressed ? 0.0001 : s * (1.1 + Math.random() * 0.8);
     this.flashSide1.scale.set(side, side, side);
     this.flashSide2.scale.set(side, side, side);
     this.flash.rotation.z = Math.random() * Math.PI;
-    this.muzzleLight.intensity = 2.5;
-    g.effects.muzzleLight(muzzleWorld);
-    g.audio.playVariant(`shot_${d.sound}_`, 3, { vol: d.sound === 'pistol' ? 0.75 : 0.9, rate: 0.97 + Math.random() * 0.06 });
-    g.emitNoise(p.eye, d.sound === 'pistol' ? 55 : 85, 'gunshot');
+    this.muzzleLight.intensity = d.suppressed ? (firstPop ? 0.5 : 0.12) : 2.5;
+    if (!d.suppressed || firstPop) g.effects.muzzleLight(muzzleWorld);
+    if (d.suppressed) c.suppHeat = Math.min(1.25, (c.suppHeat || 0) + 0.0125);
+    this.gasLife = this.gasT = d.suppressed ? 0.13 : 0.1;
+    this.gasSize = d.suppressed ? 0.1 + Math.min(1, c.suppHeat) * 0.04 : d.pellets > 1 ? 0.36 : 0.28;
+    g.audio.playVariant(`shot_${d.sound}_`, 3, { vol: d.sound === 'pistol' ? 0.75 : d.suppressed ? 0.8 : 0.9, rate: 0.97 + Math.random() * 0.06 });
+    g.emitNoise(p.eye, d.sound === 'pistol' ? 55 : d.suppressed ? 38 : 85, 'gunshot');
     g.hud.onFire();
     // actions
     if (d.bolt) {
@@ -643,9 +671,9 @@ export class WeaponSystem {
     } else {
       const lTarget = handL || this._handTarget(m.handL, m.handL.support);
       const lWorld = lTarget.clone().applyMatrix4(this.rig.matrix);
-      const lEuler = m.handL.support ? _e.set(m.handL.rot, 0, 0) : _e.set(-Math.PI / 2 + m.handL.rot, 0, -0.3);
+      const lEuler = m.handL.support ? _e.set(m.handL.rot, 0, 0) : _e.set(-Math.PI / 2 + m.handL.rot, 0, 0);
       const qL = qRig.clone().multiply(new THREE.Quaternion().setFromEuler(lEuler));
-      this.arms.solve('L', lWorld, qL, handLVisible);
+      this.arms.solve('L', lWorld, qL, handLVisible, !!m.handL.support && !handL);
     }
 
     // muzzle flash attached to the muzzle
@@ -658,6 +686,17 @@ export class WeaponSystem {
       if (this.flashTime <= 0) { this.flash.visible = false; }
     }
     this.muzzleLight.intensity = Math.max(0, this.muzzleLight.intensity - dt * 60);
+    // gas bloom: expands and drifts forward as it cools; only thermal and NV sensors see it
+    const sensor = g.viewMode === 'thermal' ? 1 : g.viewMode === 'nvg' ? 0.05 : 0;
+    this.gasT = Math.max(0, this.gasT - dt);
+    this.gas.visible = this.gasT > 0 && sensor > 0 && this.rig.visible;
+    if (this.gas.visible) {
+      const k = 1 - this.gasT / this.gasLife;
+      m.muzzle.updateWorldMatrix(true, false);
+      this.gas.position.setFromMatrixPosition(m.muzzle.matrixWorld).addScaledVector(_v2.set(0, 0, -1).applyQuaternion(this.rig.quaternion), 0.02 + k * this.gasSize * 0.8);
+      this.gas.scale.setScalar(this.gasSize * (0.6 + k * 1.1));
+      this.gas.material.opacity = sensor * (1 - k) ** 1.5 * 1.4;
+    }
 
     // hide the viewmodel when looking through a scope
     const scoped = this.isScoped;
@@ -666,7 +705,7 @@ export class WeaponSystem {
   }
 
   _handTarget(h, support, right = false) {
-    const x = right ? 0.0 : support ? -0.012 : -0.004;
+    const x = right || support ? 0.0 : -0.004;
     return new THREE.Vector3(x, h.y, -h.f);
   }
 

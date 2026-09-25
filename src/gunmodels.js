@@ -4,6 +4,20 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as TX from './textures.js';
+import { meshes } from './meshes.js';
+import { fabricMaterial, R } from './fabric.js';
+
+/** SDF meshes are stored with packed normals; gun parts merge with float attributes. */
+function sculpted(name) {
+  const src = meshes()[name];
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', src.attributes.position.clone());
+  const n = src.attributes.normal, nf = new Float32Array(n.count * 3);
+  for (let i = 0; i < n.count; i++) { nf[i * 3] = n.getX(i); nf[i * 3 + 1] = n.getY(i); nf[i * 3 + 2] = n.getZ(i); }
+  g.setAttribute('normal', new THREE.BufferAttribute(nf, 3));
+  g.setIndex(src.index.clone());
+  return g;
+}
 
 let M = null;
 export function gunMaterials() {
@@ -39,6 +53,9 @@ export function gunMaterials() {
     marks: new THREE.MeshStandardMaterial({ map: TX.rollMarkTexture(), color: 0xb8bcc2, roughness: 0.5, metalness: 0.7, alphaTest: 0.35,
       polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
     bcg: new THREE.MeshStandardMaterial({ color: 0x8a8d92, roughness: 0.28, metalness: 1, roughnessMap: wear }),
+    // suppressor: high-temperature Cerakote; glows dull red after sustained fire
+    supp: new THREE.MeshPhysicalMaterial({ map: fSteel.map, roughnessMap: fSteel.roughness, roughness: 1, metalness: 0.5, color: 0x9a9a98,
+      normalMap: fSteel.normal, normalScale: new THREE.Vector2(0.3, 0.3), emissive: 0xff3a08, emissiveIntensity: 0 }),
     sling: new THREE.MeshStandardMaterial({ map: fFde.map, color: 0xb9a37e, roughness: 0.95, metalness: 0, normalMap: stipple, normalScale: new THREE.Vector2(0.5, 0.5) }),
     dark: new THREE.MeshStandardMaterial({ color: 0x0b0b0c, roughness: 0.6, metalness: 0.3 }),
     brass: new THREE.MeshStandardMaterial({ color: 0xb5904f, roughness: 0.28, metalness: 1 }),
@@ -57,6 +74,17 @@ export function gunMaterials() {
   // representative colours (enemy guns are vertex-coloured copies of these models)
   const base = { anod: 0x2b2c2f, rail: 0x2b2c2f, polymer: 0x242427, fde: 0x7e6b4d, od: 0x4b4f3b, steel: 0x27282b, sling: 0x6b5a42 };
   for (const [k, c] of Object.entries(base)) M[k].userData.baseColor = new THREE.Color(c);
+  // heat soak along the can: the blast chamber just ahead of the collar runs
+  // hottest, the collar and front cap stay darker; hotter spots shift orange
+  M.supp.onBeforeCompile = (sh) => {
+    sh.vertexShader = 'varying float vCanF;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vCanF = -position.z;');
+    sh.fragmentShader = 'varying float vCanF;\n' + sh.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+      float glow = smoothstep(0.515, 0.55, vCanF) * (1.0 - 0.75 * smoothstep(0.575, 0.65, vCanF));
+      glow *= 0.78 + 0.22 * smoothstep(0.2, 1.0, sin(vCanF * 520.0)); // hotter rings where the baffles touch the tube
+      float hot = clamp(totalEmissiveRadiance.r - 0.3, 0.0, 1.0);
+      totalEmissiveRadiance *= glow * glow * mix(vec3(0.85, 0.55, 0.4), vec3(1.2, 1.5, 1.8), glow * hot);`);
+  };
+  M.supp.customProgramCacheKey = () => 'suppGlow';
   M.rail.userData.keepUV = true; M.marks.userData.keepUV = true;
   M.marks.userData.baseColor = new THREE.Color(0x2b2c2f);
   // player sleeve camo (multicam-ish)
@@ -284,9 +312,8 @@ export function buildM4(opts = {}) {
   b.add(prof([[0.002, -0.038], [0.002, -0.052], [-0.007, -0.062], [-0.058, -0.063], [-0.063, -0.056], [-0.063, -0.038]], 0.012, 0, 0.0012,
     [[[-0.003, -0.041], [-0.003, -0.05], [-0.01, -0.058], [-0.056, -0.059], [-0.059, -0.055], [-0.059, -0.041]]]), m.anod);
   b.add(prof([[-0.012, -0.036], [-0.006, -0.036], [-0.01, -0.05], [-0.016, -0.054], [-0.017, -0.048]], 0.005), m.steel);
-  // pistol grip (raked)
-  b.add(prof([[-0.035, -0.03], [-0.062, -0.028], [-0.079, -0.05], [-0.09, -0.07], [-0.103, -0.125], [-0.098, -0.133], [-0.066, -0.129],
-    [-0.061, -0.117], [-0.064, -0.107], [-0.056, -0.098], [-0.056, -0.088], [-0.049, -0.078], [-0.043, -0.058], [-0.03, -0.042]], 0.03, 0, 0.004), m.polymer);
+  // sculpted pistol grip (finger groove, stippling, flared base)
+  b.add(sculpted('grip'), m.polymer);
   // buffer tube + CTR style stock
   b.add(cyl(0.0148, 0.0148, 0.19, -0.295, 0, 0.004, 18), m.anod);
   b.add(prof([[-0.19, 0.026], [-0.33, 0.03], [-0.346, 0.024], [-0.346, -0.086], [-0.332, -0.097], [-0.3, -0.094], [-0.245, -0.042], [-0.205, -0.03], [-0.19, -0.018]], 0.038, 0, 0.004,
@@ -317,13 +344,22 @@ export function buildM4(opts = {}) {
   b.add(cyl(0.0095, 0.0092, 0.4, 0.085, 0, 0, 16), m.steel);
   b.add(cyl(0.0022, 0.0022, 0.26, 0.09, 0, 0.014, 6), m.steel);
   b.add(box(0.02, 0.022, 0.02, 0, 0.004, 0.345), m.steel);
-  b.add(cyl(0.0112, 0.0112, 0.055, 0.482, 0, 0, 12), m.dark);
-  for (let i = 0; i < 3; i++) b.add(box(0.024, 0.004, 0.006, 0, 0.0, 0.5 + i * 0.012), m.dark);
+  let muzzleF = 0.54;
+  if (opts.suppressed) {
+    // QD suppressor: knurled locking collar, can body, stepped front cap around the bore
+    const prof2 = [[0.0, 0.47], [0.0172, 0.47], [0.0172, 0.488]];
+    for (let i = 0; i < 7; i++) { const f = 0.49 + i * 0.0042; prof2.push([0.0198, f], [0.0198, f + 0.0026], [0.019, f + 0.003], [0.019, f + 0.0042]); }
+    prof2.push([0.0194, 0.52], [0.0192, 0.525], [0.0192, 0.642], [0.0186, 0.652], [0.0162, 0.66], [0.0068, 0.662], [0.0055, 0.656], [0.0, 0.656]);
+    const can = new THREE.LatheGeometry(prof2.map(([r, f]) => new THREE.Vector2(r, f)), 40);
+    can.rotateX(-Math.PI / 2);
+    b.add(can, m.supp, 'supp');
+    muzzleF = 0.664;
+  } else {
+    b.add(cyl(0.0112, 0.0112, 0.055, 0.482, 0, 0, 12), m.dark);
+    for (let i = 0; i < 3; i++) b.add(box(0.024, 0.004, 0.006, 0, 0.0, 0.5 + i * 0.012), m.dark);
+  }
   // magazine (curved PMAG) with base plate
-  b.add(prof([[0.007, -0.03], [0.068, -0.03], [0.074, -0.08], [0.087, -0.14], [0.104, -0.2], [0.1, -0.214], [0.04, -0.214], [0.034, -0.2], [0.019, -0.14], [0.011, -0.08]], 0.024, 0, 0.0025), m.fde, 'mag');
-  b.add(prof([[0.036, -0.212], [0.106, -0.212], [0.108, -0.222], [0.034, -0.222]], 0.028), m.polymer, 'mag');
-  b.add(box(0.003, 0.08, 0.004, 0.0125, -0.1, 0.02), m.polymer, 'mag');
-  for (let k = 0; k < 3; k++) b.add(box(0.0262, 0.0035, 0.046, 0, -0.105 - k * 0.028, 0.049 + k * 0.012), m.fde, 'mag');
+  b.add(sculpted('pmag'), m.fde, 'mag');
   if (nv) {
     // digital day/night riflescope: sensor body, objective bell, eyecup, IR illuminator
     const ax = 0.078; // optical axis height above the bore
@@ -356,11 +392,18 @@ export function buildM4(opts = {}) {
   b.add(vcyl(0.005, 0.005, 0.006, 0.1025, -0.024), m.anod);
   }
   // PEQ laser box + weapon light + angled foregrip
-  b.add(box(0.03, 0.026, 0.075, 0, 0.049, 0.31), m.fde);
-  b.add(cyl(0.005, 0.005, 0.01, 0.35, 0.008, 0.052, 8), m.lens);
-  b.add(cyl(0.012, 0.013, 0.1, 0.29, 0.034, 0.004, 14), m.anod);
-  b.add(cyl(0.0135, 0.0135, 0.012, 0.388, 0.034, 0.004, 14), m.anod);
-  b.add(cyl(0.0105, 0.0105, 0.002, 0.4, 0.034, 0.004, 14), m.lens);
+  b.add(sculpted('peq'), m.fde);
+  b.add(cyl(0.0048, 0.0048, 0.0014, 0.3456, 0.0065, 0.052, 16), m.lens);
+  b.add(cyl(0.0031, 0.0031, 0.0014, 0.3458, 0.0065, 0.0425, 12), m.lens);
+  // weapon light: tail cap, body, flared head with a knurled bezel, recessed lens
+  const lp = [[0, 0.24], [0.0092, 0.24], [0.0108, 0.2425], [0.011, 0.257], [0.0101, 0.2595], [0.0101, 0.334], [0.0112, 0.339], [0.0134, 0.358], [0.0137, 0.381]];
+  for (let i = 0; i < 4; i++) { const f = 0.3815 + i * 0.0032; lp.push([0.0141, f], [0.0141, f + 0.0018], [0.0136, f + 0.0021], [0.0136, f + 0.0032]); }
+  lp.push([0.0138, 0.3945], [0.0126, 0.3958], [0.0114, 0.3945], [0, 0.3945]);
+  const light = new THREE.LatheGeometry(lp.map(([r, f]) => new THREE.Vector2(r, f)), 36);
+  light.rotateX(-Math.PI / 2); light.translate(0.034, 0.004, 0);
+  b.add(light, m.anod);
+  b.add(box(0.012, 0.012, 0.03, 0.028, 0.004, 0.3), m.anod); // light mount
+  b.add(cyl(0.0113, 0.0113, 0.0012, 0.394, 0.034, 0.004, 32), m.lens);
   b.add(prof([[0.17, -0.026], [0.235, -0.026], [0.215, -0.05], [0.18, -0.06], [0.165, -0.05]], 0.022, 0, 0.003), m.polymer);
   // folded backup irons
   b.add(box(0.02, 0.01, 0.03, 0, 0.037, -0.085), m.anod);
@@ -380,11 +423,11 @@ export function buildM4(opts = {}) {
   parts.dust.position.set(0.0137, 0.0045, 0);
   const sightY = nv ? 0.078 : 0.074;
   if (!nv) root.add(reticlePlane(0.013, sightY, -0.005));
-  const muzzle = marker(0, 0, 0.54); root.add(muzzle);
+  const muzzle = marker(0, 0, muzzleF); root.add(muzzle);
   const eject = marker(0.016, 0.012, 0.025); root.add(eject);
   return {
     root, parts, muzzle, eject, sightY, sightF: -0.07,
-    handR: { f: -0.06, y: -0.07, rot: 0.35 }, handL: { f: 0.16, y: -0.035, rot: -0.2 },
+    handR: { f: -0.06, y: -0.07, rot: -0.42 }, handL: { f: 0.17, y: 0.0, rot: 0 },
     magWell: { f: 0.04, y: -0.03 }, chargeF: -0.13,
     hip: new THREE.Vector3(0.13, -0.158, -0.31), ads: new THREE.Vector3(0, 0, -0.26),
   };
@@ -419,7 +462,7 @@ export function buildGlock() {
   const eject = marker(0.014, 0.01, 0.02); root.add(eject);
   return {
     root, parts, muzzle, eject, sightY: 0.0225, sightF: -0.065,
-    handR: { f: -0.055, y: -0.07, rot: 0.4 }, handL: { f: -0.045, y: -0.085, rot: 0.2, support: true },
+    handR: { f: -0.055, y: -0.07, rot: -0.21 }, handL: { f: -0.055, y: -0.07, rot: -0.21, support: true },
     magWell: { f: -0.06, y: -0.1 },
     hip: new THREE.Vector3(0.09, -0.088, -0.3), ads: new THREE.Vector3(0, 0, -0.3),
   };
@@ -476,7 +519,7 @@ export function buildM1014() {
   parts.loose = loose;
   return {
     root, parts, muzzle, eject, sightY: 0.058, sightF: -0.1,
-    handR: { f: -0.12, y: -0.07, rot: 0.35 }, handL: { f: 0.23, y: -0.04, rot: -0.2 },
+    handR: { f: -0.12, y: -0.07, rot: -0.31 }, handL: { f: 0.23, y: -0.023, rot: 0 },
     magWell: { f: 0.0, y: -0.045 },
     hip: new THREE.Vector3(0.125, -0.153, -0.31), ads: new THREE.Vector3(0, 0, -0.3),
   };
@@ -535,7 +578,7 @@ export function buildSniper() {
   const eject = marker(0.02, 0.01, -0.06); root.add(eject);
   return {
     root, parts, muzzle, eject, sightY: sy, sightF: -0.24,
-    handR: { f: -0.1, y: -0.09, rot: 0.1 }, handL: { f: 0.2, y: -0.06, rot: -0.2 },
+    handR: { f: -0.1, y: -0.09, rot: -0.13 }, handL: { f: 0.2, y: -0.038, rot: 0 },
     magWell: { f: 0.025, y: -0.07 }, boltHandle: { f: -0.14, x: 0.054, y: -0.004 },
     hip: new THREE.Vector3(0.13, -0.172, -0.33), ads: new THREE.Vector3(0, 0, -0.27),
   };
@@ -573,62 +616,31 @@ export function buildFlashMesh() {
 }
 
 // ---------- arms ----------
-/** Capsule mesh from point a to point b. */
-function bone(a, b, r, mat, seg = 10) {
-  const d = new THREE.Vector3().subVectors(b, a);
-  const len = d.length();
-  const mesh = new THREE.Mesh(new THREE.CapsuleGeometry(r, Math.max(0.001, len), 4, seg), mat);
-  mesh.position.copy(a).addScaledVector(d, 0.5);
-  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
-  return mesh;
-}
-
+let gloveMat = null;
 /**
  * A gloved hand wrapped around a grip (local y = grip axis, origin = grip
- * centre). Fingers curl around it in three joints; the back of the hand has
- * TPR knuckle guards, the palm is synthetic leather, a strap closes the cuff.
+ * centre): the sculpted SDF glove (fingers curled in three joints, leather
+ * palm, TPR knuckle guard, strap) with the fabric shader.
  */
 function buildHand(side) {
-  const m = gunMaterials();
-  const g = new THREE.Group();
-  const V = (x, y, z) => new THREE.Vector3(side * x, y, z);
-  // palm and back of the hand: a padded, slightly flattened volume on the outside of the grip
-  const palm = new THREE.Mesh(new THREE.SphereGeometry(1, 22, 16), m.palm);
-  palm.scale.set(0.017, 0.047, 0.036); palm.position.copy(V(0.024, -0.006, 0.008));
-  const back = new THREE.Mesh(new THREE.SphereGeometry(1, 22, 16), m.glove);
-  back.scale.set(0.014, 0.046, 0.034); back.position.copy(V(0.031, -0.006, 0.009));
-  g.add(palm, back);
-  // TPR guard over the back of the hand
-  const guard = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10, 0, Math.PI), m.knuckle);
-  guard.scale.set(0.012, 0.03, 0.022); guard.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; guard.position.copy(V(0.041, 0.004, 0.0));
-  g.add(guard);
-  // fingers wrap around the grip: points on an arc, three phalanges each
-  const lens = [1, 0.62, 0.46];
-  for (let i = 0; i < 4; i++) {
-    const y = 0.027 - i * 0.0185, R = 0.027 - i * 0.0008, rad = 0.0098 - i * 0.0006;
-    const sweepA = [0.2, 1.25, 2.05, 2.7];
-    const pts = sweepA.map((a) => V(Math.cos(a) * R, y - a * 0.002, -Math.sin(a) * R));
-    for (let k = 0; k < 3; k++) {
-      g.add(bone(pts[k], pts[k + 1], rad * (1 - k * 0.08) * (0.9 + lens[k] * 0.1), m.glove));
-      if (k === 0) {
-        // ribbed knuckle pad on the first joint
-        const n = new THREE.Vector3().addVectors(pts[0], pts[1]).multiplyScalar(0.5);
-        const out = n.clone().setY(0).normalize();
-        const pad = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 8), m.knuckle);
-        pad.scale.set(0.0075, 0.0068, 0.0075); pad.position.copy(n).addScaledVector(out, rad * 0.85);
-        g.add(pad);
-      }
-    }
+  if (!gloveMat) {
+    gloveMat = fabricMaterial({
+      colors: { [R.GLOVE]: 0x6d5c46, [R.PALM]: 0x3b3834, [R.TPR]: 0x1c1b19, [R.BLACK]: 0x24231f },
+      rough: { [R.GLOVE]: 0.82, [R.PALM]: 0.58, [R.TPR]: 0.5, [R.BLACK]: 0.7 }, camo: null, bump: 0.6,
+    });
+    gloveMat.side = THREE.DoubleSide;
   }
-  // thumb: over the top of the grip on the far side
-  const t0 = V(0.018, 0.03, 0.022), t1 = V(-0.006, 0.042, 0.012), t2 = V(-0.022, 0.04, -0.006);
-  g.add(bone(t0, t1, 0.0112, m.glove), bone(t1, t2, 0.0098, m.glove));
-  // cuff and hook-and-loop wrist strap
-  const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.033, 0.03, 0.035, 22, 1), m.glove);
-  cuff.position.copy(V(0.022, -0.045, 0.045)); cuff.rotation.x = 0.7;
-  const strap = new THREE.Mesh(new THREE.CylinderGeometry(0.0345, 0.0345, 0.016, 22, 1), m.knuckle);
-  strap.position.copy(cuff.position); strap.rotation.copy(cuff.rotation);
-  g.add(cuff, strap);
+  const g = new THREE.Group();
+  // right: pistol grip with the index on the trigger; left: C-clamp on a
+  // handguard, or ('pistol') wrapped over the firing hand
+  for (const name of side > 0 ? ['glove'] : ['gloveL', 'gloveLP']) {
+    const mesh = new THREE.Mesh(meshes()[name], gloveMat);
+    mesh.userData.hand = true;
+    mesh.userData.wrist = new THREE.Vector3(...meshes()[name].userData.wrist);
+    mesh.castShadow = mesh.receiveShadow = true;
+    mesh.visible = name !== 'gloveLP';
+    g.add(mesh);
+  }
   g.traverse((o) => { o.frustumCulled = false; });
   return g;
 }
@@ -675,14 +687,16 @@ export class Arms {
     this._v = new THREE.Vector3(); this._e = new THREE.Vector3(); this._w = new THREE.Vector3(); this._up = new THREE.Vector3(0, 1, 0);
   }
   /** Places one arm so the hand sits at `wrist` (camera space) using 2-bone IK. */
-  solve(side, wrist, handQuat, visible = true) {
+  solve(side, wrist, handQuat, visible = true, pistol = false) {
     const hand = this.hands[side];
     hand.visible = this.fore[side].visible = this.upper[side].visible = this.cuff[side].visible = visible;
     if (!visible) return;
     hand.position.copy(wrist);
     hand.quaternion.copy(handQuat);
-    // wrist joint is a bit behind the grip centre along the hand's local +z
-    const w = this._w.set(side === 'R' ? 0.02 : -0.02, -0.02, 0.06).applyQuaternion(handQuat).add(wrist);
+    let glove = hand.children[0];
+    if (side === 'L') { hand.children[0].visible = !pistol; hand.children[1].visible = pistol; glove = hand.children[pistol ? 1 : 0]; }
+    // the forearm starts at the glove's wrist
+    const w = this._w.copy(glove.userData.wrist).applyQuaternion(handQuat).add(wrist);
     const S = this.shoulder[side];
     const a = 0.31, b = 0.32;
     const d = Math.min(a + b - 0.001, S.distanceTo(w));
