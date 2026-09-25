@@ -188,7 +188,7 @@ export class CollisionWorld {
     else if (axis === 1) h.ny = dy > 0 ? -1 : 1;
     else if (axis === 2) h.nz = dz > 0 ? -1 : 1;
     else h.ny = 1; // ground
-    h.mat = box ? box.mat : 'sand';
+    h.mat = box ? box.mat : this.groundMat || 'sand';
     return h;
   }
 

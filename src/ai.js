@@ -884,7 +884,7 @@ export class Enemy {
     if (this.ammo <= 0) this.startReload();
     this.soldier.muzzleFlash();
     this.lastFired = g.time;
-    g.audio.playAt(`shot_${T.sound}_${(Math.random() * 3) | 0}`, muzzle.x, muzzle.y, muzzle.z, { vol: 1.15, ref: 6, travel: true, max: 1000, wet: 1 });
+    g.audio.playGunshotAt(T.sound, muzzle.x, muzzle.y, muzzle.z, { vol: 1.15, ref: 6, travel: true, max: 1000, wet: 1 });
     g.effects.enemyMuzzle(muzzle);
   }
 

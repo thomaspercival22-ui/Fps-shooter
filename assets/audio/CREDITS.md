@@ -1,0 +1,41 @@
+# Recorded sounds
+
+Every recording used here is released into the public domain (Creative Commons 0) on freesound.org. They were sliced, pitched, filtered, layered and re-encoded by `tools/build-sounds.mjs`.
+
+- "bullet ricochet" by aust_paul: https://freesound.org/s/30932/
+- "bullets hit EDIT" by Woodingp: https://freesound.org/s/116645/
+- "ricochet" by cedarstudios: https://freesound.org/s/148840/
+- "Bullet Hit Metal" by coolguy244e: https://freesound.org/s/267893/
+- "breaking_glass_mirror_Rode_NTG3" by gladkiy: https://freesound.org/s/276938/
+- "Single Rock hit Dirt" by worthahep88: https://freesound.org/s/319222/
+- "Single Rock Hitting wood 3" by worthahep88: https://freesound.org/s/319223/
+- "Single rock hitting wood" by worthahep88: https://freesound.org/s/319226/
+- "Single Rock hitting wood 2" by worthahep88: https://freesound.org/s/319228/
+- "Single Rock hit dirt 2" by worthahep88: https://freesound.org/s/319229/
+- "HeavyBulletPing" by wilhellboy: https://freesound.org/s/351371/
+- "gun_9mm_15m_in_front_m10" by johanwestling: https://freesound.org/s/377789/
+- "bullet hits the car" by BorekPL: https://freesound.org/s/399550/
+- "Small pistol gunshot indoors" by acidsnowflake: https://freesound.org/s/402789/
+- "Shotgun kaliber 20 (forest)" by straget: https://freesound.org/s/410551/
+- "Rifle kaliber 6.5-55 (forest)" by straget: https://freesound.org/s/410552/
+- "VisceralBulletImpacts" by u1769092: https://freesound.org/s/423301/
+- "9mm pistol shot" by michorvath: https://freesound.org/s/427592/
+- "9mm pistol load and chamber" by michorvath: https://freesound.org/s/427593/
+- "20 gauge shotgun gunshot" by michorvath: https://freesound.org/s/427595/
+- "AR15 rifle shot" by michorvath: https://freesound.org/s/427596/
+- "AR15 rifle shot from 50 yards away" by michorvath: https://freesound.org/s/427597/
+- "AR15 pistol shot" by michorvath: https://freesound.org/s/427598/
+- "AR15 pistol load and chamber" by michorvath: https://freesound.org/s/427599/
+- "Rifle clip empty" by michorvath: https://freesound.org/s/427603/
+- "Distant Indoor Glass Breaking" by BlondPanda: https://freesound.org/s/565182/
+- "Flashbang Open Field High Quality" by modusmogulus: https://freesound.org/s/752628/
+- "Grenade Open Field High Quality 2" by modusmogulus: https://freesound.org/s/752629/
+- "Explosion And Schrapnel Fly-by" by modusmogulus: https://freesound.org/s/752630/
+- "Bullet impact ground (subsonic) SFX" by modusmogulus: https://freesound.org/s/789388/
+- "AR15 Indoors (open windows)" by modusmogulus: https://freesound.org/s/815698/
+- "Glock 19X" by areniporgen: https://freesound.org/s/828786/
+- "SIG Sauer P226 (Suppressed)" by areniporgen: https://freesound.org/s/828790/
+- "An automatic rifle being shot once // punchy sounding" by serøutōnin--deprivəd: https://freesound.org/s/855654/
+- "An automatic rifle being shot once // metallic and punchy" by serøutōnin--deprivəd: https://freesound.org/s/855655/
+- "An AK-47 being shot // metallic kalashnikov report" by serøutōnin--deprivəd: https://freesound.org/s/855841/
+- "An AK-47 being shot // punchy kalashnikov report" by serøutōnin--deprivəd: https://freesound.org/s/855842/

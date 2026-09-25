@@ -221,7 +221,7 @@ export class TowerMission extends Mission {
     }
     e.soldier.muzzleFlash();
     e.lastFired = g.time;
-    g.audio.playAt(`shot_${e.type.sound}_${(Math.random() * 3) | 0}`, muzzle.x, muzzle.y, muzzle.z, { vol: 1.15, ref: 6, travel: true, max: 1000, wet: 1 });
+    g.audio.playGunshotAt(e.type.sound, muzzle.x, muzzle.y, muzzle.z, { vol: 1.15, ref: 6, travel: true, max: 1000, wet: 1 });
     g.effects.enemyMuzzle(muzzle);
     g.enemies.onNoise(e.pos, 60, 'gunshot');
     g.civilians.onNoise(e.pos, 60, 'gunshot');
@@ -591,7 +591,7 @@ export class SniperMission extends Mission {
     const muzzle = m.soldier.muzzleWorld(new THREE.Vector3());
     g.ballistics.fire({ owner: 'enemy', shooter: m, x: eye.x + dir.x * 0.4, y: eye.y + dir.y * 0.4, z: eye.z + dir.z * 0.4, dir, speed: T.velocity, damage: (damage || T.damage * 1.6) * g.difficulty.dmg, tracer: true, tracerFrom: muzzle });
     m.soldier.muzzleFlash(); m.lastFired = g.time;
-    g.audio.playAt(`shot_${T.sound}_${(Math.random() * 3) | 0}`, muzzle.x, muzzle.y, muzzle.z, { vol: 1.3, ref: 6, travel: true, max: 1200, wet: 1 });
+    g.audio.playGunshotAt(T.sound, muzzle.x, muzzle.y, muzzle.z, { vol: 1.3, ref: 6, travel: true, max: 1200, wet: 1 });
     g.effects.enemyMuzzle(muzzle);
     return tof;
   }

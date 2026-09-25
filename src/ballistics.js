@@ -153,8 +153,9 @@ export class Ballistics {
           const dmgMul = this._falloff(b);
           const snd = impactSound(wh.mat, pt, g);
           g.effects.impact(pt, n, snd === 'water' ? 'sand' : wh.mat, b.owner === 'player' ? 1 : 0.7);
-          if (b.owner === 'player' && dmgMul > 0) g.audio.playAt(`imp_${snd}${(Math.random() * 2) | 0}`, pt.x, pt.y, pt.z, { vol: 0.35, max: 60, occlude: false });
-          else if (Math.random() < 0.5) g.audio.playAt(`imp_${snd}${(Math.random() * 2) | 0}`, pt.x, pt.y, pt.z, { vol: 0.5, max: 25, occlude: false });
+          const impName = g.audio.pick(`imp_${snd}`) || `imp_${snd}0`;
+          if (b.owner === 'player' && dmgMul > 0) g.audio.playAt(impName, pt.x, pt.y, pt.z, { vol: IMPACT_VOL[snd] ?? 0.6, max: 90, occlude: false, rate: 0.95 + Math.random() * 0.1 });
+          else if (Math.random() < 0.6) g.audio.playAt(impName, pt.x, pt.y, pt.z, { vol: (IMPACT_VOL[snd] ?? 0.6) * 0.9, max: 35, occlude: false, rate: 0.95 + Math.random() * 0.1 });
           // glancing hits on hard surfaces ricochet: the round skips off with most of its energy gone
           const cosI = -(dir.x * n.x + dir.y * n.y + dir.z * n.z);
           const hard = RICOCHET[wh.mat] ?? 0.3;
@@ -170,7 +171,7 @@ export class Ballistics {
             b.tail.copy(b.pos);
             b.whizzed = false; // a ricochet can still zip past the player
             g.effects.impact(pt, n, 'metal', 0.6);
-            g.audio.playAt(`rico${(Math.random() * 3) | 0}`, pt.x, pt.y, pt.z, { vol: 0.55, max: 70, occlude: false, rate: 0.9 + Math.random() * 0.25 });
+            g.audio.playAt(g.audio.pick('rico_') || `rico${(Math.random() * 3) | 0}`, pt.x, pt.y, pt.z, { vol: 0.6, max: 70, occlude: false, rate: 0.92 + Math.random() * 0.16 });
             remaining *= 1 - Math.min(1, wh.t / len);
             continue;
           }
@@ -238,7 +239,7 @@ export class Ballistics {
     if (b.spot) b.spot.hit = { who: e, part: he.part, killed };
     g.weapons.stats.hits++;
     g.effects.bloodPuff(pt, dir, he.part === 'head' ? 1.4 : 1);
-    g.audio.playAt(`imp_flesh${(Math.random() * 2) | 0}`, pt.x, pt.y, pt.z, { vol: 0.5, occlude: false });
+    g.audio.playAt(g.audio.pick('imp_flesh') || 'imp_flesh0', pt.x, pt.y, pt.z, { vol: 0.65, occlude: false, rate: 0.95 + Math.random() * 0.1 });
     g.hud.hitMarker(killed ? 'kill' : he.part === 'head' ? 'head' : 'hit');
     if (killed) g.registerKill(e, { headshot: he.part === 'head', weapon: w ? w.name : '', stunned: wasFlashed, distance: b.traveled });
   }
@@ -251,7 +252,7 @@ export class Ballistics {
     const killed = c.takeDamage(b.damage * mul, hc.part, dir.x, dir.z, b.owner);
     if (b.spot) b.spot.hit = { who: c, part: hc.part, killed };
     g.effects.bloodPuff(pt, dir, hc.part === 'head' ? 1.4 : 1);
-    g.audio.playAt(`imp_flesh${(Math.random() * 2) | 0}`, pt.x, pt.y, pt.z, { vol: 0.5, occlude: false });
+    g.audio.playAt(g.audio.pick('imp_flesh') || 'imp_flesh0', pt.x, pt.y, pt.z, { vol: 0.65, occlude: false, rate: 0.95 + Math.random() * 0.1 });
     if (b.owner === 'player') g.hud.hitMarker('civ');
   }
 
@@ -288,8 +289,10 @@ export class Ballistics {
   }
 }
 
+// how loud each surface answers a bullet (relative)
+const IMPACT_VOL = { metal: 0.75, glass: 0.8, wood: 0.7, concrete: 0.65, plaster: 0.6, sand: 0.55, carpet: 0.5, rubber: 0.5, water: 0.6 };
 function impactSound(mat, pt, g) {
   if (mat === 'sand' && pt.y < 0.05 && g.weather === 'rain') return 'water'; // puddles and mud in the rain
-  if (['metal', 'wood', 'sand', 'rubber', 'plaster', 'glass'].includes(mat)) return mat;
+  if (['metal', 'wood', 'sand', 'rubber', 'plaster', 'glass', 'carpet'].includes(mat)) return mat;
   return 'concrete';
 }

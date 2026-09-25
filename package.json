@@ -12,9 +12,11 @@
     "icons": "node tools/make-icons.mjs",
     "simplify-models": "node tools/simplify-models.mjs",
     "build-meshes": "node tools/build-meshes.mjs",
-    "build-guns": "node tools/build-guns.mjs"
+    "build-guns": "node tools/build-guns.mjs",
+    "build-sounds": "node tools/build-sounds.mjs"
   },
   "devDependencies": {
+    "lamejs": "^1.2.1",
     "meshoptimizer": "^1.2.0",
     "sharp": "^0.33.5",
     "three": "0.180.0"

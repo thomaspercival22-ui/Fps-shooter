@@ -19,6 +19,7 @@ export function buildTower(scene, assets, opts = {}) {
   const shadows = opts.shadows !== false;
   const { x0: X0, x1: X1, z0: Z0, z1: Z1, ceil: CEIL, storey: ST } = TOWER;
   const world = new CollisionWorld(-30, -24, 30, 24, 2);
+  world.groundMat = 'carpet'; // the office floor (the core has concrete floor boxes of its own)
   world.groundRect = { x0: X0 - 0.05, x1: X1 + 0.05, z0: Z0 - 0.05, z1: Z1 + 0.05 };
   const G = new GeoBatch();
   const coverBoxes = [], minimap = [];

@@ -217,10 +217,6 @@ export function impulse(kind) {
   const chans = [];
   for (let ch = 0; ch < 2; ch++) {
     const d = new Float32Array(len), R = rng(kind.length * 101 + ch * 7 + 3), lp = new BQ('lp', 8000, 0.7);
-    const burst = (t, gain, f, dec = 0.006) => {
-      const i0 = Math.floor(t * SR), b = new BQ('lp', f, 0.7);
-      for (let i = 0; i < dec * 5 * SR && i0 + i < len; i++) d[i0 + i] += b.run(R() * 2 - 1) * gain * Math.exp(-i / (dec * SR));
-    };
     if (kind === 'indoor') {
       for (let k = 0; k < 46; k++) { const t = 0.0015 + R() ** 1.6 * 0.045; const i = Math.floor(t * SR); d[i] += (R() < 0.5 ? -1 : 1) * (0.7 - t * 9) * (0.4 + R() * 0.6); }
       const rt = 0.8;
@@ -231,11 +227,14 @@ export function impulse(kind) {
       }
     } else {
       const ridge = kind === 'ridge';
-      const echoes = ridge ? 3 : 10;
-      for (let k = 0; k < echoes; k++) {
-        const t = ridge ? 0.02 + R() * 0.07 : 0.03 + R() * 0.32;
-        burst(t, (ridge ? 0.12 : 0.32) * Math.exp(-t * 3) * (0.5 + R() * 0.5), 5500 - t * 9000, 0.004 + R() * 0.008);
+      // a dense early field (ground, walls, containers) rather than separate slap-backs: hundreds of
+      // small reflections fuse into "space" instead of reading as distinct echoes
+      const early = new Float32Array(len), elp = new BQ('lp', ridge ? 2500 : 4200, 0.7);
+      for (let k = 0; k < (ridge ? 60 : 220); k++) {
+        const t = 0.004 + R() ** 1.5 * (ridge ? 0.09 : 0.12);
+        early[Math.floor(t * SR)] += (R() < 0.5 ? -1 : 1) * (ridge ? 0.05 : 0.09) * Math.exp(-t / 0.045) * (0.3 + R() * 0.7);
       }
+      for (let i = 0; i < len; i++) d[i] += elp.run(early[i]);
       // rolling tail: low-passed noise, swelling and fading with the terrain
       const ph = [R() * 6, R() * 6, R() * 6], fr = ridge ? [0.7, 1.6, 2.9] : [1.4, 2.7, 4.1];
       const peakT = ridge ? 0.7 : 0.15, dec = ridge ? 1.3 : 0.75, gain = ridge ? 0.16 : 0.1;
@@ -250,7 +249,7 @@ export function impulse(kind) {
     // energy normalisation: how much of the shot the surroundings send back
     let e = 0;
     for (let i = 0; i < len; i++) e += d[i] * d[i];
-    const target = kind === 'indoor' ? 0.65 : kind === 'ridge' ? 0.55 : 0.45, k = target / Math.sqrt(e || 1);
+    const target = kind === 'indoor' ? 0.45 : kind === 'ridge' ? 0.4 : 0.3, k = target / Math.sqrt(e || 1);
     const f = 0.05 * SR;
     for (let i = 0; i < len; i++) d[i] *= k * Math.min(1, (len - i) / f);
     chans.push(d);
@@ -412,6 +411,11 @@ function impact(kind) {
     s.chain(s.osc('sine', 240, 110, 0, 0.06), s.env(0, 0.001, 0.4, 0.05));
     s.chain(s.noise(0.35, 0.02), s.filter('bandpass', 2400, 1.2), s.env(0.02, 0.02, 0.12, 0.22));
     debris(8, 0.03, 0.3, 2200, 0.1);
+  } else if (kind === 'carpet') {
+    // dull thud into carpet over a concrete slab, a puff of fibre
+    s.chain(s.osc('sine', R(150, 190), 70, 0, 0.07), s.env(0, 0.0015, 0.8, 0.05));
+    s.chain(s.noise(0.06), s.filter('bandpass', R(900, 1300), 1.1), s.env(0, 0.0008, 0.55, 0.025));
+    s.chain(s.noise(0.2, 0.01), s.filter('lowpass', 2200), s.env(0.01, 0.01, 0.1, 0.12));
   } else if (kind === 'water') {
     s.chain(s.noise(0.2), s.filter('bandpass', 1200, 0.9), s.env(0, 0.001, 0.6, 0.12));
     s.chain(s.osc('sine', 900, 1700, 0.01, 0.06), s.env(0.01, 0.003, 0.25, 0.05)); // bubble "plip"
@@ -617,7 +621,7 @@ export class AudioEngine {
     for (let i = 0; i < 3; i++) add(`brass${i}`, brass(1 + i * 0.07));
     add('shellPlastic', clicks([[0, 900, 2, 0.35, 0.04, 300], [0.07, 700, 2, 0.2, 0.03]], 0.2));
     for (let i = 0; i < 4; i++) add(`step${i}`, footstep());
-    for (const k of ['concrete', 'metal', 'wood', 'flesh', 'sand', 'glass', 'rubber', 'plaster', 'water']) { add(`imp_${k}0`, impact(k)); add(`imp_${k}1`, impact(k)); }
+    for (const k of ['concrete', 'metal', 'wood', 'flesh', 'sand', 'glass', 'rubber', 'plaster', 'water', 'carpet']) for (let v = 0; v < 3; v++) add(`imp_${k}${v}`, impact(k));
     for (let i = 0; i < 3; i++) add(`rico${i}`, ricochet());
     add('hurt0', grunt(118, 0.2, [[650, 5, 1], [1100, 6, 0.6], [2400, 8, 0.2]], 0.5));
     add('hurt1', grunt(105, 0.24, [[560, 5, 1], [950, 6, 0.6], [2300, 8, 0.2]], 0.5));
@@ -632,10 +636,16 @@ export class AudioEngine {
     add('nvg', tone([[0, 2400, 0.05, 0.5], [0.05, 4800, 0.03, 0.45], [0, 900, 0.3, 0.03, 'triangle']], 0.6));
     add('thermal', tone([[0, 1250, 0.18, 0.06, 'square'], [0.1, 1650, 0.14, 0.06, 'square']], 0.25));
     let done = 0;
+    // real recordings (assets/audio, public domain) replace the synthesised versions they cover;
+    // if they can't be loaded (first visit offline) the synthesised set is still complete
+    jobs.push(this._loadRecorded(R));
     const total = jobs.length;
     jobs.forEach((j) => j.then(() => onProgress?.(++done / total)));
     await Promise.all(jobs);
     this.buffers = R;
+    // legacy names the game still asks for
+    for (const [alias, name] of [['explosion', 'explosion_0'], ['flashbang', 'flashbang_0'], ['rico0', 'rico_0'], ['rico1', 'rico_1'], ['rico2', 'rico_2']]) if (R[name]) R[alias] = R[name];
+    this.variants = {};
     this.ready = true;
   }
 
@@ -669,7 +679,47 @@ export class AudioEngine {
     return this.play(`${prefix}${(Math.random() * count) | 0}`, opts);
   }
 
+  async _loadRecorded(R) {
+    try {
+      const list = await (await fetch('assets/audio/sounds.json')).json();
+      const dec = new OfflineAudioContext(1, 1, 48000);
+      await Promise.all(Object.entries(list).map(async ([name, file]) => {
+        try { R[name] = await dec.decodeAudioData(await (await fetch(`assets/audio/${file}`)).arrayBuffer()); this.recorded = true; } catch { /* keep the synthesised one */ }
+      }));
+      // where recordings exist for a set of variants, don't mix synthesised extras in with them
+      const top = {};
+      for (const name of Object.keys(list)) { const m = /^(imp_[a-z]+)(\d+)$/.exec(name); if (m && R[name]) top[m[1]] = Math.max(top[m[1]] ?? -1, +m[2]); }
+      for (const [prefix, max] of Object.entries(top)) for (let i = max + 1; R[prefix + i]; i++) delete R[prefix + i];
+    } catch { /* offline and not cached yet */ }
+  }
+
+  /** How many numbered variants of a sound exist (prefix0, prefix1, ... / prefix_0, ...). */
+  count(prefix) {
+    if (this.variants[prefix] !== undefined) return this.variants[prefix];
+    let n = 0; while (this.buffers[`${prefix}${n}`]) n++;
+    return (this.variants[prefix] = n);
+  }
+  /** A random variant name, or null. */
+  pick(prefix) { const n = this.count(prefix); return n ? `${prefix}${(Math.random() * n) | 0}` : null; }
+
+  /**
+   * The right recording of a gunshot for where it is heard: the office floor's own room sound
+   * indoors, the distant report (mostly high end gone, long rolling tail) far away, else close.
+   */
+  gunshotName(sound, dist = 0) {
+    const cls = { m4: 'rifle', ak: 'rifle', dmr: 'rifle', lmg: 'rifle', pistol: 'pistol' }[sound];
+    if (cls && this.envKind === 'indoor') { const k = this.pick(`shotIn_${cls}_`); if (k) return k; }
+    if (cls && dist > 70) { const k = this.pick(`shotFar_${cls}_`); if (k) return k; }
+    return this.pick(`shot_${sound}_`) || `shot_${sound}_0`;
+  }
+
   setListener(x, y, z, yaw) { const l = this.listener; l.x = x; l.y = y; l.z = z; l.yaw = yaw; }
+
+  /** A gunshot heard from where it was fired: close, indoor or distant recording, then positioned. */
+  playGunshotAt(sound, x, y, z, opts = {}) {
+    const l = this.listener, dist = Math.hypot(x - l.x, y - l.y, z - l.z);
+    return this.playAt(this.gunshotName(sound, dist), x, y, z, { ...opts, rate: (opts.rate || 1) * (0.98 + Math.random() * 0.04) });
+  }
 
   /** Positional sound with distance, panning, air absorption, occlusion and sound travel time. */
   playAt(name, x, y, z, { vol = 1, ref = 3, max = 250, rate = 1, travel = false, occlude = true, wet = 0 } = {}) {
@@ -680,7 +730,8 @@ export class AudioEngine {
     let gain = vol * ref / (ref + Math.max(0, dist - ref) * 1.1);
     let lp = Math.max(900, 20000 * Math.exp(-dist / 70));
     // the reverberant field falls off far slower than the direct sound, and reaches round corners
-    let send = wet ? vol * wet * 10 / (10 + dist * 0.35) : 0;
+    // the room / terrain answers more as the direct sound fades with distance, but never swamps a close shot
+    let send = wet ? vol * wet * 0.22 * Math.min(1, 0.25 + dist / 80) : 0;
     if (occlude && this.occlusion && dist > 2 && this.occlusion(x, y, z)) { gain *= 0.5; lp *= 0.18; send *= 0.8; }
     if (gain < 0.004 && send < 0.01) return null;
     // listener faces -Z rotated by yaw; right vector = (cos yaw, -sin yaw)

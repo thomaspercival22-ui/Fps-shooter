@@ -602,7 +602,7 @@ export class Game {
   explode(pos, R, dmg, owner) {
     const W = this.level.world, p = this.player;
     this.effects.explosion(pos);
-    this.audio.playAt('explosion', pos.x, pos.y, pos.z, { vol: 1.7, ref: 12, travel: true, max: 900, occlude: false, wet: 0.7 });
+    this.audio.playAt(this.audio.pick('explosion_') || 'explosion', pos.x, pos.y, pos.z, { vol: 1.7, ref: 12, travel: true, max: 900, occlude: false, wet: 0.7 });
     this.enemies.onNoise(pos, 130, 'gunshot');
     // player
     const chest = new THREE.Vector3(p.pos.x, p.pos.y + p.eyeH * 0.7, p.pos.z);

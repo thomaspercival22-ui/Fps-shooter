@@ -214,7 +214,7 @@ export class WeaponSystem {
     const target = slot || (this.currentSlot === 'primary' ? 'secondary' : 'primary');
     if (target === this.currentSlot && !this.pendingSwitch) return;
     if (this.throwing) return;
-    this.reload = null;
+    this.reload = null; this.reloadQueued = false;
     this.cur.model.parts.loose && (this.cur.model.parts.loose.visible = false);
     this.pendingSwitch = target;
     this.state = 'holster';
@@ -223,6 +223,9 @@ export class WeaponSystem {
 
   requestReload() {
     const c = this.cur, d = c.def;
+    // asked while the bolt is cycling or the gun is still coming up: do it as soon as it's ready
+    if (this.state === 'bolt' || this.state === 'draw' || this.state === 'throw') { this.reloadQueued = true; return; }
+    this.reloadQueued = false;
     if (this.state !== 'idle') return;
     if (c.jammed) { this.state = 'clear'; this.stateT = 0; this._clearEv = new Set(); return; }
     if (c.reserve <= 0) return;
@@ -276,6 +279,7 @@ export class WeaponSystem {
       this.drawT = Math.min(1, this.stateT / d.drawTime);
       if (this.drawT >= 1) this.state = 'idle';
     }
+    if (this.reloadQueued && this.state === 'idle') this.requestReload();
 
     const sprinting = p.sprinting;
     if (sprinting && this.reload && !this.reload.shell) { /* allow reload while sprinting */ }
@@ -297,7 +301,8 @@ export class WeaponSystem {
           if (c.jammed) { if (this.triggerPressed) { g.audio.play('dry', { vol: 0.7 }); g.hud.malfunction(); } }
           else if (c.ammo > 0) this._fire();
           else {
-            if (this.triggerPressed) g.audio.play('dry', { vol: 0.6 });
+            // click on an empty chamber, then start reloading (one less button to find on a phone)
+            if (this.triggerPressed) { g.audio.play('dry', { vol: 0.6 }); if (c.reserve > 0) this.requestReload(); }
             if (c.reserve > 0) this.requestReload();
           }
         }
@@ -441,7 +446,9 @@ export class WeaponSystem {
     if (d.suppressed) c.suppHeat = Math.min(1.25, (c.suppHeat || 0) + 0.0125);
     this.gasLife = this.gasT = d.suppressed ? 0.13 : 0.1;
     this.gasSize = d.suppressed ? 0.1 + Math.min(1, c.suppHeat) * 0.04 : d.pellets > 1 ? 0.36 : 0.28;
-    g.audio.playVariant(`shot_${d.sound}_`, 3, { vol: d.suppressed ? 0.6 : d.sound === 'pistol' ? 0.8 : 0.95, rate: 0.97 + Math.random() * 0.06, send: d.suppressed ? 0.45 : 0.9 });
+    // recordings carry their own space; the reverb only adds a touch of the room / terrain
+    const A = g.audio, send = A.recorded ? (g.level.indoor ? 0.08 : 0.04) : (d.suppressed ? 0.15 : 0.3);
+    A.play(A.gunshotName(d.sound), { vol: d.suppressed ? 0.75 : d.sound === 'pistol' ? 0.85 : 0.95, rate: 0.985 + Math.random() * 0.03, send });
     g.emitNoise(p.eye, d.sound === 'pistol' ? 55 : d.suppressed ? 38 : 85, 'gunshot');
     g.hud.onFire();
     // actions

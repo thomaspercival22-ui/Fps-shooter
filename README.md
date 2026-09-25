@@ -40,7 +40,13 @@ The game is a static web app that installs itself as a Progressive Web App. It n
   - **The spotter** kneels beside you on his spotting scope. He gives you range, dial and wind hold when you lase ("594 metres. Dial 600, hold 0.7 mil left."), calls every shot ("Miss, 40 cm high, 1.1 m left. Splash 0.6 mil high, 1.8 mil left. Hold the dot on him." / "Hit. Target down."), and updates the wind.
   - **Splash dot:** after each call, the spotter marks the round's splash on your reticle. The dot shows where the round went relative to where your crosshair was when the shot broke: orange for a miss, green for a hit, red for a civilian. It includes the reading in mils. Put the dot on the target and fire to correct for the wind and range you just saw. The dot dims when you fire again and clears after 25 s. It disappears for good if the marksman kills your spotter.
   - **Counter-sniper:** there is a marksman on the HQ roof. Once you start shooting, every muzzle blast helps him find the hide. When he has it, his scope glints. If you take too long, his first round cracks past, his second kills your spotter, and then he walks his rounds onto you. Kill him first. Other hostiles run for cover or into buildings when rounds land near them. Civilian workers are around the compound, so make sure of your target.
-- **Gunshots that sound real:** each weapon's report is synthesised from what makes a real one. That means the muzzle blast (a pressure pulse that is longer for bigger cartridges), the roar of the propellant gas, the low thump, the bullet's supersonic crack, and the gun's own action cycling (the M4's bolt carrier and buffer spring, the Glock's slide, the M1014's action). The MK13 is a brutal braked boom, the M1014 a deep roar, and the G17 a sharp snap. A live convolution reverb puts the shot in its surroundings: a dense, ringing office floor, slap-back off the compound's buildings, or thunder rolling down the valley from the ridge. Distant shots arrive late and muffled.
+- **Real gunshots:** every gun plays real recordings of real firearms (public domain, from freesound.org), not synthesised sound.
+  - **Your guns:** the suppressed M4 is a suppressed shot's pop layered with the supersonic crack of a 5.56 round and the AR's bolt carrier cycling. The G17 is a Glock 19X and a 9 mm. The M1014 is a shotgun, pitched down towards 12-gauge. The MK13 is a 6.5×55 bolt rifle fired in a forest, with its long natural roll but not its echo.
+  - **Enemies:** AK-47 recordings for the riflemen and AR15 recordings for the marksman and heavy.
+  - **The place changes the sound:** on floor 47 the rifles and pistols are recordings made indoors, so the room is part of the shot. Beyond 70 m you hear an AR15 recorded from 50 yards away, with the high end gone and the report rolling off the terrain.
+  - **Reverb only adds a touch:** the recordings carry their own space, and the reverb has no separate echoes.
+  - **Bullet impacts by material:** metal (a car body, steel plate, a thin-metal ping), wood, dirt and sand, glass that breaks, flesh, office carpet and concrete, each with several variations. Ricochets and gun handling (magazine out and in, bolt release, pistol slide, dry fire) are recorded too. Grenades and flashbangs are real explosions recorded in an open field.
+  - **Offline fallback:** if the recordings haven't been downloaded yet, a synthesised set takes their place.
 - **Muzzle flashes:** unsuppressed guns now show a real fireball: a white-hot core with ragged, turbulent lobes, a flame plume with the intermediate flash, and a glow that lights up walls at night. The M1014 throws burning powder sparks, and the MK13's brake blasts two jets to the sides. Every unsuppressed shot leaves a puff of smoke.
 - **High-end graphics (Graphics → Ultra, the default on computers; phones start on High):**
   - **Photo-scanned world:** 4K ground scans with parallax occlusion mapping (pebbles and ruts have real depth), blended with rocky patches. Full-detail scans of concrete barriers, ammo crates, a tarped car, generator, fuel cans, gas bottles, cement bags, desert shrubs, quiver trees, boulders and pebbles. HESCO walls with bulging geotextile and welded mesh. Real corrugated containers with rust runs. Buildings with window frames, grilles, sills, rooftop water tanks, drainpipes and power cables.
@@ -122,6 +128,12 @@ After changing any game file, regenerate the offline cache list so installed cop
 npm run build-sw
 ```
 
+The recorded sounds in `assets/audio/` are built from public-domain freesound.org recordings (downloaded once into `.cache/sounds/`), sliced, pitched and layered as listed in the tool, and encoded to MP3:
+
+```bash
+npm run build-sounds   # node tools/build-sounds.mjs
+```
+
 The gloves, soldier bodies and sculpted gun parts are modelled with signed distance fields in `src/sdfmodels.js` and prebuilt into `src/meshdata.js`. After editing them run:
 
 ```bash
@@ -174,7 +186,7 @@ src/
   soldier.js   soldier model (enemies and your own body) and animation
   effects.js   particles, decals, brass, lights
   grenades.js  grenade physics
-  audio.js     synthesized sound engine
+  audio.js     sound engine: recorded clips (assets/audio), synthesised fallbacks, reverb, positional audio
   input.js     touch, gyro, keyboard, mouse
   hud.js       HUD, minimap, scope, flash effects
   textures.js  procedural textures
@@ -187,5 +199,6 @@ vendor/meshopt/  meshoptimizer decoder for the compressed gun meshes
 
 - 3D engine: [three.js](https://threejs.org) (MIT license, see `vendor/three/LICENSE`).
 - Mesh compression: [meshoptimizer](https://github.com/zeux/meshoptimizer) decoder (MIT license, see `vendor/meshopt/LICENSE`); the simplifier and encoder are used by the build tools.
+- Sounds: real recordings released into the public domain (CC0) on [freesound.org](https://freesound.org); the recordists are listed in [assets/audio/CREDITS.md](assets/audio/CREDITS.md).
 - Textures, props (barrels, tyres, ammo box, medical box, covered car, generator, jerry cans, propane tanks, AC units, utility boxes, trash bags, security lights, concrete barriers, military crates, cement bags, roller shutters, shrubs, branches, stones, rocks, quiver trees) and the sky: [Poly Haven](https://polyhaven.com), released as CC0 (public domain).
 - Weapons, soldiers, civilians, the office tower and the city, sandbags, HESCO barriers, all effects and all audio are generated in code.
