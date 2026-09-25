@@ -258,6 +258,44 @@ export function impulse(kind) {
   return toBuffer(chans);
 }
 
+/**
+ * A man talking (or shouting) in the next room: a glottal buzz through vowel
+ * formants, broken into syllables with consonant hiss and a falling pitch.
+ * No words, just the sound of a voice, so it reads as speech through walls.
+ */
+function voice(seed, shout = false) {
+  const R = rng(seed), dur = shout ? 1.0 : 1.9, n = Math.ceil(dur * SR), x = new Float32Array(n);
+  const VOWELS = [[730, 1090, 2440], [270, 2290, 3010], [530, 1840, 2480], [570, 840, 2410], [300, 870, 2240], [660, 1720, 2410], [490, 1350, 1690]];
+  const sylls = [];
+  for (let t = 0.04 + R() * 0.05; t < dur - 0.22;) {
+    const len = (shout ? 0.13 : 0.09) + R() * (shout ? 0.12 : 0.11);
+    sylls.push({ t, len, v: VOWELS[(R() * VOWELS.length) | 0], cons: R() < 0.55, stress: R() < 0.3 });
+    t += len + (R() < 0.2 ? 0.1 + R() * 0.16 : 0.015 + R() * 0.04);
+  }
+  const f0 = (shout ? 175 : 105) + R() * 30;
+  const F = [new BQ('bp', 500, 5), new BQ('bp', 1500, 7), new BQ('bp', 2500, 9)], hiss = new BQ('hp', 3500, 0.7);
+  let ph = 0, si = 0;
+  for (let i = 0; i < n; i++) {
+    const t = i / SR;
+    while (si < sylls.length - 1 && t > sylls[si].t + sylls[si].len) si++;
+    const sy = sylls[si], u = (t - sy.t) / sy.len;
+    if ((i & 31) === 0) { const k = Math.min(1, Math.max(0, u)); F[0].set(sy.v[0] * (0.9 + 0.2 * k)); F[1].set(sy.v[1] * (1.05 - 0.1 * k)); F[2].set(sy.v[2]); }
+    const env = u < 0 || u > 1 ? 0 : Math.min(1, u / 0.12) * Math.min(1, (1 - u) / 0.25) * (sy.stress ? 1.25 : 1);
+    const pitch = f0 * (1 - 0.12 * t / dur) * (1 + (sy.stress ? 0.12 : 0) + 0.03 * Math.sin(t * 31));
+    ph += pitch / SR; if (ph >= 1) ph -= 1;
+    const src = (1 - 2 * ph) * 0.7 + (R() * 2 - 1) * (shout ? 0.18 : 0.08);
+    let y = (F[0].run(src) * 1.0 + F[1].run(src) * 0.55 + F[2].run(src) * 0.22) * env;
+    if (sy.cons && u >= 0 && u < 0.18) y += hiss.run(R() * 2 - 1) * 0.35 * (1 - u / 0.18);
+    x[i] = y;
+  }
+  const lp = new BQ('lp', shout ? 3800 : 2600, 0.7);
+  let peak = 0;
+  for (let i = 0; i < n; i++) { x[i] = lp.run(x[i]); peak = Math.max(peak, Math.abs(x[i])); }
+  const k = (shout ? 0.9 : 0.6) / (peak || 1);
+  for (let i = 0; i < n; i++) x[i] = Math.tanh(x[i] * k * (shout ? 1.6 : 1.1));
+  return Promise.resolve(toBuffer([x]));
+}
+
 function explosion(flash = false) {
   const dur = flash ? 2.2 : 3.6;
   const s = new Synth(dur);
@@ -554,6 +592,7 @@ export class AudioEngine {
     const jobs = [];
     const add = (name, p) => jobs.push(p.then((b) => { R[name] = b; }));
     for (const [k, g] of Object.entries(GUNS)) for (let v = 0; v < 3; v++) add(`shot_${k}_${v}`, gunshot(g, k.length * 1000 + v * 97 + 11));
+    for (let v = 0; v < 3; v++) { add(`murmur${v}`, voice(40 + v * 13)); add(`shout${v}`, voice(90 + v * 17, true)); }
     add('explosion', explosion(false));
     add('flashbang', explosion(true));
     add('dry', clicks([[0, 2600, 5, 0.6, 0.02], [0.015, 1700, 6, 0.3, 0.02]], 0.1));

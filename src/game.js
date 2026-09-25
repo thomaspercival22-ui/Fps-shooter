@@ -573,16 +573,26 @@ export class Game {
     b.hp -= dmg;
     if (b.hp <= 0) {
       b.alive = false;
-      setTimeout(() => {
-        const m = new THREE.Matrix4().makeScale(0, 0, 0);
-        for (const mesh of b.meshes) { mesh.setMatrixAt(b.index, m); mesh.instanceMatrix.needsUpdate = true; }
-        b.box.y0 = -100; b.box.y1 = -100;
-        this.explode(new THREE.Vector3(b.x, 0.5, b.z), 8, 190, 'barrel');
-      }, 120 + Math.random() * 120);
+      // a short fuse (in game time, so a pause holds it) before the tank lets go
+      (this.barrelFuses ||= []).push({ b, t: this.time + 0.12 + Math.random() * 0.12 });
+    }
+  }
+  _updateBarrels() {
+    const F = this.barrelFuses;
+    if (!F || !F.length) return;
+    for (let i = F.length - 1; i >= 0; i--) {
+      const { b, t } = F[i];
+      if (this.time < t) continue;
+      F.splice(i, 1);
+      const m = new THREE.Matrix4().makeScale(0, 0, 0);
+      for (const mesh of b.meshes) { mesh.setMatrixAt(b.index, m); mesh.instanceMatrix.needsUpdate = true; }
+      b.box.y0 = -100; b.box.y1 = -100;
+      this.explode(new THREE.Vector3(b.x, 0.5, b.z), 8, 190, 'barrel');
     }
   }
 
   _resetBarrels() {
+    this.barrelFuses = [];
     this.level.explosiveBarrels.forEach((b, i) => {
       b.alive = true; b.hp = 30; b.box.y0 = 0; b.box.y1 = 0.93;
       for (const mesh of b.meshes) { mesh.setMatrixAt(b.index, this.barrelMatrices[i]); mesh.instanceMatrix.needsUpdate = true; }
@@ -782,6 +792,7 @@ export class Game {
     this.ballistics.update(dt);
     this.effects.update(dt);
     this._updatePickups(dt);
+    this._updateBarrels();
     this.civilians.update(dt);
     if (this.mission) this.mission.update(dt);
     else this._updateWaves(dt);

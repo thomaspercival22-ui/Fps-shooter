@@ -59,12 +59,27 @@ export class TowerMission extends Mission {
   start() {
     const g = this.game, sc = g.level.scenario;
     g.enemies.noIntel = true;
+    // nobody expects an assault 47 floors up: they chat, notice slowly, and a shout only carries so far
+    g.enemies.relaxed = true;
+    g.enemies.shoutRange = 16;
+    g.enemies.overhear = (e, text, kind) => this._overhear(e, text, kind);
     this.hostages = sc.hostages.map((h) => g.civilians.spawn({ ...h, hostage: true }));
     this.civs = sc.civilians.map((c) => g.civilians.spawn(c));
+    const centre = (list) => list.reduce((a, q) => [a[0] + q.x / list.length, a[1] + q.z / list.length], [0, 0]);
     this.hostiles = sc.hostiles.map((h) => {
-      const e = g.enemies.spawnPlaced(h.type, h.x, h.z, { yaw: h.yaw, kit: h.type === 'heavy' ? 'heavy' : 'black', patrol: h.patrol, hold: !!h.exec });
+      let yaw = h.yaw;
+      if (h.group) { const [cx, cz] = centre(sc.hostiles.filter((o) => o.group === h.group)); yaw = Math.atan2(cx - h.x, cz - h.z); }
+      else if (yaw === 'hostages') { const [cx, cz] = centre(h.exec.map((i) => sc.hostages[i])); yaw = Math.atan2(cx - h.x, cz - h.z); }
+      const e = g.enemies.spawnPlaced(h.type, h.x, h.z, { yaw, kit: h.type === 'heavy' ? 'heavy' : 'black', patrol: h.patrol, hold: !!h.exec });
       if (h.exec) e.exec = { list: h.exec.map((i) => this.hostages[i]), t: null };
       return e;
+    });
+    // conversation groups
+    this.convos = Object.entries(sc.talk || {}).map(([name, lines]) => {
+      const members = this.hostiles.filter((e, i) => sc.hostiles[i].group === name);
+      const c = { name, members, lines, li: (Math.random() * lines.length) | 0, step: 0, t: 1.5 + Math.random() * 4 };
+      for (const e of members) e.chat = c;
+      return c;
     });
     this.exit = sc.exit;
     this.st = { rescued: 0, evacuated: 0, hostagesLost: 0, byPlayer: 0, civHurt: 0, civKilled: 0, executed: 0 };
@@ -109,6 +124,7 @@ export class TowerMission extends Mission {
       X.t -= dt;
       if (X.t <= 0) { this._execute(e, targets[0]); X.t = 1.3; }
     }
+    this._talk(dt);
     if (danger && !this.dangerWas) g.audio.play('ui', { vol: 0.8, rate: 0.7 });
     this.dangerWas = danger;
     // cutting hostages loose: the room has to be clear
@@ -139,6 +155,34 @@ export class TowerMission extends Mission {
     }
     g.hud.setObjective('FLOOR 47', this._line(), danger ? 'HOSTAGE IN DANGER' : '');
     this.tick(dt);
+  }
+
+  /** Groups that don't know the assault is on keep talking; each exchange is a line and a reply. */
+  _talk(dt) {
+    for (const c of this.convos) {
+      const m = c.members.filter((e) => e.alive);
+      if (m.length < 2 || m.some((e) => e.alert >= 2 || e.suspicious)) { c.speaker = null; continue; }
+      c.t -= dt;
+      if (c.t > 0) continue;
+      const pair = c.lines[c.li % c.lines.length];
+      const e = m[c.step % m.length], text = pair[c.step];
+      c.speaker = e;
+      e.talkT = 1.2 + text.length * 0.05;
+      this._overhear(e, text, 'talk');
+      c.step++;
+      if (c.step >= pair.length) { c.step = 0; c.li++; c.t = e.talkT + 6 + Math.random() * 7; }
+      else c.t = e.talkT + 0.4 + Math.random() * 0.6;
+    }
+  }
+  /** A hostile speaks: a muffled voice from where he stands, and the words if the player is in earshot. */
+  _overhear(e, text, kind = 'talk') {
+    const g = this.game, p = g.player, W = g.level.world;
+    const shout = kind === 'shout';
+    g.audio.playAt(`${shout ? 'shout' : 'murmur'}${(Math.random() * 3) | 0}`, e.pos.x, e.pos.y + 1.6, e.pos.z, { vol: shout ? 0.9 : 0.5, ref: 2, max: shout ? 40 : 22 });
+    const d = Math.hypot(p.pos.x - e.pos.x, p.pos.z - e.pos.z);
+    const clear = W.los(e.pos.x, e.pos.y + 1.6, e.pos.z, p.eye.x, p.eye.y, p.eye.z);
+    const range = (shout ? 30 : 13) * (clear ? 1 : 0.45);
+    if (p.alive && d < range) g.hud.overheard(text, shout);
   }
 
   /** Something tipped the hostage taker off: he kills a hostage within a heartbeat. */

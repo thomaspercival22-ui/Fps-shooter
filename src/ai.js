@@ -9,6 +9,8 @@ import { RAY_ALL, RAY_SIGHT, pointSegDist, raySphere, rayCapsule } from './physi
 
 const LINES = {
   contact: ['Contact front!', 'Enemy spotted!', 'Contact!', 'Eyes on target!'],
+  alarm: ['Contact! They are on the floor!', 'Shooter! Here, here!', 'We have company!', 'Wake up, they are inside!'],
+  suspicious: ['Hey... you hear that?', 'Wait. Something moved.', 'Who is there?', 'Did you see that?'],
   reloading: ['Reloading!', 'Changing mags, cover me!', 'Reloading, cover!'],
   flank: ['Flanking!', 'Moving to flank!', "I'll go around!"],
   frag: ['Frag out!', 'Grenade out!'],
@@ -121,9 +123,11 @@ export class Enemy {
       const face = this.yaw + this.yawOff;
       const fx = Math.sin(face), fz = Math.cos(face);
       const cosA = (dx * fx + dz * fz) / Math.max(0.01, Math.hypot(dx, dz));
-      const half = this.alert >= 2 ? 0.2 : 0.5; // cos of half-FOV (~78° / 60°)
+      // cos of half-FOV (~78° alert / 60° idle); someone deep in conversation only takes in what is in front of him
+      const chatting = this.mgr.relaxed && this.alert < 2 && this.chat && !this.suspicious;
+      const half = this.alert >= 2 ? 0.2 : chatting ? 0.6 : 0.5;
       inFov = cosA > half;
-      const near = dist < 4.5 && !p.crouched;
+      const near = dist < (chatting ? 2.5 : 4.5) && !p.crouched;
       if (inFov || near) {
         visible = W.los(eye.x, eye.y, eye.z, p.eye.x, p.eye.y - 0.1, p.eye.z)
           || W.los(eye.x, eye.y, eye.z, p.pos.x, p.pos.y + p.eyeH * 0.6, p.pos.z)
@@ -141,7 +145,15 @@ export class Enemy {
       if (g.night && !firing) rate *= dist < 10 ? 0.75 : dist < 30 ? 0.45 : 0.25;
       rate /= g.difficulty.react;
       if (M?.sightMul) rate *= M.sightMul(dist, firing);
+      // relaxed guards (tower): it takes a moment to register that the shape in the doorway is a threat
+      if (this.mgr.relaxed && this.alert < 2 && !firing) {
+        rate *= this.chat && !this.suspicious ? 0.4 : 0.6;
+        // turning to look takes a moment before it becomes "that's a gunman"
+        if (this.suspicious && g.time - this.suspectSince < 0.9) rate *= 0.25;
+      }
       this.awareness = Math.min(1.5, this.awareness + rate * dt);
+      // first a double take: he stops talking and turns to look, which gives the player a moment
+      if (this.mgr.relaxed && this.alert < 2 && !this.suspicious && this.awareness > 0.45) this._doubleTake(p.pos);
     } else if (this.alert < 2) {
       this.awareness = Math.max(0, this.awareness - dt * 0.12);
     }
@@ -156,6 +168,13 @@ export class Enemy {
       this.seeTime = 0;
       if (wasSeeing && this.alert >= 2 && Math.random() < 0.25) this.say('lost');
     }
+  }
+
+  _doubleTake(at) {
+    this.suspicious = true; this.suspectSince = this.game.time; this.suspectT = 0;
+    this.suspectAt = at.clone();
+    this.awareness = Math.min(this.awareness, 0.5);
+    this.say('suspicious');
   }
 
   _perceiveDrone() {
@@ -178,10 +197,15 @@ export class Enemy {
   _onSpot() {
     const g = this.game;
     const surprise = this.alert < 2;
-    const react = rand(0.3, 0.55) * g.difficulty.react * (surprise ? 1.7 : 1) * (this.typeKey === 'marksman' ? 1.3 : 1);
+    let react = rand(0.3, 0.55) * g.difficulty.react * (surprise ? 1.7 : 1) * (this.typeKey === 'marksman' ? 1.3 : 1);
+    if (surprise && this.mgr.relaxed) {
+      // caught off guard: weapon comes up from low ready, and the first shots are hurried
+      react = rand(0.85, 1.4) * g.difficulty.react;
+      this.shakenUntil = g.time + react + 1.3;
+      this.say('alarm');
+    } else if (g.time - this.mgr.squadLastSeen > 6) this.say('contact');
     this.reactUntil = Math.max(this.reactUntil, g.time + react);
     if (surprise) { this.alert = 2; this.replan(); }
-    if (g.time - this.mgr.squadLastSeen > 6) this.say('contact');
   }
 
   hear(pos, kind, dist) {
@@ -190,10 +214,18 @@ export class Enemy {
     if (kind === 'gunshot') {
       const err = dist * 0.1;
       if (!this.seeing) this.lastKnown.set(pos.x + rand(-err, err), 0, pos.z + rand(-err, err));
-      if (this.alert < 2) { this.alert = 2; this.awareness = Math.max(this.awareness, 0.75); this.replan(); }
+      if (this.alert < 2) {
+        this.alert = 2; this.awareness = Math.max(this.awareness, 0.75); this.replan();
+        // shots out of nowhere: a relaxed guard has to find his bearings and bring his weapon up
+        if (this.mgr.relaxed) { this.reactUntil = Math.max(this.reactUntil, g.time + rand(0.8, 1.4) * g.difficulty.react); this.shakenUntil = g.time + 2.2; }
+      }
       this.lastHeard = g.time;
     } else if (kind === 'step') {
-      if (this.alert < 2) {
+      if (this.alert < 2 && this.mgr.relaxed) {
+        if (!this.suspicious) this._doubleTake(pos);
+        else this.suspectAt.copy(pos);
+        this.awareness = Math.max(this.awareness, 0.5);
+      } else if (this.alert < 2) {
         this.lastKnown.set(pos.x + rand(-1.5, 1.5), 0, pos.z + rand(-1.5, 1.5));
         this.awareness = Math.max(this.awareness, 0.6);
         if (this.order !== 'investigate') { this.order = 'investigate'; this.path = null; this.say('heard'); }
@@ -525,6 +557,12 @@ export class Enemy {
     if (this.order === 'push' || (this.order === 'cover' && this.coverPhase === 'move')) P.aim = this.seeing ? 1 : 0.4;
     P.pitch = this.aimPitch;
     P.yawOff = this.yawOff;
+    if (this.chat && this.alert < 2 && !this.suspicious) {
+      // at ease: weapon hanging low; the one talking nods and turns his head as he speaks
+      P.aim = 0;
+      this.talkT = Math.max(0, (this.talkT || 0) - dt);
+      if (this.talkT > 0) { P.pitch = Math.sin(g.time * 7.3 + this.id) * 0.05 - 0.04; P.yawOff = Math.sin(g.time * 2.1 + this.id) * 0.18; }
+    }
     P.flashed += ((this.flashed > 0 ? 1 : 0) - P.flashed) * Math.min(1, dt * 8);
     P.reload = this.reloading > 0 ? 1 - this.reloading / this.type.reload : -1;
     P.throw = this.throwing ? Math.min(1, this.throwing.t / 0.9) : -1;
@@ -603,6 +641,13 @@ export class Enemy {
       case 'shelter': wantSpeed = this.type.speed; if (this.arrived) { this.crouch = true; this._lookAround(dt * 0.3); } break;
       case 'guard': case 'hold': {
         const P = this.post;
+        if (this.suspicious && this.alert < 2) {
+          // double take: stop, turn and stare at where something moved; shrug it off if nothing more comes of it
+          this.suspectT = (this.suspectT || 0) + dt;
+          faceX = this.suspectAt.x - this.pos.x; faceZ = this.suspectAt.z - this.pos.z;
+          if (this.suspectT > 6 && this.awareness < 0.3) { this.suspicious = false; this.suspectT = 0; }
+          break;
+        }
         if (this.order === 'guard' && P.patrol) {
           if (!this.path && !this.arrived) { const pt = P.patrol[P.pi]; this.navigate(pt[0], pt[1]); }
           wantSpeed = this.type.walk * 0.85;
@@ -615,9 +660,13 @@ export class Enemy {
           const d = Math.hypot(P.x - this.pos.x, P.z - this.pos.z);
           if (d > 0.6 && !this.path) this.navigate(P.x, P.z);
           wantSpeed = d > 0.6 ? this.type.walk * 1.4 : 0;
-          if (d <= 0.6 && this.order === 'guard') {
-            // bored sentry: looks around his arc
-            const a = P.yaw + Math.sin(g.time * 0.23 + this.id * 1.7) * 0.6;
+          if (d <= 0.6 && this.order === 'guard' && this.chat && this.chat.speaker && this.chat.speaker !== this && this.chat.speaker.alive) {
+            // in a conversation: look at whoever is talking
+            const sp = this.chat.speaker.pos;
+            faceX = sp.x - this.pos.x; faceZ = sp.z - this.pos.z;
+          } else if (d <= 0.6 && this.order === 'guard') {
+            // bored sentry: looks around his arc (someone chatting mostly faces the group)
+            const a = P.yaw + Math.sin(g.time * 0.23 + this.id * 1.7) * (this.chat ? 0.25 : 0.6);
             faceX = Math.sin(a); faceZ = Math.cos(a);
           }
         }
@@ -814,6 +863,7 @@ export class Enemy {
     let err = T.spread * D.spread * (1 + dist / 40) * (1 + p.horizSpeed / 6) * moving * (1 + this.suppression * 0.6) * settle;
     if (suppress) err *= 2.2;
     if (this.flashed > 0) err *= 6;
+    if (g.time < (this.shakenUntil || 0)) err *= 1.8;
     if (p.crouched && this.seeing) err *= 1.1;
     err *= 1 + Math.min(this.shotCount % 12, 8) * 0.04;
     if (g.mission?.enemyErrMul) err *= g.mission.enemyErrMul(dist);
@@ -903,6 +953,7 @@ export class EnemyManager {
     this.list = [];
     this.farThreat = null;
     this.noIntel = false;
+    this.relaxed = false; this.shoutRange = 0; this.overhear = null;
   }
 
   shareIntel(src) {
@@ -910,10 +961,16 @@ export class EnemyManager {
     this.squadLastSeen = g.time;
     for (const e of this.list) {
       if (e === src || !e.alive || e.seeing) continue;
-      if (e.pos.distanceTo(src.pos) > 45) continue; // radio range
+      const d = e.pos.distanceTo(src.pos);
+      if (d > (this.shoutRange || 45)) continue; // radio range (or, without radios, how far a shout carries)
+      if (this.shoutRange && d > 7 && !g.level.world.los(e.pos.x, 1.6, e.pos.z, src.pos.x, 1.6, src.pos.z)) continue;
       e.lastKnown.copy(src.lastKnown);
       e.lastSeen = Math.max(e.lastSeen, g.time - 1.5);
-      if (e.alert < 2) { e.alert = 2; e.awareness = Math.max(e.awareness, 0.8); e.replan(); }
+      if (e.alert < 2) {
+        e.alert = 2; e.awareness = Math.max(e.awareness, 0.8); e.replan();
+        // woken by a shout: the weapon still has to come up from low ready
+        if (this.relaxed) { e.reactUntil = Math.max(e.reactUntil, g.time + rand(0.7, 1.2) * g.difficulty.react); e.shakenUntil = g.time + 2; }
+      }
     }
   }
 
@@ -1007,9 +1064,11 @@ export class EnemyManager {
     const d = e.pos.distanceTo(g.player.pos);
     if (d > 60) return;
     this.lineTimes[key] = now; this.lineTimes._any = now;
-    // enemy chatter stays silent and off-screen; the timing still paces the AI callouts
-    if (!g.voices.enabled) return;
     const line = pick(LINES[key]);
+    // on the tower floor you can hear them (muffled voice + subtitle within earshot)
+    if (this.overhear) { this.overhear(e, line, key === 'suspicious' || key === 'heard' || key === 'lost' ? 'talk' : 'shout'); return; }
+    // elsewhere enemy chatter stays silent and off-screen; the timing still paces the AI callouts
+    if (!g.voices.enabled) return;
     g.hud.radio(e.type.name, line);
     if (d < 45) g.voices.say(line, e.voicePitch, 1.15, Math.max(0.15, 0.9 - d / 60));
   }

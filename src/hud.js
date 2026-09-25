@@ -132,8 +132,23 @@ export class HUD {
     el.className = 'radio-line';
     el.innerHTML = `<i>${name}:</i>`;
     el.appendChild(document.createTextNode(text));
+    const ms = Math.max(3300, text.length * 65);
+    el.style.animationDuration = `${ms / 1000 - 0.1}s`;
     this.el.radio.appendChild(el);
-    setTimeout(() => el.remove(), Math.max(3300, text.length * 65));
+    setTimeout(() => el.remove(), ms);
+    while (this.el.radio.children.length > 4) this.el.radio.firstChild.remove();
+  }
+
+  /** Something a hostile said within earshot. */
+  overheard(text, shout = false) {
+    const el = document.createElement('div');
+    el.className = 'radio-line overheard' + (shout ? ' shout' : '');
+    el.innerHTML = `<i>${shout ? 'HOSTILE' : 'OVERHEARD'}</i>`;
+    el.appendChild(document.createTextNode(shout ? text : `“${text}”`));
+    const ms = Math.max(3300, text.length * 70);
+    el.style.animationDuration = `${ms / 1000 - 0.1}s`;
+    this.el.radio.appendChild(el);
+    setTimeout(() => el.remove(), ms);
     while (this.el.radio.children.length > 4) this.el.radio.firstChild.remove();
   }
 

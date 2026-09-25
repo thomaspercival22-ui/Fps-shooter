@@ -89,6 +89,10 @@ button { font-family: inherit; }
 #radio { position: absolute; left: calc(12px + var(--sal)); top: calc(146px + var(--sat)); display: flex; flex-direction: column; gap: 3px; max-width: 40vw; }
 .radio-line { font: 600 12px var(--font); color: #f0e2c0; text-shadow: 0 1px 2px #000; animation: kf 3.2s forwards; }
 .radio-line i { color: #ff6b5b; font-style: normal; margin-right: 5px; }
+.radio-line.overheard { color: #d8d2c2; font-style: italic; font-weight: 500; }
+.radio-line.overheard i { color: #b9a98a; font-size: 10px; letter-spacing: .12em; }
+.radio-line.shout { color: #ffd0c4; font-style: normal; font-weight: 800; }
+.radio-line.shout i { color: #ff6b5b; }
 
 #banner { position: absolute; top: 22%; left: 50%; transform: translateX(-50%); text-align: center; text-shadow: 0 2px 6px #000; }
 #banner-title { font: 900 34px var(--font); letter-spacing: .12em; color: var(--accent-2); }

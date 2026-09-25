@@ -514,6 +514,27 @@ function towerScenario() {
   const E = Math.PI / 2, W = -Math.PI / 2, S = 0, N = Math.PI;
   return {
     exit: { x: -7.1, z: 4.6 },
+    // what the groups talk about while nobody knows the assault is coming (overheard within earshot)
+    talk: {
+      west: [
+        ['How long do we sit up here?', 'Until the transfer clears. Relax.'],
+        ['You checked the stairwells?', 'Both doors. Nobody is climbing forty-seven floors.'],
+        ['The CEO keeps asking for water.', 'Then give him water. We need him talking.'],
+        ['I heard a helicopter.', 'News crews. They circle, they film, they leave.'],
+      ],
+      lifts: [
+        ['Lifts are locked off?', 'Cut the power myself. Stairs only.'],
+        ['Any word from the lobby team?', 'Radio went quiet ten minutes ago.'],
+        ['That is not good.', 'Probably the building. Concrete eats the signal.'],
+        ['When this is done I am going somewhere warm.', 'Sure. Somewhere without windows.'],
+      ],
+      south: [
+        ['These desks still have coffee on them.', 'They left in a hurry. Everyone does.'],
+        ['What is on the servers anyway?', 'Not our problem. We hold the floor.'],
+        ['You think they will send a team?', 'If they do, we will hear them coming.'],
+        ['My feet are killing me.', 'Stop pacing then.'],
+      ],
+    },
     hostages: [
       { x: -11.0, z: -16.3, yaw: N, hood: true, look: 4 },
       { x: -8.2, z: -16.4, yaw: N, hood: true, look: 1 },
@@ -531,23 +552,25 @@ function towerScenario() {
       { x: -22.4, z: 7.9, yaw: E, pose: 'cower', look: 0 },
       { x: 21.8, z: 5.6, yaw: W, pose: 'stand', look: 2 },
     ],
+    // group: hostiles standing together talking (they face each other, weapons lowered, and are slow to
+    // notice anything); yaw 'hostages': a hostage taker watching the people he is holding
     hostiles: [
-      { type: 'rifleman', x: 5.2, z: -0.8, yaw: E },
-      { type: 'assaulter', x: 10.6, z: 1.6, yaw: W },
+      { type: 'rifleman', x: 10.6, z: -0.9, group: 'lifts' },
+      { type: 'assaulter', x: 10.6, z: 1.5, group: 'lifts' },
       { type: 'rifleman', x: 12.0, z: -6.5, yaw: S, patrol: [[12.0, -6.5], [11.5, 7.0], [4.0, 7.2]] },
       { type: 'rifleman', x: 20.8, z: -4.8, yaw: W },
-      { type: 'rifleman', x: -9.6, z: -15.2, yaw: S, exec: [0, 1] },
-      { type: 'assaulter', x: -5.6, z: -12.0, yaw: W },
-      { type: 'rifleman', x: -19.4, z: -14.2, yaw: S, exec: [2] },
-      { type: 'rifleman', x: -19.8, z: -7.6, yaw: E },
+      { type: 'rifleman', x: -9.6, z: -15.2, yaw: 'hostages', exec: [0, 1] },
+      { type: 'assaulter', x: -5.6, z: -12.0, yaw: N },
+      { type: 'rifleman', x: -19.4, z: -14.2, yaw: 'hostages', exec: [2] },
+      { type: 'rifleman', x: -20.0, z: -3.4, group: 'west' },
       { type: 'rifleman', x: 6.0, z: -12.3, yaw: E, patrol: [[6.0, -12.3], [21.5, -12.3], [21.5, -8.6], [6.0, -8.6]] },
       { type: 'rifleman', x: 15.4, z: -15.8, yaw: N },
-      { type: 'heavy', x: -19.8, z: -1.6, yaw: E },
+      { type: 'heavy', x: -20.0, z: -0.9, group: 'west' },
       { type: 'rifleman', x: -17.6, z: 5.0, yaw: E, patrol: [[-17.6, 5.0], [-10.5, 8.3], [3.0, 8.3], [-10.5, 8.3]] },
-      { type: 'rifleman', x: -8.2, z: 12.9, yaw: N },
+      { type: 'rifleman', x: -4.6, z: 13.4, group: 'south' },
       { type: 'assaulter', x: 8.6, z: 15.4, yaw: N },
-      { type: 'rifleman', x: 18.6, z: 16.6, yaw: N, exec: [3] },
-      { type: 'rifleman', x: 0.2, z: 16.0, yaw: W },
+      { type: 'rifleman', x: 18.6, z: 16.6, yaw: 'hostages', exec: [3] },
+      { type: 'rifleman', x: -2.4, z: 13.4, group: 'south' },
     ],
   };
 }

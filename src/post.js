@@ -144,11 +144,64 @@ void main(){
   gl_FragColor = vec4( sum / ws, z, 0.0, 1.0 );
 }`;
 
+// ---------- screen-space global illumination (one diffuse bounce) ----------
+// Quarter resolution. Every lit surface within ~2 m that faces this point
+// sends some of its light back: sunlit sand warms the shaded side of a wall,
+// the carpet tints the bottom of the office walls, a lit floor lifts the
+// ceiling. Colour from the (pre-AO) half-res scene copy, cosine-weighted and
+// distance-attenuated; RGB = bounce light, A = linear depth for the blur.
+const GI = `
+uniform sampler2D tDepth, tColor; uniform mat4 projInv; uniform vec2 res, depthRes; uniform float radius, projScale, far;
+varying vec2 vUv;
+#define NS 12
+vec3 vpos( vec2 uv ) { float d = texture2D( tDepth, uv ).r; vec4 p = projInv * vec4( uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0 ); return p.xyz / p.w; }
+void main(){
+  float d = texture2D( tDepth, vUv ).r;
+  if ( d >= 0.99999 ) { gl_FragColor = vec4( 0.0, 0.0, 0.0, 60000.0 ); return; }
+  vec3 C = vpos( vUv ); float z = -C.z;
+  if ( z > far ) { gl_FragColor = vec4( 0.0, 0.0, 0.0, z ); return; }
+  vec2 px = 1.0 / depthRes;
+  vec3 R = vpos( vUv + vec2( px.x, 0.0 ) ), L = vpos( vUv - vec2( px.x, 0.0 ) );
+  vec3 U = vpos( vUv + vec2( 0.0, px.y ) ), D = vpos( vUv - vec2( 0.0, px.y ) );
+  vec3 N = normalize( cross( abs( R.z - C.z ) < abs( C.z - L.z ) ? R - C : C - L, abs( U.z - C.z ) < abs( C.z - D.z ) ? U - C : C - D ) );
+  float ssR = min( projScale * radius / z, 0.35 * res.y );
+  if ( ssR < 2.0 ) { gl_FragColor = vec4( 0.0, 0.0, 0.0, z ); return; }
+  float ang = fract( 52.9829189 * fract( dot( gl_FragCoord.xy, vec2( 0.06711056, 0.00583715 ) ) ) ) * 6.2831853;
+  vec3 acc = vec3( 0.0 ); float r2 = radius * radius;
+  for ( int i = 0; i < NS; i ++ ) {
+    float a = ( float( i ) + 0.5 ) / float( NS );
+    float th = float( i ) * 2.3999632 + ang;
+    vec2 suv = vUv + vec2( cos( th ), sin( th ) ) * sqrt( a ) * ssR / res;
+    if ( suv.x < 0.0 || suv.x > 1.0 || suv.y < 0.0 || suv.y > 1.0 ) continue;
+    vec3 v = vpos( suv ) - C;
+    float vv = dot( v, v );
+    float cosR = max( dot( N, v ) * inversesqrt( vv + 1e-4 ), 0.0 );
+    vec3 Lq = min( texture2D( tColor, suv ).rgb, vec3( 6.0 ) );   // no fireflies from glints and flashes
+    acc += Lq * cosR / ( 1.0 + vv / r2 ) * step( vv, r2 * 9.0 );
+  }
+  gl_FragColor = vec4( acc / float( NS ), z );
+}`;
+const GI_BLUR = `
+uniform sampler2D tSrc; uniform vec2 dir; varying vec2 vUv;
+void main(){
+  vec4 c = texture2D( tSrc, vUv ); float z = c.a;
+  if ( z > 50000.0 ) { gl_FragColor = c; return; }
+  vec3 sum = c.rgb * 0.3; float ws = 0.3;
+  for ( int i = 1; i <= 3; i ++ ) {
+    for ( int s = -1; s <= 1; s += 2 ) {
+      vec4 t = texture2D( tSrc, vUv + dir * float( i * s ) * 1.5 );
+      float w = ( 0.4 - float( i ) * 0.1 ) * max( 0.0, 1.0 - abs( t.a - z ) / ( z * 0.05 + 0.05 ) );
+      sum += t.rgb * w; ws += w;
+    }
+  }
+  gl_FragColor = vec4( sum / ws, z );
+}`;
+
 // Applies AO and the atmosphere to the world before transparent effects and
 // the weapon are drawn. Blending is src + dst * srcAlpha, so the output is
 // (fog colour * fog, ao * (1 - fog)).
 const APPLY = `
-uniform sampler2D tAO, tDepth, tColor, heightMap, macroMap; uniform vec2 aoRes, res; uniform mat4 projInv, camWorld, proj;
+uniform sampler2D tAO, tDepth, tColor, heightMap, macroMap, tGI; uniform vec2 aoRes, res, giRes; uniform float giStrength; uniform mat4 projInv, camWorld, proj;
 uniform vec3 camPos, fogColor, sunDir, sunColor, sunView; uniform float fogDensity, fogFalloff, aoStrength, aoFar, wet, contact, time;
 varying vec2 vUv;
 vec3 vpos( vec2 uv, float d ) { vec4 p = projInv * vec4( uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0 ); return p.xyz / p.w; }
@@ -229,7 +282,21 @@ void main(){
       refl = hit;
     }
   }
-  gl_FragColor = vec4( fc * fog + refl * rw * ( 1.0 - fog ), ao * cs * ( 1.0 - fog ) * ( 1.0 - rw ) );
+  // one bounce of indirect light, tinted by the surface (its chroma at a mid-grey reflectance)
+  vec3 bounce = vec3( 0.0 );
+  if ( giStrength > 0.0 ) {
+    vec2 gt = vUv * giRes - 0.5, gf = fract( gt ), gb = ( floor( gt ) + 0.5 ) / giRes, gs = 1.0 / giRes;
+    vec4 g00 = texture2D( tGI, gb ), g10 = texture2D( tGI, gb + vec2( gs.x, 0.0 ) ), g01 = texture2D( tGI, gb + vec2( 0.0, gs.y ) ), g11 = texture2D( tGI, gb + gs );
+    vec4 gw = vec4( ( 1.0 - gf.x ) * ( 1.0 - gf.y ), gf.x * ( 1.0 - gf.y ), ( 1.0 - gf.x ) * gf.y, gf.x * gf.y ) + 1e-3;
+    gw *= exp( -abs( vec4( g00.a, g10.a, g01.a, g11.a ) - z ) / ( z * 0.04 + 0.04 ) );
+    float gws = dot( gw, vec4( 1.0 ) );
+    vec3 gi = gws > 1e-4 ? ( g00.rgb * gw.x + g10.rgb * gw.y + g01.rgb * gw.z + g11.rgb * gw.w ) / gws : vec3( 0.0 );
+    vec3 base = texture2D( tColor, vUv ).rgb;
+    float bl = dot( base, vec3( 0.2126, 0.7152, 0.0722 ) );
+    vec3 albedo = mix( vec3( 0.42 ), clamp( base / max( bl, 0.03 ), 0.0, 2.5 ) * 0.42, 0.6 );
+    bounce = gi * albedo * giStrength * ( 0.4 + 0.6 * ao );
+  }
+  gl_FragColor = vec4( fc * fog + ( refl * rw + bounce * ( 1.0 - rw ) ) * ( 1.0 - fog ), ao * cs * ( 1.0 - fog ) * ( 1.0 - rw ) );
 }`;
 
 const COPY = `uniform sampler2D tSrc; varying vec2 vUv; void main(){ gl_FragColor = vec4( texture2D( tSrc, vUv ).rgb, 1.0 ); }`;
@@ -237,7 +304,7 @@ const COPY = `uniform sampler2D tSrc; varying vec2 vUv; void main(){ gl_FragColo
 const COMPOSITE = `
 uniform sampler2D tScene; uniform sampler2D tBloom;
 uniform float bloomStrength, exposure, mode, time, grain, vignette, saturation, fringe, lowHealth;
-uniform float nvgGain, noiseAmt, signal, thermalPalette, useBloom, contrast;
+uniform float nvgGain, noiseAmt, signal, thermalPalette, useBloom, contrast, sharpen;
 uniform vec3 nvgTint, lift, gain;
 uniform vec2 res, sunUV;
 uniform float sunVis;
@@ -306,6 +373,17 @@ void main(){
   vec2 dc = (uv - 0.5) * fringe;
   if (m < 0.5 || fpv) col = vec3(texture2D(tScene, uv + dc).r, texture2D(tScene, uv).g, texture2D(tScene, uv - dc).b);
   else col = texture2D(tScene, uv).rgb;
+  if (m < 0.5 && sharpen > 0.0) {
+    // contrast-adaptive sharpening: restores texture detail lost to upscaling and MSAA resolve,
+    // clamped to the local range so edges never ring
+    vec2 tx = 1.0 / res;
+    vec3 sa = texture2D(tScene, uv + vec2(tx.x, 0.0)).rgb, sb = texture2D(tScene, uv - vec2(tx.x, 0.0)).rgb;
+    vec3 sc = texture2D(tScene, uv + vec2(0.0, tx.y)).rgb, sd = texture2D(tScene, uv - vec2(0.0, tx.y)).rgb;
+    vec3 mn = min(min(sa, sb), min(sc, sd)), mx = max(max(sa, sb), max(sc, sd));
+    float amp = clamp(min(dot(mn, vec3(0.333)), 2.0 - dot(mx, vec3(0.333))) / max(dot(mx, vec3(0.333)), 1e-3), 0.0, 1.0);
+    vec3 sh = col + (col - (sa + sb + sc + sd) * 0.25) * sharpen * (0.4 + 0.6 * sqrt(amp));
+    col = clamp(sh, min(mn, col), max(mx, col));
+  }
   vec3 bloom = useBloom > 0.5 ? texture2D(tBloom, uv).rgb : vec3(0.0);
   float n = hash(uv * res + fract(time * 7.13) * 100.0) - 0.5;
 
@@ -364,7 +442,8 @@ void main(){
     col = col * gain + lift * (1.0 - col);
     col = clamp((col - 0.5) * contrast + 0.5, 0.0, 1.0);
     col = toSRGB(col);
-    col += n * grain;
+    // sensor grain: strongest in the shadows, almost gone in the highlights
+    col += n * grain * (1.35 - 0.9 * dot(col, vec3(0.333)));
   } else if (m < 1.5) {
     // Night vision: image intensifier with auto-brightness, phosphor tint and scintillation
     float l = dot(col + bloom * 2.2, vec3(0.3, 0.59, 0.11)) * nvgGain;
@@ -422,7 +501,10 @@ export class PostFX {
     const aoOpts = { type: this.type, depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter };
     this.aoA = new THREE.WebGLRenderTarget(4, 4, aoOpts);
     this.aoB = new THREE.WebGLRenderTarget(4, 4, aoOpts);
-    this.colA = new THREE.WebGLRenderTarget(4, 4, aoOpts); // scene colour for reflections
+    this.colA = new THREE.WebGLRenderTarget(4, 4, aoOpts); // scene colour for reflections and bounce light
+    this.giA = new THREE.WebGLRenderTarget(4, 4, aoOpts);  // quarter-res bounce light
+    this.giB = new THREE.WebGLRenderTarget(4, 4, aoOpts);
+    this.gi = false;
     this.ao = false;
     this.levels = [];
     for (let i = 0; i < 5; i++) this.levels.push(new THREE.WebGLRenderTarget(4, 4, { type: this.type, depthBuffer: false }));
@@ -440,7 +522,7 @@ export class PostFX {
       tScene: { value: null }, tBloom: { value: null }, bloomStrength: { value: 0.08 }, exposure: { value: 1 },
       mode: { value: 0 }, time: { value: 0 }, grain: { value: 0.018 }, vignette: { value: 0.35 }, saturation: { value: 1.06 },
       fringe: { value: 0.0025 }, lowHealth: { value: 0 }, nvgGain: { value: 8 }, noiseAmt: { value: 0.25 }, signal: { value: 1 },
-      thermalPalette: { value: 0 }, useBloom: { value: 1 }, contrast: { value: 1.04 },
+      thermalPalette: { value: 0 }, useBloom: { value: 1 }, contrast: { value: 1.04 }, sharpen: { value: 0.35 },
       nvgTint: { value: new THREE.Color(0.52, 1.0, 0.62) }, lift: { value: new THREE.Color(0.012, 0.014, 0.02) }, gain: { value: new THREE.Color(1.02, 1.0, 0.97) },
       res: { value: new THREE.Vector2(1, 1) }, sunUV: { value: new THREE.Vector2(0.5, 0.5) }, sunVis: { value: 0 },
     });
@@ -448,12 +530,16 @@ export class PostFX {
       radius: { value: 0.75 }, intensity: { value: 1.1 }, projScale: { value: 1 }, far: { value: 90 } });
     this.copyMat = mk(COPY, { tSrc: { value: null } });
     this.blurMat = mk(AO_BLUR, { tSrc: { value: null }, dir: { value: new THREE.Vector2() } });
+    this.giMat = mk(GI, { tDepth: { value: null }, tColor: { value: null }, projInv: { value: new THREE.Matrix4() }, res: { value: new THREE.Vector2() },
+      depthRes: { value: new THREE.Vector2() }, radius: { value: 2.2 }, projScale: { value: 1 }, far: { value: 70 } });
+    this.giBlurMat = mk(GI_BLUR, { tSrc: { value: null }, dir: { value: new THREE.Vector2() } });
     this.applyMat = mk(APPLY, {
       tAO: { value: null }, tDepth: { value: null }, aoRes: { value: new THREE.Vector2() }, projInv: { value: new THREE.Matrix4() }, camWorld: { value: new THREE.Matrix4() },
       camPos: { value: new THREE.Vector3() }, fogColor: { value: new THREE.Color() }, sunDir: { value: new THREE.Vector3(0, 1, 0) }, sunColor: { value: new THREE.Color() },
       fogDensity: { value: 0.0005 }, fogFalloff: { value: 0.02 }, aoStrength: { value: 1 }, aoFar: { value: 90 },
       tColor: { value: null }, heightMap: { value: null }, macroMap: { value: null }, res: { value: new THREE.Vector2() }, proj: { value: new THREE.Matrix4() },
       sunView: { value: new THREE.Vector3() }, wet: { value: 0 }, contact: { value: 0 }, time: { value: 0 },
+      tGI: { value: null }, giRes: { value: new THREE.Vector2(1, 1) }, giStrength: { value: 0 },
     }, { blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.SrcAlphaFactor,
       blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor, transparent: true });
     Object.assign(this.comp.uniforms, {
@@ -475,6 +561,8 @@ export class PostFX {
     this.rt.setSize(w, h);
     const hw = Math.max(1, Math.ceil(w / 2)), hh = Math.max(1, Math.ceil(h / 2));
     this.aoA.setSize(hw, hh); this.aoB.setSize(hw, hh); this.colA.setSize(hw, hh);
+    const qw = Math.max(1, Math.ceil(w / 4)), qh = Math.max(1, Math.ceil(h / 4));
+    this.giA.setSize(qw, qh); this.giB.setSize(qw, qh);
     let lw = w, lh = h;
     for (const l of this.levels) { lw = Math.max(1, Math.ceil(lw / 2)); lh = Math.max(1, Math.ceil(lh / 2)); l.setSize(lw, lh); }
     this.comp.uniforms.res.value.set(w, h);
@@ -483,6 +571,8 @@ export class PostFX {
   setQuality(q) {
     this.bloom = q !== 'low';
     this.ao = q === 'ultra' || q === 'high' || q === 'auto';
+    this.gi = this.ao;
+    this.sharpen = q === 'low' ? 0.25 : q === 'medium' ? 0.35 : 0.3;
     const s = q === 'low' ? 0 : 4;
     if (s !== this.samples) {
       this.samples = s;
@@ -512,7 +602,21 @@ export class PostFX {
     B.tSrc.value = this.aoB.texture; B.dir.value.set(0, 1 / this.aoA.height);
     this._pass(this.blurMat, this.aoA);
     const P = this.applyMat.uniforms;
-    if (u.wet > 0) { this.copyMat.uniforms.tSrc.value = this.rt.texture; this._pass(this.copyMat, this.colA); }
+    const gi = this.gi && (u.gi ?? 1.6) > 0;
+    if (u.wet > 0 || gi) { this.copyMat.uniforms.tSrc.value = this.rt.texture; this._pass(this.copyMat, this.colA); }
+    if (gi) {
+      const G = this.giMat.uniforms;
+      G.tDepth.value = this.rt.depthTexture; G.tColor.value = this.colA.texture;
+      G.projInv.value.copy(cam.projectionMatrixInverse);
+      G.res.value.set(this.giA.width, this.giA.height); G.depthRes.value.set(this.w, this.h);
+      G.projScale.value = cam.projectionMatrix.elements[5] * 0.5 * this.giA.height;
+      this._pass(this.giMat, this.giA);
+      const GB = this.giBlurMat.uniforms;
+      GB.tSrc.value = this.giA.texture; GB.dir.value.set(1 / this.giA.width, 0); this._pass(this.giBlurMat, this.giB);
+      GB.tSrc.value = this.giB.texture; GB.dir.value.set(0, 1 / this.giA.height); this._pass(this.giBlurMat, this.giA);
+      P.tGI.value = this.giA.texture; P.giRes.value.set(this.giA.width, this.giA.height);
+    }
+    P.giStrength.value = gi ? (u.gi ?? 1.6) : 0;
     P.tColor.value = this.colA.texture; P.heightMap.value = u.heightMap || null; P.macroMap.value = u.macroMap || null;
     P.res.value.set(this.w, this.h); P.proj.value.copy(cam.projectionMatrix);
     P.sunView.value.copy(u.sunDir).transformDirection(cam.matrixWorldInverse);
@@ -590,6 +694,7 @@ export class PostFX {
     C.thermalPalette.value = u.palette ?? 0;
     C.vignette.value = u.vignette ?? 0.35;
     C.grain.value = u.grain ?? 0.018;
+    C.sharpen.value = u.sharpen ?? this.sharpen ?? 0.3;
     if (u.tint) C.nvgTint.value.copy(u.tint);
     C.sunVis.value = u.sunVis ?? 0;
     if (u.sunUV) C.sunUV.value.copy(u.sunUV);
