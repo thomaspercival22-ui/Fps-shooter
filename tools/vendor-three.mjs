@@ -19,3 +19,9 @@ for (const [from, to] of files) {
   fs.copyFileSync(path.join(src, from), out);
   console.log('vendored', to);
 }
+// meshoptimizer's decoder, for the compressed gun meshes (src/gundata.js)
+const mo = path.join(path.dirname(src), 'meshoptimizer');
+fs.mkdirSync('vendor/meshopt', { recursive: true });
+fs.copyFileSync(path.join(mo, 'meshopt_decoder.mjs'), 'vendor/meshopt/meshopt_decoder.js');
+fs.copyFileSync(path.join(mo, 'LICENSE.md'), 'vendor/meshopt/LICENSE');
+console.log('vendored meshopt/meshopt_decoder.js');

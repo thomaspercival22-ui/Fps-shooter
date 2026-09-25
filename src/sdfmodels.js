@@ -1,8 +1,8 @@
 // Organic models built with signed distance fields: every body segment of the
 // soldier rig (hips, torso with plate carrier, head with helmet, arms, gloved
-// hands, legs with knee pads and boots), the first-person gloves and sculpted
-// polymer gun parts. Run by tools/build-meshes.mjs (not at runtime): meshes
-// are simplified with meshoptimizer and stored in src/meshdata.js.
+// hands, legs with knee pads and boots) and the first-person gloves. Run by
+// tools/build-meshes.mjs (not at runtime): meshes are simplified with
+// meshoptimizer and stored in src/meshdata.js. The guns are in gunparts.js.
 import * as THREE from 'three';
 import { MeshoptSimplifier } from 'meshoptimizer';
 import { SDFModel, P, place, segment, oriented, noise3 } from './sdf.js';
@@ -341,63 +341,7 @@ function shinModel() {
 
 // ---------- sculpted polymer gun parts (gun space: x right, y up, -z forward) ----------
 /** Pistol grip (MOE style): raked, finger groove, flared base, beaver tail. */
-function gripModel() {
-  const m = new SDFModel();
-  const top = [0, -0.036, 0.047], bot = [0, -0.124, 0.086];
-  const body = segment(top, bot, 0.0165, 0.0175);
-  m.add((x, y, z) => body(x * 1.28, y, z) / 1.28 * 1.0, 0);
-  m.add(place(P.ellipsoid(0.0118, 0.012, 0.009), [0, -0.075, 0.049]), 0, 0.01);              // finger groove bulge
-  m.sub(place(P.cylinder(0.02, 0.02), [0, -0.092, 0.042], [0, 0, Math.PI / 2]), 0.004);
-  m.add(place(P.box(0.0135, 0.004, 0.02, 0.003), [0, -0.129, 0.087], [-0.42, 0, 0]), 0, 0.004);  // base flare
-  m.add(place(P.box(0.012, 0.006, 0.016, 0.004), [0, -0.029, 0.063], [0.5, 0, 0]), 0, 0.006);   // beaver tail
-  m.displace = (x, y, z) => (noise3(x * 900, y * 900, z * 900) - 0.5) * 0.00018;                 // stippling
-  return m;
-}
-/** Laser aiming module (PEQ style) on the handguard top rail, gun frame (z = -forward). */
-function peqModel() {
-  const m = new SDFModel();
-  const cz = -0.31, cy = 0.049;
-  m.add(place(P.box(0.0148, 0.0118, 0.0372, 0.0045), [0, cy, cz]), 0);
-  m.add(place(P.box(0.0152, 0.0028, 0.034, 0.0014), [0, cy - 0.0102, cz]), 0, 0.002);                      // lower lip
-  m.add(place(P.cylinder(0.0088, 0.017, 0.0025), [-0.0118, cy - 0.003, cz - 0.019], [Math.PI / 2, 0, 0]), 0, 0.003); // battery tube
-  m.add(place(P.cylinder(0.0094, 0.0028, 0.0012), [-0.0118, cy - 0.003, cz - 0.0375], [Math.PI / 2, 0, 0]), 0, 0.0008); // battery cap
-  for (let i = 0; i < 10; i++) {                                                                                   // cap knurl
-    const a = i / 10 * Math.PI * 2;
-    m.sub(place(P.box(0.0009, 0.0035, 0.0012, 0.0004), [-0.0118 + Math.cos(a) * 0.0095, cy - 0.003 + Math.sin(a) * 0.0095, cz - 0.0375], [0, 0, a]), 0.0003);
-  }
-  // front emitter windows (the lenses sit in these recesses)
-  m.sub(place(P.cylinder(0.0052, 0.004, 0.0008), [0.0065, cy + 0.003, cz - 0.0375], [Math.PI / 2, 0, 0]), 0.0008);
-  m.sub(place(P.cylinder(0.0034, 0.004, 0.0006), [0.0065, cy - 0.0065, cz - 0.0375], [Math.PI / 2, 0, 0]), 0.0006);
-  // top: zeroing adjusters, mode selector, activation buttons; panel seam
-  for (const [x, z] of [[-0.006, 0.012], [0.006, 0.012]]) m.add(place(P.cylinder(0.0038, 0.0022, 0.0008), [x, cy + 0.0126, cz + z]), 0, 0.001);
-  m.add(place(P.cylinder(0.0062, 0.003, 0.001), [0, cy + 0.0125, cz + 0.026]), 0, 0.0015);
-  for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; m.sub(place(P.box(0.0007, 0.003, 0.001), [Math.cos(a) * 0.0063, cy + 0.0145, cz + 0.026 + Math.sin(a) * 0.0063], [0, a, 0]), 0.0002); }
-  for (const x of [-0.0062, 0.0062]) m.add(place(P.box(0.0034, 0.0014, 0.0045, 0.0012), [x, cy + 0.0122, cz - 0.012]), 0, 0.0012);
-  m.sub(place(P.box(0.02, 0.0004, 0.0003), [0, cy + 0.004, cz - 0.022]), 0.0003);
-  // rail clamp with a thumb nut on the left
-  m.add(place(P.box(0.0118, 0.004, 0.022, 0.0012), [0, cy - 0.0158, cz + 0.006]), 0, 0.002);
-  m.add(place(P.cylinder(0.0058, 0.003, 0.0012), [-0.0148, cy - 0.0158, cz + 0.006], [0, 0, Math.PI / 2]), 0, 0.0015);
-  m.displace = (x, y, z) => (noise3(x * 900, y * 900, z * 900) - 0.5) * 0.00008;
-  return m;
-}
 
-/** Curved 30-round polymer magazine with ribs and a flared base plate. */
-function pmagModel() {
-  const m = new SDFModel();
-  // the body follows the 5.56 curve: stacked rounded slabs, each tilted a little more
-  const N = 7;
-  for (let i = 0; i < N; i++) {
-    const t = i / (N - 1), y = -0.035 - t * 0.17, f = 0.038 + t * t * 0.04 + t * 0.012;
-    m.add(place(P.box(0.0118, 0.016, 0.031, 0.004), [0, y, -f], [0.08 + t * 0.32, 0, 0]), 0, 0.012);
-  }
-  for (let k = 0; k < 3; k++) {
-    const t = 0.35 + k * 0.17, y = -0.035 - t * 0.17, f = 0.038 + t * t * 0.04 + t * 0.012;
-    m.add(place(P.box(0.0128, 0.0022, 0.029, 0.0012), [0, y, -f], [0.08 + t * 0.32, 0, 0]), 0, 0.0015); // ribs
-  }
-  m.add(place(P.box(0.0142, 0.0055, 0.037, 0.003), [0, -0.214, -0.098], [0.42, 0, 0]), 1, 0.003);           // base plate
-  m.displace = (x, y, z) => (noise3(x * 700, y * 700, z * 700) - 0.5) * 0.00012;
-  return m;
-}
 
 function glove(g) {
   const geo = simplify(g.m.mesh(g.min, g.max, 0.0009), 16000);
@@ -453,9 +397,6 @@ export async function buildAll(onProgress, only = null) {
     ['handL', () => { const g = soldierGlove(-1); return simplify(g.m.mesh(g.min, g.max, 0.0016), 2200); }],
     ['thigh', () => simplify(thighModel().mesh([-0.12, -0.5, -0.11], [0.12, 0.1, 0.12], 0.0055), 2200)],
     ['shin', () => simplify(shinModel().mesh([-0.08, -0.49, -0.09], [0.08, 0.08, 0.2], 0.0045), 2600)],
-    ['grip', () => simplify(gripModel().mesh([-0.022, -0.14, 0.02], [0.022, -0.015, 0.11], 0.0008), 3000)],
-    ['peq', () => simplify(peqModel().mesh([-0.034, 0.025, -0.355], [0.024, 0.07, -0.265], 0.0006), 4000)],
-    ['pmag', () => simplify(pmagModel().mesh([-0.018, -0.23, -0.14], [0.018, -0.02, -0.005], 0.0009), 3500)],
   ];
   for (let i = 0; i < jobs.length; i++) {
     if (only && !only.includes(jobs[i][0])) continue;

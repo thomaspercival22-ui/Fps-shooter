@@ -6,7 +6,7 @@ import path from 'path';
 import crypto from 'crypto';
 
 const roots = ['index.html', 'style.css', 'manifest.webmanifest', 'src', 'vendor', 'assets', 'icons'];
-const buildOnly = new Set(['src/sdf.js', 'src/sdfmodels.js']); // mesh-building sources, not loaded by the game
+const buildOnly = new Set(['src/sdf.js', 'src/sdfmodels.js', 'src/hardsurface.js', 'src/gunparts.js']); // mesh-building sources, not loaded by the game
 const files = [];
 const walk = (p) => {
   const st = fs.statSync(p);

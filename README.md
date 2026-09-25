@@ -26,7 +26,7 @@ The game is a static web app that installs itself as a Progressive Web App. It n
   - **Photo-scanned world:** 4K ground scans with parallax occlusion mapping (pebbles and ruts have real depth), blended with rocky patches. Full-detail scans of concrete barriers, ammo crates, a tarped car, generator, fuel cans, gas bottles, cement bags, desert shrubs, quiver trees, boulders and pebbles. HESCO walls with bulging geotextile and welded mesh. Real corrugated containers with rust runs. Buildings with window frames, grilles, sills, rooftop water tanks, drainpipes and power cables.
   - **Lighting:** soft sun shadows that stay sharp where objects touch the ground (PCSS) and get softer further away. Screen-space ambient occlusion. Screen-space ray-traced contact shadows and reflections. Sunlight bouncing off the sand into shaded areas.
   - **Atmosphere:** desert haze that glows towards the sun, light shafts, and heat shimmer over the distant ground. Filmic AgX colour.
-  - **Weapon and hands:** the weapon and your hands cast shadows on each other. Your gloves are sculpted hands with real finger joints that close around the grip, so the right index finger sits on the trigger and the left hand clamps the handguard with its thumb over the rail. They have a synthetic-leather palm, moulded knuckle armour and a hook-and-loop cuff. The pistol grip, curved PMAG and PEQ laser module are sculpted with stippling, ribs and knurled caps. The weapon light has a knurled bezel, the EXPS3-style holographic sight has a rounded hood, the handguard is M-LOK and the receiver has roll marks. The sleeves are MultiCam-style fabric with folds.
+  - **Weapon and hands:** every gun is built from sculpted parts at real dimensions (see *Modern weapons* below). The weapon and your hands cast shadows on each other. Your gloves are sculpted hands with real finger joints that close around the grip, so the right index finger sits on the trigger and the left hand clamps the handguard with its thumb over the rail. They have a synthetic-leather palm, moulded knuckle armour and a hook-and-loop cuff. The sleeves are MultiCam-style fabric with folds.
   - **Enemies:** sculpted bodies instead of boxes, with gloved fists, camouflage fabric with a ripstop weave, helmets with rails, headsets and counterweights, balaclavas and glasses, plate carriers with MOLLE webbing and magazine pouches, battle belts, knee pads and boots.
   - **Phones:** phones use a separate memory budget: smaller textures, a lower render resolution and a smaller sky map. On the default High setting the game uses about 0.7 GB, where the old Ultra setting used about 3.4 GB. Ultra is still available on phones, but it needs a lot of memory. If a launch dies while loading (the browser killed the page for using too much memory), the next launch automatically drops one graphics level and tells you on the menu. Medium uses about 0.4 GB.
 - **Rain (Mission → Rain):** a storm with an overcast sky, lightning and thunder that arrives after the flash. Rain streaks and splashes stop under roofs. Everything gets darker and glossier when wet, puddles form in low ground with raindrop ripples, and puddles mirror the scene through ray-traced reflections. Rain gets muffled when you go indoors.
@@ -39,7 +39,13 @@ The game is a static web app that installs itself as a Progressive Web App. It n
 - **Thermal (THRM button / T key):** a white-hot sensor image. Tap again for black-hot, then ironbow, then off. Soldiers glow, gun barrels heat up as they fire, and dead bodies slowly cool. Every shot shows as a bright bloom of hot gas at the muzzle, even through a suppressor, and enemy muzzle flashes stand out on both thermal and night vision.
 - **FPV kamikaze drone (FPV button / V key):** you fly a 7-inch quad with a shaped-charge warhead through its analog video link. It has barrel distortion and static that gets worse with range and walls, and an on-screen display with battery voltage, signal strength (RSSI), altitude, speed and home distance. It arms after launch, then detonates on impact, near an enemy, or when you press fire. Enemies hear it buzzing, try to shoot it down, and scatter when it dives at them. You carry two, and the HQ ammo crate restocks them. You kneel while flying, and the drone camera can see your own body.
 
-- **Modern weapons, modelled in detail:** an M4A1 carbine with a holographic sight, M-LOK rail, laser and light; an M1014 semi-auto shotgun with a side saddle and shell-by-shell reloads; a bolt-action sniper in a chassis stock with an 8x scope and working bolt; and a Glock 17 sidearm. Every gun has ADS, recoil you have to control, sway, bob, a sprint pose, tactical and empty reloads, ejected brass and dropped mags.
+- **Modern weapons, sculpted part by part:** each gun is modelled from real dimensions out of machined, extruded and turned parts, the way the real thing is made. Every edge has a small radius, so it catches the light.
+  - **M4A1:** flat-top upper with Picatinny slots, forward assist, brass deflector, ejection port with a sprung dust cover and a nickel-boron bolt carrier inside. Billet lower with an integral trigger guard, bolt catch, fenced mag release, selector with SAFE/FIRE marks and pins. 13" M-LOK handguard with through-slots. QD suppressor with a knurled collar. SOPMOD-style stock, curved PMAG, EXPS3 sight, PEQ, weapon light, flip-up sights and a sling.
+  - **Glock 17 (Gen 5 style):** slide with front and rear serrations, extractor, barrel hood and crown, and white-dot sights with a tritium front. Frame with an accessory rail, textured grip panels, slide stop and takedown lever.
+  - **M1014:** receiver with side flutes, ghost-ring sights with protective ears, and a bolt in the port. Twin gas pistons under the forend, barrel clamp and mag-tube cap. Telescoping stock, and a side saddle of 12-gauge shells.
+  - **Bolt-action sniper:** fluted heavy barrel and ported brake. OD chassis with an M-LOK forend, folding skeleton stock and adjustable cheek riser. Folded bipod, and a 5-25x56 scope with knurled turrets in rings.
+  - **Finishes:** a weapon shader gives each finish its own look: anodised aluminium, nitrided steel, polymer, Cerakote, rubber, nickel boron and brass. Edges worn bright where hands and gear rub, and desert dust in the grooves, are baked from the shapes themselves. Grips get stippling and the turret caps get knurling.
+  - **Handling:** every gun has ADS, recoil you have to control, sway, bob, a sprint pose, tactical and empty reloads, ejected brass casings and dropped magazines. Enemies carry low-detail copies of the same guns.
 - **Guns that work like the real thing:**
   - **Magazines:** you carry individual magazines, not a pool of rounds. A tactical reload keeps the partly used mag in your pouch; an empty reload drops it. The pips next to the ammo count show full (▮) and partial (▯) mags, and there's a round in the chamber on a tactical reload (30+1).
   - **Fire selector (SEMI/AUTO button / B key):** switch the M4 between semi and full auto.
@@ -47,7 +53,6 @@ The game is a static web app that installs itself as a Progressive Web App. It n
   - **Malfunctions:** guns occasionally jam, more often when they're hot. Tap reload to run the clear drill: tap the mag, rack the charging handle, and the stuck round flies out.
   - **Barrel heat:** long strings of fire heat the barrel, which opens up your groups, makes the muzzle smoke and glows on thermal.
   - **Moving parts:** the dust cover pops open on the first shot, the bolt carrier cycles with every round and locks back on an empty mag.
-  - **Finish and detail:** worn Cerakote and anodised finishes with edge wear, scratches, dust and handling smudges; the M4 has an ejection port, trigger guard, grooved grip, castle nut, QD sling mounts and a sling.
 - **Grenades:**
   - **Frag:** it bounces, rolls and has a fuse. The damage respects cover, and it sets off red fuel barrels.
   - **Flashbang:** it blinds every enemy looking toward it for several seconds. Blinded enemies stagger, cover their eyes and spray blindly. It will also white-out *your* screen (with a burned-in afterimage) and ring your ears if you look at it.
@@ -101,6 +106,14 @@ The gloves, soldier bodies and sculpted gun parts are modelled with signed dista
 npm run build-meshes   # or: node tools/build-meshes.mjs glove gloveL   (rebuild only some)
 ```
 
+The guns are modelled in `src/gunparts.js` with the hard-surface toolkit in `src/hardsurface.js`, and prebuilt into `src/gundata.js` (a few minutes, in parallel):
+
+```bash
+npm run build-guns     # or: node tools/build-guns.mjs m4 glock   (rebuild only some)
+```
+
+The meshes are stored compressed with meshoptimizer's codec (about 3.3 MB for all four guns and their low-detail copies) and decoded when a gun is first built.
+
 Other tools: `npm run fetch-assets` re-downloads and recompresses the textures and models (follow it with `npm run simplify-models`, which decimates the few scans that are placed dozens of times), `npm run vendor` re-copies three.js into `vendor/`, and `npm run icons` redraws the app icons.
 
 ## Project layout
@@ -120,9 +133,13 @@ src/
   nav.js       A* pathfinding
   player.js    movement, camera, health
   weapons.js   viewmodel animation, firing, reloading, grenade throws
-  gunmodels.js procedural weapon + arm models
+  gunmodels.js assembles the guns (animated parts, lenses, reticles, sling) and the arms
+  gunparts.js  the sculpted gun parts (build time only)
+  hardsurface.js  machined/turned-part modelling, mesher, edge-wear bake (build time only)
+  gundata.js   the prebuilt gun meshes (generated); guns.js decodes them
+  gunmaterial.js  weapon shader: finishes, edge wear, dust, stippling, knurling, suppressor glow
   sdf.js       signed-distance modelling + surface-nets mesher
-  sdfmodels.js sculpted gloves, soldier bodies, grip, magazine, laser (build time only)
+  sdfmodels.js sculpted gloves and soldier bodies (build time only)
   meshdata.js  the prebuilt sculpted meshes (generated)
   meshes.js    decodes meshdata.js
   fabric.js    clothing/gear shader: camo, weave, MOLLE, per-region materials
@@ -137,10 +154,12 @@ src/
   textures.js  procedural textures
 assets/        CC0 textures, props and sky (from Poly Haven)
 vendor/three/  three.js (bundled so nothing loads from the internet)
+vendor/meshopt/  meshoptimizer decoder for the compressed gun meshes
 ```
 
 ## Credits
 
 - 3D engine: [three.js](https://threejs.org) (MIT license, see `vendor/three/LICENSE`).
+- Mesh compression: [meshoptimizer](https://github.com/zeux/meshoptimizer) decoder (MIT license, see `vendor/meshopt/LICENSE`); the simplifier and encoder are used by the build tools.
 - Textures, props (barrels, tyres, ammo box, medical box, covered car, generator, jerry cans, propane tanks, AC units, utility boxes, trash bags, security lights, concrete barriers, military crates, cement bags, roller shutters, shrubs, branches, stones, rocks, quiver trees) and the sky: [Poly Haven](https://polyhaven.com), released as CC0 (public domain).
 - Weapons, soldiers, sandbags, HESCO barriers, all effects and all audio are generated in code.

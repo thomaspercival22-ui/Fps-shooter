@@ -5,9 +5,11 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { KITS, muzzleFlashTexture } from './textures.js';
-import { buildM4, buildM1014, buildSniper } from './gunmodels.js';
 import { meshes } from './meshes.js';
 import { fabricMaterial, camoTexture, R } from './fabric.js';
+import { gunGeo } from './guns.js';
+import { gunMaterial } from './gunmaterial.js';
+import { G } from './gunregions.js';
 
 const materials = {};
 // Soldiers can show flipped-down night vision goggles (set by the game at night).
@@ -41,48 +43,45 @@ function geometries(kit) {
 }
 
 // ---------- enemy weapons (forward = +Z, grip at origin) ----------
-// Built from the same detailed models the player uses, merged into one mesh
-// with vertex colours so each enemy gun is a single draw call.
+// The low-detail copy of the player's sculpted gun, merged into one mesh with
+// the same weapon shader, so each enemy gun is a single draw call.
 const gunCache = {};
-let gunMat = null;
+let lodMat = null;
 const GUN_SPECS = {
-  rifle: { build: buildM4, grip: [-0.07, -0.06], fore: [-0.035, 0.16], muzzle: [0, 0.54], butt: -0.35 },
-  lmg: { build: buildM4, grip: [-0.07, -0.06], fore: [-0.035, 0.16], muzzle: [0, 0.54], butt: -0.35, boxMag: true },
-  shotgun: { build: buildM1014, grip: [-0.07, -0.12], fore: [-0.04, 0.23], muzzle: [0.008, 0.6], butt: -0.41 },
-  dmr: { build: buildSniper, grip: [-0.09, -0.1], fore: [-0.06, 0.2], muzzle: [0, 0.81], butt: -0.53 },
+  rifle: { lod: 'm4', grip: [-0.07, -0.06], fore: [-0.035, 0.16], muzzle: [0, 0.515], butt: -0.35 },
+  lmg: { lod: 'm4', grip: [-0.07, -0.06], fore: [-0.035, 0.16], muzzle: [0, 0.515], butt: -0.35, boxMag: true },
+  shotgun: { lod: 'm1014', grip: [-0.07, -0.12], fore: [-0.04, 0.23], muzzle: [0.008, 0.6], butt: -0.41 },
+  dmr: { lod: 'sniper', grip: [-0.09, -0.1], fore: [-0.06, 0.2], muzzle: [0, 0.81], butt: -0.53 },
 };
-function gunGeometry(type) {
-  if (gunCache[type]) return gunCache[type];
-  const spec = GUN_SPECS[type] || GUN_SPECS.rifle;
-  const g = spec.build();
-  g.root.updateMatrixWorld(true);
-  const parts = [];
-  const visible = (o) => { for (let p = o; p; p = p.parent) if (!p.visible) return false; return true; };
-  g.root.traverse((o) => {
-    if (!o.isMesh || !visible(o) || o.material.transparent || o.material.blending === THREE.AdditiveBlending) return;
-    let geo = o.geometry.clone().applyMatrix4(o.matrixWorld);
-    if (geo.index) geo = geo.toNonIndexed();
-    for (const k of Object.keys(geo.attributes)) if (k !== 'position' && k !== 'normal') geo.deleteAttribute(k);
-    const n = geo.attributes.position.count, c = o.material.userData.baseColor || o.material.color, col = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
-    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    parts.push(geo);
-  });
+/** Float copies of the sculpted attributes so extra pieces can be merged in. */
+function floatAttrs(geo) {
+  const g = new THREE.BufferGeometry();
+  const f = (a) => { const out = new Float32Array(a.count * a.itemSize); for (let i = 0; i < a.count; i++) for (let k = 0; k < a.itemSize; k++) out[i * a.itemSize + k] = a.getComponent(i, k); return new THREE.BufferAttribute(out, a.itemSize); };
+  for (const k of ['position', 'normal', 'region', 'wear']) g.setAttribute(k, f(geo.attributes[k]));
+  g.setIndex(geo.index.clone());
+  return g;
+}
+function sculptedGunGeometry(type, spec) {
+  let geo = floatAttrs(gunGeo(spec.lod, 'lod'));
   if (spec.boxMag) {
-    let box = new THREE.BoxGeometry(0.08, 0.1, 0.11).toNonIndexed();
+    // belt box for the LMG gunner
+    const box = new THREE.BoxGeometry(0.08, 0.1, 0.11, 2, 2, 2);
     box.translate(0.02, -0.08, -0.05);
     box.deleteAttribute('uv');
-    const col = new Float32Array(box.attributes.position.count * 3).fill(0.03);
-    box.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    parts.push(box);
+    const n = box.attributes.position.count;
+    box.setAttribute('region', new THREE.BufferAttribute(new Float32Array(n).fill(G.POLY), 1));
+    box.setAttribute('wear', new THREE.BufferAttribute(new Float32Array(n * 2).fill(0.2), 2));
+    geo = mergeGeometries([geo, box]);
   }
-  const geo = mergeGeometries(parts);
   geo.rotateY(Math.PI); // player models point down -Z; soldiers aim down +Z
-  if (!gunMat) gunMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.55 });
-  gunCache[type] = {
-    geo, mat: gunMat, muzzleY: spec.muzzle[0], muzzleZ: spec.muzzle[1],
+  if (!lodMat) lodMat = gunMaterial({ clearcoat: false, dust: 1.3 });
+  return {
+    geo, mat: lodMat, muzzleY: spec.muzzle[0], muzzleZ: spec.muzzle[1],
     grip: new THREE.Vector3(0, spec.grip[0], spec.grip[1]), fore: new THREE.Vector3(0, spec.fore[0], spec.fore[1]), butt: spec.butt,
   };
+}
+function gunGeometry(type) {
+  if (!gunCache[type]) gunCache[type] = sculptedGunGeometry(type, GUN_SPECS[type] || GUN_SPECS.rifle);
   return gunCache[type];
 }
 

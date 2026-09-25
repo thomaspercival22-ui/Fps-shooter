@@ -11,7 +11,8 @@
     "build-sw": "node tools/build-sw.mjs",
     "icons": "node tools/make-icons.mjs",
     "simplify-models": "node tools/simplify-models.mjs",
-    "build-meshes": "node tools/build-meshes.mjs"
+    "build-meshes": "node tools/build-meshes.mjs",
+    "build-guns": "node tools/build-guns.mjs"
   },
   "devDependencies": {
     "meshoptimizer": "^1.2.0",

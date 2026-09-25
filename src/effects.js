@@ -2,7 +2,7 @@
 // bullet-hole and scorch decals, ejected brass, dropped magazines, flashes.
 import * as THREE from 'three';
 import * as TX from './textures.js';
-import { gunMaterials } from './gunmodels.js';
+import { gunMaterials, magazineGeometry, viewmodelGunMaterial } from './gunmodels.js';
 
 class Particles {
   constructor(scene, max, map, blending, { depthWrite = false } = {}) {
@@ -167,10 +167,12 @@ export class Effects {
 
     // brass
     const m = gunMaterials();
+    // turned casings: 5.56 bottleneck, 9 mm straight wall, 12 gauge hull
+    const turned = (pts, seg = 14) => new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r, y)), seg);
     this.shellTypes = {
-      rifle: { geo: new THREE.CylinderGeometry(0.0048, 0.0048, 0.045, 8), mat: m.brass, r: 0.01, snd: 'brass' },
-      pistol: { geo: new THREE.CylinderGeometry(0.005, 0.005, 0.019, 8), mat: m.brass, r: 0.008, snd: 'brass' },
-      shotgun: { geo: new THREE.CylinderGeometry(0.0105, 0.0105, 0.07, 10), mat: m.shell, r: 0.015, snd: 'shellPlastic' },
+      rifle: { geo: turned([[0, -0.0225], [0.0047, -0.0225], [0.0047, -0.0213], [0.0041, -0.021], [0.0048, -0.0195], [0.0045, 0.0105], [0.0032, 0.0138], [0.0031, 0.0225], [0.0028, 0.0225]]), mat: m.brass, r: 0.01, snd: 'brass' },
+      pistol: { geo: turned([[0, -0.0095], [0.0049, -0.0095], [0.0049, -0.0085], [0.0043, -0.0082], [0.005, -0.007], [0.0048, 0.0095], [0.0044, 0.0095]]), mat: m.brass, r: 0.008, snd: 'brass' },
+      shotgun: { geo: turned([[0, -0.035], [0.0107, -0.035], [0.0107, -0.034], [0.0102, -0.033], [0.0102, 0.035], [0.0092, 0.035]], 16), mat: m.shell, r: 0.015, snd: 'shellPlastic' },
     };
     this.shellMeshes = {};
     for (const [k, t] of Object.entries(this.shellTypes)) {
@@ -180,8 +182,6 @@ export class Effects {
       this.shellMeshes[k] = { im, list: [] };
     }
     this.mags = [];
-    this.magGeo = new THREE.BoxGeometry(0.028, 0.17, 0.07);
-    this.magMat = m.fde;
 
     // lights for muzzle flashes and explosions
     this.lasers = new IRBeams(scene);
@@ -291,9 +291,10 @@ export class Effects {
   }
 
   droppedMag(pos, key) {
-    const mesh = new THREE.Mesh(this.magGeo, key === 'glock' ? gunMaterials().polymer : key === 'sniper' ? gunMaterials().steel : this.magMat);
-    if (key === 'glock') mesh.scale.set(0.9, 0.7, 0.55);
+    // the empty is the same sculpted magazine the gun carries
+    const mesh = new THREE.Mesh(magazineGeometry(key), viewmodelGunMaterial());
     mesh.castShadow = true;
+    mesh.userData.heat = 0.3;
     mesh.position.copy(pos);
     this.game.scene.add(mesh);
     const v = new THREE.Vector3(0, -1, 0).applyQuaternion(this.game.camera.quaternion).multiplyScalar(1.5);

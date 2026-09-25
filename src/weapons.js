@@ -292,7 +292,11 @@ export class WeaponSystem {
     const sh = Math.min(1, c.suppHeat || 0);
     for (const mesh of c.suppMeshes) mesh.userData.heat = 0.32 + sh * 0.75;
     // visible glow only after mag dumps; faint in daylight, obvious at night (the exposure does the rest)
-    if (c.suppMeshes.length) c.suppMeshes[0].material.emissiveIntensity = Math.max(0, ((c.suppHeat || 0) - 0.6) / 0.6) ** 2 * 0.3;
+    if (c.suppMeshes.length) {
+      const glow = Math.max(0, ((c.suppHeat || 0) - 0.6) / 0.6) ** 2 * 0.3;
+      const u = c.suppMeshes[0].material.userData.gun;
+      if (u) u.canHeat.value = glow; else c.suppMeshes[0].material.emissiveIntensity = glow;
+    }
 
     // bolt cycling (sniper)
     if (this.state === 'bolt') {

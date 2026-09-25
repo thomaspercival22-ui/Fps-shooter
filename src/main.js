@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { loadAssets } from './assets.js';
 import { AudioEngine, Voices } from './audio.js';
 import { Game } from './game.js';
+import { gunsReady } from './guns.js';
 import { settings, saveSettings, getBest, textureCap } from './settings.js';
 import { WEAPONS, DIFFICULTY } from './config.js';
 
@@ -57,6 +58,7 @@ async function boot() {
     loadAssets(renderer, (p) => { pa = p; progress(); }),
     audio.generate((p) => { pb = p; progress(); }),
   ]);
+  await gunsReady; // mesh decoder for the sculpted guns
   text.textContent = 'Building the compound...';
   await new Promise((r) => setTimeout(r, 30));
   const game = new Game(renderer, assets, audio, voices);
