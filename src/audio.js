@@ -249,6 +249,24 @@ async function wind() {
   return out;
 }
 
+/** One-second seamless loop of FPV motors and prop wash (integer frequencies loop cleanly). */
+function droneLoop() {
+  const n = SR;
+  const buf = new AudioBuffer({ length: n, sampleRate: SR, numberOfChannels: 1 });
+  const d = buf.getChannelData(0);
+  const saw = (x) => 2 * (x - Math.floor(x + 0.5));
+  let lp = 0;
+  for (let i = 0; i < n; i++) {
+    const t = i / SR;
+    lp += (Math.random() * 2 - 1 - lp) * 0.08;
+    d[i] = 0.26 * saw(211 * t) + 0.18 * saw(422 * t + 0.3) + 0.12 * saw(633 * t + 0.1) + 0.1 * saw(197 * t + 0.6)
+      + 0.14 * Math.sin(2 * Math.PI * 106 * t) + 0.35 * lp * (0.8 + 0.2 * Math.sin(2 * Math.PI * 7 * t));
+  }
+  const f = 2000;
+  for (let i = 0; i < f; i++) { const k = i / f; d[i] = d[i] * k + d[n - f + i] * (1 - k); }
+  return buf;
+}
+
 // ---------------- engine ----------------
 export class AudioEngine {
   constructor() {
@@ -327,6 +345,9 @@ export class AudioEngine {
     add('edeath0', grunt(110, 0.55, [[600, 5, 1], [1000, 6, 0.6], [2500, 8, 0.2]], 0.7));
     add('edeath1', grunt(92, 0.7, [[500, 5, 1], [880, 6, 0.6]], 0.7));
     add('wind', wind());
+    add('droneLoop', Promise.resolve(droneLoop()));
+    add('nvg', tone([[0, 2400, 0.05, 0.5], [0.05, 4800, 0.03, 0.45], [0, 900, 0.3, 0.03, 'triangle']], 0.6));
+    add('thermal', tone([[0, 1250, 0.18, 0.06, 'square'], [0.1, 1650, 0.14, 0.06, 'square']], 0.25));
     let done = 0;
     const total = jobs.length;
     jobs.forEach((j) => j.then(() => onProgress?.(++done / total)));

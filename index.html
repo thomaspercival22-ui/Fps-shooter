@@ -59,11 +59,25 @@
       <div id="reload-hint" class="hidden">RELOAD</div>
     </div>
     <div id="fps"></div>
+    <div id="mode-label"></div>
+    <div id="osd" class="hidden">
+      <div id="osd-horizon"></div>
+      <div class="osd-cross"></div>
+      <div class="osd-tl"><div id="osd-bat">16.8V</div><div id="osd-time">00:00</div></div>
+      <div class="osd-tr"><div id="osd-rssi">RSSI 99</div><div>ANGLE · 5.8G</div></div>
+      <div class="osd-bl"><div id="osd-alt">ALT 0m</div><div id="osd-spd">0 KM/H</div></div>
+      <div class="osd-br"><div id="osd-home">HOME 0m</div><div id="osd-armed">DISARMED</div></div>
+      <div class="osd-hint">stick: fly · drag: look · jump/crouch: up/down · fire: detonate · swap: exit</div>
+    </div>
+    <div id="osd-msg"></div>
 
     <!-- touch controls -->
     <div id="touch" class="hidden">
       <div id="stick-zone"></div>
       <div id="stick"><div id="stick-knob"></div></div>
+      <button class="tbtn mode" id="btn-nvg" aria-label="Night vision goggles">NVG</button>
+      <button class="tbtn mode" id="btn-thermal" aria-label="Thermal imaging">THRM</button>
+      <button class="tbtn mode" id="btn-drone" aria-label="FPV drone">FPV<b id="drone-count">2</b></button>
       <button class="tbtn" id="btn-pause" aria-label="Pause"><svg viewBox="0 0 24 24"><path d="M7 5h3v14H7zM14 5h3v14h-3z"/></svg></button>
       <button class="tbtn" id="btn-fire" aria-label="Fire"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5" stroke-width="2" stroke="currentColor" fill="none"/></svg></button>
       <button class="tbtn" id="btn-fire2" aria-label="Fire"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5" stroke-width="2" stroke="currentColor" fill="none"/></svg></button>
@@ -107,6 +121,8 @@
         <div class="panel-title">TIPS ultimate FPS shooter game</div>
         <h2>Primary weapon</h2>
         <div class="choices" id="primary-choices"></div>
+        <h2>Mission</h2>
+        <div class="choices" id="time-choices"></div>
         <h2>Difficulty</h2>
         <div class="choices" id="difficulty-choices"></div>
       </div>
@@ -133,12 +149,14 @@
             <li><b>Aim</b> button: aim down sights (sniper: scope).</li>
             <li>Tap the <b>weapon panel</b> or the arrows to switch to your pistol.</li>
             <li><b>Frag</b> and <b>Flashbang</b> buttons throw grenades where you look.</li>
+            <li><b>NVG</b> flips down night vision, <b>THRM</b> cycles thermal (white-hot, black-hot, colour). <b>FPV</b> launches a kamikaze drone.</li>
           </ul>
           <h3>Keyboard &amp; mouse</h3>
           <ul>
             <li>WASD move, Shift sprint, Space jump, C crouch</li>
             <li>Mouse look, left click fire, right click aim</li>
             <li>R reload, Q / 1 / 2 switch, G frag, F flashbang, Esc pause</li>
+            <li>N night vision, T thermal, V drone (Space / C for up / down, click to detonate, Q to exit)</li>
           </ul>
         </div>
         <div>
@@ -150,7 +168,9 @@
             <li>Red dots on the minimap are enemies who just fired.</li>
             <li>Bullets travel and drop. Wood and thin metal can be shot through. Concrete stops rounds.</li>
             <li>Health regenerates after a few seconds out of fire. Dead enemies may drop ammo or medkits.</li>
-            <li>The ammo crate in the headquarters building refills ammo and grenades.</li>
+            <li>The ammo crate in the headquarters building refills ammo, grenades and drones.</li>
+            <li>At night enemies struggle to see you, but their infrared lasers give them away under night vision. Thermal shows body heat through the dark.</li>
+            <li>The FPV drone's video gets worse with range and walls. Dive it into enemies or tap fire to detonate. Enemies will try to shoot it down.</li>
           </ul>
         </div>
       </div>

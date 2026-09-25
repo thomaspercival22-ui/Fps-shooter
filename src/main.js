@@ -76,7 +76,18 @@ function setupUI(game) {
       dc.appendChild(b);
     }
   };
-  renderPrimaries(); renderDiff();
+  const tc = $('time-choices');
+  const renderTime = () => {
+    tc.innerHTML = '';
+    for (const [k, name, desc] of [['day', 'Day', 'Desert sun, long sightlines'], ['night', 'Night', 'Moonlight · use NVG & thermal']]) {
+      const b = document.createElement('button');
+      b.className = 'choice' + (settings.time === k ? ' sel' : '');
+      b.innerHTML = `<b>${name}</b><span>${desc}</span>`;
+      b.onclick = () => { click(); settings.time = k; saveSettings(); renderTime(); };
+      tc.appendChild(b);
+    }
+  };
+  renderPrimaries(); renderDiff(); renderTime();
   const showBest = () => {
     const b = getBest();
     $('best-score').textContent = b ? `BEST ${b.score} · WAVE ${b.wave} · ${DIFFICULTY[b.difficulty]?.name || ''}` : '';

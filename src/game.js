@@ -13,6 +13,16 @@ import { Grenades } from './grenades.js';
 import { HUD } from './hud.js';
 import { Input } from './input.js';
 import { RAY_ALL } from './physics.js';
+import { PostFX, MODE, thermalMaterial, withThermal } from './post.js';
+import { Drone } from './drone.js';
+import { soldierOptions } from './soldier.js';
+import { nightSkyTexture } from './textures.js';
+
+// Direction of the moon painted into the night sky texture.
+const MOON_DIR = (() => {
+  const lat = (0.5 - 0.22) * Math.PI, phi = (0.62 - 0.5) * Math.PI * 2;
+  return new THREE.Vector3(Math.cos(lat) * Math.cos(phi), Math.sin(lat), Math.cos(lat) * Math.sin(phi)).normalize();
+})();
 
 const DEG = Math.PI / 180;
 const QUALITY = {
@@ -67,6 +77,13 @@ export class Game {
     this.weapons = new WeaponSystem(this, settings.primary);
     this.weapons.scene.environment = assets.envMap;
     this.pickupModels = { ammo: assets.models.ammo_box, health: assets.models.medical_box };
+    this.post = new PostFX(renderer);
+    this.drone = new Drone(this);
+    this.viewMode = 'normal';
+    this.thermalPalette = 0;
+    this.night = false;
+    this.lightDir = this.sunDir.clone();
+    this.thermalSky = new THREE.Color(0.015, 0.015, 0.015);
 
     audio.occlusion = (x, y, z) => !this.level.world.los(this.camera.position.x, this.camera.position.y, this.camera.position.z, x, y, z);
 
@@ -104,6 +121,7 @@ export class Game {
       this.scene.traverse((o) => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { m.needsUpdate = true; }); });
     }
     r.shadowMap.type = settings.quality === 'high' ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+    this.post.setQuality(settings.quality === 'low' ? 'low' : 'high');
     if (this.sun.shadow.mapSize.x !== size) {
       this.sun.shadow.mapSize.set(size, size);
       this.sun.shadow.map?.dispose(); this.sun.shadow.map = null;
@@ -121,7 +139,9 @@ export class Game {
     this.camera.fov = this.baseFov;
     this.camera.updateProjectionMatrix();
     this.weapons?.resize(aspect);
+    this.drone?.resize(aspect);
     this.hud?.resize(w, h);
+    if (this.post) { const b = this.renderer.getDrawingBufferSize(new THREE.Vector2()); this.post.setSize(b.x, b.y); }
     const bufH = h * this.renderScale;
     this.effects?.setFog(this.fogColor, this.scene.fog.near, this.scene.fog.far, bufH / (2 * Math.tan(this.camera.fov * DEG / 2)));
   }
@@ -168,6 +188,46 @@ export class Game {
     this.hud.banner('OPERATION TIPS MANIA', 'Hold the compound', 3.5);
     this.audio.startAmbience();
     this.flashAmount = 0;
+    this.viewMode = 'normal';
+    this.drone.reset();
+    this.hud.droneMode(false);
+    this.setTimeOfDay(settings.time === 'night');
+  }
+
+  /** Day: sun + HDR sky. Night: moonlight, stars, sodium lamps, darker fog. */
+  setTimeOfDay(night) {
+    this.night = night;
+    soldierOptions.night = night;
+    const s = this.scene;
+    if (night) {
+      if (!this.nightSky) this.nightSky = nightSkyTexture();
+      s.background = this.nightSky; s.backgroundIntensity = 0.6;
+      s.environmentIntensity = 0.05;
+      this.fogColor.set(0x06080d); s.fog.near = 20; s.fog.far = 230;
+      this.sun.color.set(0x9db4ff); this.sun.intensity = 0.45;
+      this.lightDir.copy(MOON_DIR);
+      if (!this.level.lamps.parent) s.add(this.level.lamps);
+    } else {
+      s.background = this.assets.skyTex; s.backgroundIntensity = 1.0;
+      s.environmentIntensity = 0.85;
+      this.fogColor.set(0xd3d9de); s.fog.near = 90; s.fog.far = 750;
+      this.sun.color.set(0xfff0dc); this.sun.intensity = 3.1;
+      this.lightDir.copy(this.sunDir);
+      if (this.level.lamps.parent) s.remove(this.level.lamps);
+    }
+    s.fog.color.copy(this.fogColor);
+    this.effects.setLight(night ? 0.07 : 1);
+    this.onResize();
+  }
+
+  toggleNvg() {
+    this.viewMode = this.viewMode === 'nvg' ? 'normal' : 'nvg';
+    this.audio.play(this.viewMode === 'nvg' ? 'nvg' : 'magTap', { vol: 0.6 });
+  }
+  cycleThermal() {
+    if (this.viewMode !== 'thermal') { this.viewMode = 'thermal'; this.thermalPalette = 0; }
+    else if (++this.thermalPalette > 2) { this.viewMode = 'normal'; this.thermalPalette = 0; }
+    this.audio.play('thermal', { vol: 0.5 });
   }
 
   pause() {
@@ -298,6 +358,7 @@ export class Game {
     const tags = [];
     if (info.headshot) { pts += SCORE.headshot; tags.push('HEADSHOT'); this.stats.headshots++; }
     if (info.grenade) { pts += SCORE.grenadeKill; tags.push('GRENADE'); this.stats.grenadeKills++; }
+    if (info.drone) { pts += SCORE.grenadeKill; tags.push('FPV DRONE'); }
     if (info.stunned) { pts += SCORE.stunnedKill; tags.push('STUNNED'); }
     if (info.distance > 50) { pts += Math.round(info.distance); tags.push(`${Math.round(info.distance)}m`); }
     this.stats.kills++;
@@ -345,9 +406,10 @@ export class Game {
     const rs = this.level.resupply;
     this.resupplyT -= dt;
     if (Math.hypot(rs.x - p.pos.x, rs.z - p.pos.z) < rs.r + 0.6 && this.resupplyT <= 0 && p.alive) {
-      const needs = Object.values(w.slots).some((s) => s.reserve < s.def.reserve) || w.frags < GRENADES.maxFrag || w.flashes < GRENADES.maxFlash;
+      const needs = Object.values(w.slots).some((s) => s.reserve < s.def.reserve) || w.frags < GRENADES.maxFrag || w.flashes < GRENADES.maxFlash || this.drone.count < 2;
       if (needs) {
         w.refill();
+        this.drone.count = Math.max(this.drone.count, 2);
         this.hud.pickup('RESUPPLIED');
         this.audio.play('pickup', { vol: 0.9 });
         this.resupplyT = 25;
@@ -389,7 +451,7 @@ export class Game {
     if (dP < R && p.alive) {
       const vis = W.los(pos.x, pos.y + 0.3, pos.z, chest.x, chest.y, chest.z, RAY_ALL) || W.los(pos.x, pos.y + 0.3, pos.z, p.eye.x, p.eye.y, p.eye.z, RAY_ALL);
       const f = vis ? 1 : 0.2;
-      const mul = owner === 'player' ? 0.55 : owner === 'enemy' ? this.difficulty.dmg : 0.9;
+      const mul = owner === 'player' || owner === 'drone' ? 0.55 : owner === 'enemy' ? this.difficulty.dmg : 0.9;
       const dmgP = dmg * Math.pow(1 - dP / R, 1.4) * f * mul;
       if (dmgP > 1) p.damage(dmgP, pos);
     }
@@ -402,8 +464,8 @@ export class Game {
       const vis = W.los(pos.x, pos.y + 0.3, pos.z, c.x, c.y, c.z, RAY_ALL);
       const dd = dmg * Math.pow(1 - d / R, 1.3) * (vis ? 1 : 0.2);
       const dir = c.clone().sub(pos).normalize();
-      const killed = e.takeDamage(dd, 'blast', dir.x, dir.z, owner === 'player' ? 'player' : 'env');
-      if (killed && (owner === 'player' || owner === 'barrel')) this.registerKill(e, { grenade: owner === 'player', distance: 0 });
+      const killed = e.takeDamage(dd, 'blast', dir.x, dir.z, owner === 'player' || owner === 'drone' ? 'player' : 'env');
+      if (killed && owner !== 'enemy') this.registerKill(e, { grenade: owner === 'player', drone: owner === 'drone', distance: 0 });
     }
     // chain reactions
     for (const b of this.level.explosiveBarrels) {
@@ -454,6 +516,13 @@ export class Game {
   update(dt) {
     this.time += dt;
     const input = this.input, p = this.player, w = this.weapons;
+    if (input.consume('pause')) { this.pause(); return; }
+    if (input.consume('nvg')) this.toggleNvg();
+    if (input.consume('thermal')) this.cycleThermal();
+    if (input.consume('drone') && p.alive) { if (this.drone.active) this.drone.exit(); else if (!this.drone.deploy()) this.hud.pickup(this.drone.count <= 0 ? 'NO DRONES LEFT' : ''); }
+    this.level.grassUniforms.uTime.value = this.time;
+    if (this.drone.active) { this._updateDroneControl(dt); return; }
+    this.drone.update(dt, input, [0, 0]);
 
     // look
     let [dx, dy] = input.takeLook();
@@ -467,7 +536,6 @@ export class Game {
     this._aimSnap(dt);
 
     // actions
-    if (input.consume('pause')) { this.pause(); return; }
     if (p.alive) {
       if (input.consume('reload')) w.requestReload();
       if (input.consume('swap')) w.switchWeapon();
@@ -495,12 +563,7 @@ export class Game {
       this.camera.updateMatrixWorld();
     }
 
-    this.enemies.update(dt);
-    this.grenades.update(dt);
-    this.ballistics.update(dt);
-    this.effects.update(dt);
-    this._updatePickups(dt);
-    this._updateWaves(dt);
+    this._updateWorld(dt);
     this._spotEnemies();
 
     // audio listener + health feedback
@@ -517,10 +580,11 @@ export class Game {
     this._shadowCheckT -= dt;
     if (this._shadowCheckT <= 0) {
       this._shadowCheckT = 0.15;
-      const c = this.camera.position;
-      this.inShadow = !!this.level.world.raycast(c.x, c.y - 0.1, c.z, this.sunDir.x, this.sunDir.y, this.sunDir.z, 60, RAY_ALL);
+      const c = this.camera.position, L = this.lightDir;
+      this.inShadow = !!this.level.world.raycast(c.x, c.y - 0.1, c.z, L.x, L.y, L.z, 60, RAY_ALL);
     }
-    w.updateLighting(this.sunDir, this.inShadow, dt);
+    w.updateLighting(this.lightDir, this.inShadow, dt, this.night ? 0.1 : 1);
+    this._updateLasers();
 
     this.hud.update(dt);
     if (!p.alive) {
@@ -529,13 +593,75 @@ export class Game {
     }
   }
 
+  _updateWorld(dt) {
+    this.enemies.update(dt);
+    this.grenades.update(dt);
+    this.ballistics.update(dt);
+    this.effects.update(dt);
+    this._updatePickups(dt);
+    this._updateWaves(dt);
+  }
+
+  /** While flying the FPV drone the operator stays put (and can still be shot). */
+  _updateDroneControl(dt) {
+    const input = this.input, p = this.player, d = this.drone;
+    const look = input.takeLook();
+    if (input.fire && !this._droneFirePrev) d.detonate();
+    this._droneFirePrev = input.fire;
+    if (input.consume('swap')) d.exit();
+    for (const k of ['reload', 'crouch', 'frag', 'flash', 'slot1', 'slot2']) input.consume(k);
+    input.jump = false;
+    d.update(dt, input, look);
+    this.weapons.setTrigger(false);
+    p.update(dt, { moveX: 0, moveY: 0, sprint: false, jump: false });
+    this.weapons.update(dt, false);
+    this._updateWorld(dt);
+    this.audio.setListener(this.camera.position.x, this.camera.position.y, this.camera.position.z, p.yaw);
+    this._followShadow(d.active ? d.pos : p.pos);
+    this.effects.lasers.mesh.visible = false;
+    this.hud.update(dt);
+    if (!p.alive) {
+      if (d.active) d.exit();
+      this.deathTimer -= dt;
+      if (this.deathTimer <= 0) this._gameOver();
+    }
+  }
+
+  /** Infrared aiming lasers: the player's PEQ and (at night) the enemies'. Only visible through NVG. */
+  _updateLasers() {
+    const fx = this.effects.lasers;
+    if (this.viewMode !== 'nvg' || !this.player.alive) { fx.mesh.visible = false; return; }
+    const W = this.level.world, list = [];
+    const cast = (from, dir, max) => {
+      const h = W.raycast(from.x, from.y, from.z, dir.x, dir.y, dir.z, max);
+      return { from, to: from.clone().addScaledVector(dir, h ? h.t : max), hit: !!h };
+    };
+    const w = this.weapons;
+    if (w.currentSlot === 'primary' && !this.player.sprinting && w.state !== 'reload') {
+      const from = w.muzzleWorld(new THREE.Vector3());
+      const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
+      list.push(cast(from, dir, 200));
+    }
+    if (this.night) {
+      for (const e of this.enemies.list) {
+        if (!e.alive || e.alert < 2 || e.soldier.pose.aim < 0.7 || e.flashed > 0) continue;
+        const m = e.soldier.muzzle;
+        m.updateWorldMatrix(true, false);
+        const from = new THREE.Vector3().setFromMatrixPosition(m.matrixWorld);
+        const dir = new THREE.Vector3(0, 0, 1).transformDirection(e.soldier.gun.matrixWorld);
+        list.push(cast(from, dir, 150));
+      }
+    }
+    fx.draw(list, this.camera);
+  }
+
   _followShadow(pos) {
     const sun = this.sun;
     // snap to shadow texels to avoid shimmering
     const texel = (this.sun.shadow.camera.right * 2) / this.sun.shadow.mapSize.x;
     const x = Math.round(pos.x / texel) * texel, z = Math.round(pos.z / texel) * texel;
     sun.target.position.set(x, 0, z);
-    sun.position.set(x + this.sunDir.x * 100, this.sunDir.y * 100, z + this.sunDir.z * 100);
+    sun.position.set(x + this.lightDir.x * 100, this.lightDir.y * 100, z + this.lightDir.z * 100);
     sun.target.updateMatrixWorld();
   }
 
@@ -610,16 +736,52 @@ export class Game {
   }
 
   render() {
-    const r = this.renderer;
-    r.autoClear = true;
-    r.render(this.scene, this.camera);
-    if (this.state === 'playing' && this.player.alive && this.weapons.rig.visible) {
-      r.autoClear = false;
+    const r = this.renderer, P = this.post, d = this.drone;
+    const playing = this.state === 'playing';
+    const droneView = playing && (d.active || d.transition > 0);
+    const cam = d.active ? d.camera : this.camera;
+    const mode = droneView ? MODE.fpv : playing ? MODE[this.viewMode] : MODE.normal;
+    const thermal = mode === MODE.thermal;
+    r.setRenderTarget(P.rt);
+    r.autoClear = false;
+    r.clear();
+    d.model.visible = !d.active; // the FPV camera sits inside the drone
+    if (thermal) this._renderThermal(this.scene, cam);
+    else r.render(this.scene, cam);
+    if (playing && !droneView && this.player.alive && this.weapons.rig.visible) {
       r.clearDepth();
-      r.render(this.weapons.scene, this.weapons.camera);
-      r.autoClear = true;
+      if (thermal) this._renderThermal(this.weapons.scene, this.weapons.camera);
+      else r.render(this.weapons.scene, this.weapons.camera);
     }
+    r.autoClear = true;
+    const n = this.night;
+    const lowHealth = playing && this.player.alive ? Math.max(0, 1 - this.player.health / 45) : 0;
+    const signal = droneView ? (d.active ? d.signal * (1 - d.transition / 0.6) : 0) : 1;
+    P.finish({
+      mode, time: this.time, lowHealth, signal, palette: this.thermalPalette,
+      exposure: n ? (droneView ? 2.4 : 1.3) : 1.0,
+      bloomStrength: n ? 0.14 : 0.07, threshold: n ? 0.7 : 1.5,
+      nvgGain: n ? 9 : 1.1, noise: n ? 0.22 : 0.07,
+      vignette: mode === MODE.fpv ? 0.15 : 0.35, grain: n ? 0.032 : 0.018,
+    });
     this.hud.captureAfterimage(r.domElement);
+  }
+
+  /** Thermal pass: every visible mesh writes its temperature; effects that have no heat are hidden. */
+  _renderThermal(scene, cam) {
+    const hidden = [];
+    scene.traverse((o) => {
+      if (!o.visible) return;
+      if (o.isPoints || o.isSprite || o.isLine || o.userData.noThermal || (o.isMesh && o.material && o.material.transparent)) { o.visible = false; hidden.push(o); }
+    });
+    const bg = scene.background, fog = scene.fog;
+    scene.background = scene === this.scene ? this.thermalSky : null;
+    scene.fog = null;
+    scene.overrideMaterial = thermalMaterial;
+    withThermal(() => this.renderer.render(scene, cam), this.night ? 0.16 : 0.3);
+    scene.overrideMaterial = null;
+    scene.background = bg; scene.fog = fog;
+    for (const o of hidden) o.visible = true;
   }
 }
 

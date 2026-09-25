@@ -2,7 +2,7 @@
 // recoil, sway, bob, sprint), firing, reloading, switching and grenade throws.
 import * as THREE from 'three';
 import { WEAPONS, GRENADES } from './config.js';
-import { buildM4, buildGlock, buildM1014, buildSniper, buildFragMesh, buildFlashMesh, Arms } from './gunmodels.js';
+import { buildM4, buildGlock, buildM1014, buildSniper, buildFragMesh, buildFlashMesh, Arms, gunMaterials as gunMaterialsRef } from './gunmodels.js';
 import * as TX from './textures.js';
 
 const BUILDERS = { m4: buildM4, glock: buildGlock, m1014: buildM1014, sniper: buildSniper };
@@ -57,6 +57,17 @@ export class WeaponSystem {
     this.heldFlash = buildFlashMesh();
     this.heldFrag.visible = this.heldFlash.visible = false;
     this.scene.add(this.heldFrag, this.heldFlash);
+
+    // temperatures for thermal imaging
+    const m = gunMaterialsRef();
+    this.scene.traverse((o) => {
+      if (!o.isMesh) return;
+      if (o.material === m.glove || o.material === m.knuckle) o.userData.heat = 0.9;
+      else if (o.material === m.sleeve) o.userData.heat = 0.8;
+      else o.userData.heat = 0.34;
+      if (o.material.transparent || o.material.blending === THREE.AdditiveBlending) o.userData.noThermal = true;
+    });
+    this.flash.traverse((o) => { o.userData.noThermal = true; });
 
     this.state = 'draw';
     this.stateT = 0;
@@ -559,16 +570,16 @@ export class WeaponSystem {
   }
 
   /** Light the viewmodel consistently with the world (sun direction, shade indoors). */
-  updateLighting(sunDirWorld, inShadow, dt) {
+  updateLighting(sunDirWorld, inShadow, dt, k = 1) {
     const cam = this.game.camera;
     const inv = cam.quaternion.clone().invert();
     const d = sunDirWorld.clone().applyQuaternion(inv);
     this.sun.position.copy(d).multiplyScalar(5);
     this.sun.target.position.set(0, 0, 0);
-    const target = inShadow ? 0.15 : 2.4;
+    const target = (inShadow ? 0.15 : 2.4) * k;
     this.sun.intensity += (target - this.sun.intensity) * Math.min(1, dt * 6);
-    this.fill.intensity = inShadow ? 0.35 : 0.8;
-    this.scene.environmentIntensity = inShadow ? 0.55 : 0.9;
+    this.fill.intensity = (inShadow ? 0.35 : 0.8) * k;
+    this.scene.environmentIntensity = (inShadow ? 0.55 : 0.9) * Math.max(k, 0.05);
   }
 }
 

@@ -18,6 +18,7 @@ export const DEFAULTS = {
   difficulty: 'regular',
   controlsOpacity: 0.85,
   onscreen: 'auto',       // auto | always (on-screen joystick + buttons)
+  time: 'day',            // mission time: day | night
 };
 
 function load() {

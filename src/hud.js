@@ -15,6 +15,9 @@ export class HUD {
       banner: $('banner'), bannerT: $('banner-title'), bannerS: $('banner-sub'), wave: $('wave-label'), hostiles: $('hostiles'),
       score: $('score'), pickup: $('pickup-msg'), scope: $('scope'), fps: $('fps'), frag: $('frag-count'), flash: $('flash-count'),
       btnFrag: $('btn-frag'), btnFlash: $('btn-flash'), vignette: $('vignette'),
+      osd: $('osd'), osdMsg: $('osd-msg'), osdBat: $('osd-bat'), osdTime: $('osd-time'), osdRssi: $('osd-rssi'), osdAlt: $('osd-alt'),
+      osdSpd: $('osd-spd'), osdHome: $('osd-home'), osdArmed: $('osd-armed'), osdHorizon: $('osd-horizon'), modeLabel: $('mode-label'),
+      droneCount: $('drone-count'), btnDrone: $('btn-drone'), btnNvg: $('btn-nvg'), btnThermal: $('btn-thermal'),
     };
     this.cross = [...this.el.cross.querySelectorAll('.ch')];
     this.damageCanvas = $('damage-overlay');
@@ -66,6 +69,35 @@ export class HUD {
     ctx.fillStyle = '#7fd46a';
     ctx.fillRect((level.resupply.x + R) * S - 5, (level.resupply.z + R) * S - 5, 10, 10);
     this.mapImage = { c, S, R };
+  }
+
+  // ---------------- drone / vision modes ----------------
+  droneMode(on) {
+    document.body.classList.toggle('drone', on);
+    this.el.osd.classList.toggle('hidden', !on);
+  }
+  osdMessage(text, dur = 1.5) {
+    this.el.osdMsg.textContent = text;
+    this.el.osdMsg.style.opacity = 1;
+    this.osdMsgT = dur;
+  }
+  _updateOSD(dt) {
+    const g = this.game, d = g.drone, e = this.el;
+    if (this.osdMsgT > 0) { this.osdMsgT -= dt; if (this.osdMsgT <= 0) e.osdMsg.style.opacity = 0; }
+    if (!d.active) return;
+    if (this.frame % 4) return;
+    const volts = (14.0 + d.battery * 2.8 - Math.min(0.6, d.speed / 40)).toFixed(1);
+    e.osdBat.textContent = `${volts}V  ${Math.round(d.battery * 100)}%`;
+    const t = Math.floor(d.flightT);
+    e.osdTime.textContent = `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+    const rssi = Math.round(d.signal * 99);
+    e.osdRssi.textContent = `RSSI ${String(rssi).padStart(2, '0')} ${'▮'.repeat(Math.ceil(d.signal * 5))}${'▯'.repeat(5 - Math.ceil(d.signal * 5))}`;
+    e.osdAlt.textContent = `ALT ${Math.round(d.pos.y)}m`;
+    e.osdSpd.textContent = `${Math.round(d.speed * 3.6)} KM/H`;
+    e.osdHome.textContent = `HOME ${Math.round(Math.hypot(d.pos.x - d.home.x, d.pos.z - d.home.z))}m`;
+    const armed = d.armed;
+    if (this.last.armed !== armed) { e.osdArmed.textContent = armed ? 'ARMED' : 'ARMING...'; e.osdArmed.classList.toggle('armed', armed); this.last.armed = armed; }
+    e.osdHorizon.style.transform = `translateY(${(d.pitch + d.bodyPitch * 0.35) * 160}px) rotate(${-d.bodyRoll * 0.9}rad)`;
   }
 
   // ---------------- events ----------------
@@ -226,6 +258,16 @@ export class HUD {
     // banner / pickup
     if (this.bannerT > 0) { this.bannerT -= dt; if (this.bannerT <= 0) e.banner.classList.add('hidden'); }
     if (this.pickupT > 0) { this.pickupT -= dt; if (this.pickupT <= 0) e.pickup.style.opacity = 0; }
+    this._updateOSD(dt);
+    const dc = String(g.drone.count);
+    if (this.last.dc !== dc) { e.droneCount.textContent = dc; e.btnDrone.classList.toggle('empty', g.drone.count <= 0 && !g.drone.active); this.last.dc = dc; }
+    const vm = g.viewMode + (g.thermalPalette ?? '');
+    if (this.last.vm !== vm) {
+      e.btnNvg.classList.toggle('on', g.viewMode === 'nvg');
+      e.btnThermal.classList.toggle('on', g.viewMode === 'thermal');
+      e.modeLabel.textContent = g.viewMode === 'nvg' ? 'NVG · PVS-31' : g.viewMode === 'thermal' ? `THERMAL · ${['WHITE HOT', 'BLACK HOT', 'IRONBOW'][g.thermalPalette]}` : '';
+      this.last.vm = vm;
+    }
     // minimap at ~20 Hz
     if (this.frame % 3 === 0) this._drawMinimap();
     // fps

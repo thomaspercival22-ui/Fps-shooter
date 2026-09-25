@@ -403,3 +403,71 @@ export function dotTexture(color = 'rgba(120,255,140,1)') {
   ctx.fillStyle = g; ctx.fillRect(0, 0, S, S);
   return tex(c);
 }
+
+// ---------- night ----------
+/** Equirectangular night sky: gradient, milky band, stars and a moon. */
+export function nightSkyTexture() {
+  const W = 2048, H = 1024;
+  const c = canvas(W, H), ctx = c.getContext('2d');
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#02040a'); g.addColorStop(0.42, '#070c1a'); g.addColorStop(0.5, '#141b2a'); g.addColorStop(0.53, '#0b0f17'); g.addColorStop(1, '#050608');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // milky way band
+  const img = ctx.getImageData(0, 0, W, H);
+  for (let y = 0; y < H * 0.5; y++) for (let x = 0; x < W; x++) {
+    const band = Math.exp(-(((y - 150 - Math.sin(x / W * Math.PI * 2) * 120) / 70) ** 2));
+    if (band < 0.02) continue;
+    const n = fbm(x / 60, y / 60, 71, 4) * band;
+    const k = (y * W + x) * 4;
+    img.data[k] += n * 38; img.data[k + 1] += n * 38; img.data[k + 2] += n * 48;
+  }
+  ctx.putImageData(img, 0, 0);
+  for (let i = 0; i < 4200; i++) {
+    const x = Math.random() * W, y = Math.random() ** 1.4 * H * 0.5;
+    const b = Math.random() ** 3;
+    ctx.fillStyle = `rgba(${220 + Math.random() * 35},${225 + Math.random() * 30},255,${0.25 + b * 0.75})`;
+    const s = b > 0.85 ? 1.6 : b > 0.5 ? 1.1 : 0.7;
+    ctx.fillRect(x, y, s, s);
+  }
+  // moon
+  const mx = W * 0.62, my = H * 0.22;
+  const mg = ctx.createRadialGradient(mx, my, 0, mx, my, 60);
+  mg.addColorStop(0, 'rgba(255,255,245,1)'); mg.addColorStop(0.2, 'rgba(240,242,235,1)'); mg.addColorStop(0.24, 'rgba(160,170,190,0.35)'); mg.addColorStop(1, 'rgba(60,70,100,0)');
+  ctx.fillStyle = mg; ctx.fillRect(mx - 60, my - 60, 120, 120);
+  const t = tex(c);
+  t.mapping = THREE.EquirectangularReflectionMapping;
+  return t;
+}
+
+/** Fabric weave + MOLLE webbing normal map matching the soldier atlas layout. */
+export function soldierNormalMap() {
+  const S = 512;
+  const hgt = new Float32Array(S * S);
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    let h = (Math.sin(x * 2.1) * Math.sin(y * 2.1)) * 0.25 + hash(x, y, 91) * 0.15 + fbm(x / 14, y / 14, 93, 3) * 0.5;
+    // vest region: MOLLE rows
+    if (x >= 256 && y < 128) h += ((y - 10) % 14 < 4 ? 0.8 : 0) + ((x - 262) % 18 < 2 ? 0.4 : 0);
+    // pouch region: flap seams
+    if (x >= 256 && x < 384 && y >= 256 && y < 384) h += ((y - 268) % 22 < 3 ? 0.9 : 0);
+    // helmet: smooth with a few scuffs
+    if (x >= 384 && y >= 192 && y < 256) h = fbm(x / 20, y / 20, 5, 3) * 0.3;
+    hgt[y * S + x] = h;
+  }
+  return normalFromHeight(hgt, S, S, 1.4);
+}
+
+/** Dry desert grass tuft (alpha texture for crossed quads). */
+export function grassTexture() {
+  const W = 128, H = 128;
+  const c = canvas(W, H), ctx = c.getContext('2d');
+  for (let i = 0; i < 70; i++) {
+    const x0 = W / 2 + (Math.random() - 0.5) * 50, h = 40 + Math.random() * 80, lean = (Math.random() - 0.5) * 50;
+    const t = Math.random();
+    ctx.strokeStyle = `rgb(${150 + t * 60},${130 + t * 50},${80 + t * 30})`;
+    ctx.lineWidth = 1 + Math.random() * 1.6;
+    ctx.beginPath(); ctx.moveTo(x0, H); ctx.quadraticCurveTo(x0 + lean * 0.3, H - h * 0.6, x0 + lean, H - h); ctx.stroke();
+  }
+  const t = tex(c);
+  t.anisotropy = 2;
+  return t;
+}

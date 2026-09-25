@@ -2,7 +2,7 @@
 // materials, damage falloff, hit detection against the world, the enemies'
 // hitboxes and the player, near-miss whizzes and tracers.
 import * as THREE from 'three';
-import { RAY_BULLET, rayCapsule, pointSegDist } from './physics.js';
+import { RAY_BULLET, rayCapsule, raySphere, pointSegDist } from './physics.js';
 
 const MAX_TRACERS = 64;
 const G = 9.81;
@@ -84,7 +84,14 @@ export class Ballistics {
             alive = false;
             break;
           }
-        } else if (p.alive) {
+        } else {
+          const dr = g.drone;
+          if (dr.active && dr.state !== 'idle') {
+            const td = raySphere(start.x, start.y, start.z, dir.x, dir.y, dir.z, dr.pos.x, dr.pos.y, dr.pos.z, 0.22);
+            if (td >= 0 && td <= tMax) { dr.shotDown(); alive = false; break; }
+          }
+        }
+        if (b.owner !== 'player' && p.alive) {
           const top = p.pos.y + p.height - 0.1, bot = p.pos.y + 0.2;
           const tp = rayCapsule(start.x, start.y, start.z, dir.x, dir.y, dir.z, p.pos.x, bot, p.pos.z, p.pos.x, top, p.pos.z, 0.3);
           if (tp >= 0 && tp <= tMax) {

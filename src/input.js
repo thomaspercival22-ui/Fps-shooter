@@ -13,6 +13,7 @@ export class Input {
     this.fire = false;
     this.ads = false;
     this.jump = false;
+    this.upHeld = false; this.downHeld = false; // held buttons (drone altitude)
     this.events = new Set(); // one-shot actions: reload, swap, crouch, frag, flash, pause
     this.hasTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     this.touchMode = this.hasTouch || settings.onscreen === 'always';
@@ -33,7 +34,7 @@ export class Input {
 
   reset() {
     this.moveX = this.moveY = 0; this.fire = false; this.sprint = false;
-    this.lookDX = this.lookDY = 0; this.events.clear(); this.jump = false;
+    this.lookDX = this.lookDY = 0; this.events.clear(); this.jump = false; this.upHeld = this.downHeld = false;
     this.pointers.clear(); this.stick.id = null; this.mouseDown = false;
     document.getElementById('stick').classList.remove('active', 'sprint');
     document.querySelectorAll('.tbtn.pressed').forEach((b) => b.classList.remove('pressed'));
@@ -128,8 +129,16 @@ export class Input {
     };
     tap('btn-ads', (el) => { this.ads = !this.ads; el.classList.toggle('on', this.ads); });
     tap('btn-reload', () => this.events.add('reload'));
-    tap('btn-jump', () => { this.jump = true; });
-    tap('btn-crouch', () => this.events.add('crouch'));
+    tap('btn-jump', () => { this.jump = true; this.upHeld = true; });
+    tap('btn-crouch', () => { this.events.add('crouch'); this.downHeld = true; });
+    for (const [id, key] of [['btn-jump', 'upHeld'], ['btn-crouch', 'downHeld']]) {
+      const el = document.getElementById(id);
+      const off = () => { this[key] = false; };
+      el.addEventListener('pointerup', off); el.addEventListener('pointercancel', off); el.addEventListener('pointerleave', off);
+    }
+    tap('btn-nvg', () => this.events.add('nvg'));
+    tap('btn-thermal', () => this.events.add('thermal'));
+    tap('btn-drone', () => this.events.add('drone'));
     tap('btn-swap', () => this.events.add('swap'));
     tap('btn-frag', () => this.events.add('frag'));
     tap('btn-flash', () => this.events.add('flash'));
@@ -192,15 +201,22 @@ export class Input {
         case 'KeyQ': this.events.add('swap'); break;
         case 'Digit1': this.events.add('slot1'); break;
         case 'Digit2': this.events.add('slot2'); break;
-        case 'KeyC': case 'ControlLeft': this.events.add('crouch'); break;
+        case 'KeyC': case 'ControlLeft': this.events.add('crouch'); this.downHeld = true; break;
         case 'KeyG': this.events.add('frag'); break;
         case 'KeyF': this.events.add('flash'); break;
-        case 'Space': this.jump = true; e.preventDefault(); break;
+        case 'KeyN': this.events.add('nvg'); break;
+        case 'KeyT': this.events.add('thermal'); break;
+        case 'KeyV': this.events.add('drone'); break;
+        case 'Space': this.jump = true; this.upHeld = true; e.preventDefault(); break;
         case 'Escape': case 'KeyP': this.events.add('pause'); break;
       }
       this._keysToMove();
     });
-    window.addEventListener('keyup', (e) => { this.keys.delete(e.code); this._keysToMove(); });
+    window.addEventListener('keyup', (e) => {
+      this.keys.delete(e.code); this._keysToMove();
+      if (e.code === 'Space') this.upHeld = false;
+      if (e.code === 'KeyC' || e.code === 'ControlLeft') this.downHeld = false;
+    });
     window.addEventListener('blur', () => { this.keys.clear(); this._keysToMove(); this.mouseDown = false; if (!this.touchMode) this.fire = false; });
     canvas.addEventListener('mousedown', (e) => {
       if (!this.enabled || this.touchMode) return;

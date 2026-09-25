@@ -59,6 +59,9 @@ class GeoBatch {
       const mesh = new THREE.Mesh(merged, materials[key]);
       mesh.castShadow = shadows && key !== 'floor';
       mesh.receiveShadow = true;
+      // surface temperature for thermal imaging (scaled by time of day)
+      mesh.userData.heat = key.startsWith('cont_') || key === 'sheet' || key === 'tank' ? 0.38 : key === 'glass' ? 0.2 : 0.31;
+      mesh.userData.env = true;
       mesh.matrixAutoUpdate = false;
       mesh.updateMatrix();
       scene.add(mesh);
@@ -216,6 +219,7 @@ export function buildLevel(scene, assets, opts = {}) {
     };
     const ground = new THREE.Mesh(g, groundMat);
     ground.receiveShadow = true;
+    ground.userData.heat = 0.29; ground.userData.env = true;
     ground.matrixAutoUpdate = false;
     scene.add(ground);
   }
@@ -465,7 +469,7 @@ export function buildLevel(scene, assets, opts = {}) {
   // ---------------- props (instanced GLTF models) ----------------
   const props = new THREE.Group();
   scene.add(props);
-  const instanced = (model, placements, { castShadow = true, map = null, color = null, keepMaps = true } = {}) => {
+  const instanced = (model, placements, { castShadow = true, map = null, color = null, keepMaps = true, heat = 0.31 } = {}) => {
     model.updateMatrixWorld(true);
     const out = [];
     model.traverse((o) => {
@@ -482,6 +486,7 @@ export function buildLevel(scene, assets, opts = {}) {
       placements.forEach((p, i) => { m.multiplyMatrices(p, o.matrixWorld); im.setMatrixAt(i, m); });
       im.castShadow = castShadow;
       im.receiveShadow = true;
+      im.userData.heat = heat; im.userData.env = true;
       im.computeBoundingSphere();
       props.add(im);
       out.push(im);
@@ -560,6 +565,63 @@ export function buildLevel(scene, assets, opts = {}) {
     instanced(new THREE.Group().add(new THREE.Mesh(rockGeo, rockMat)), pl, { castShadow: false });
   }
 
+  // dry grass tufts swaying in the wind
+  const grassUniforms = { uTime: { value: 0 } };
+  {
+    const a = new THREE.PlaneGeometry(0.75, 0.46); a.translate(0, 0.23, 0);
+    const b = a.clone(); b.rotateY(Math.PI / 2);
+    const geo = mergeGeometries([a, b]);
+    const nrm = geo.attributes.normal;
+    for (let i = 0; i < nrm.count; i++) nrm.setXYZ(i, 0, 1, 0);
+    const mat = new THREE.MeshStandardMaterial({ map: TX.grassTexture(), alphaTest: 0.45, side: THREE.DoubleSide, color: 0xd8c9a0, roughness: 1, metalness: 0 });
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uTime = grassUniforms.uTime;
+      shader.vertexShader = 'uniform float uTime;\n' + shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+        #ifdef USE_INSTANCING
+          float ph = instanceMatrix[3].x * 0.7 + instanceMatrix[3].z * 0.45;
+          float sway = (sin(uTime * 1.6 + ph) + 0.4 * sin(uTime * 3.7 + ph * 2.0)) * 0.07 * position.y * 2.2;
+          transformed.x += sway; transformed.z += sway * 0.6;
+        #endif`);
+    };
+    const pl = [];
+    for (let i = 0; i < 1400 && pl.length < 520; i++) {
+      const x = (Math.random() * 2 - 1) * (BOUND - 1.5), z = (Math.random() * 2 - 1) * (BOUND - 1.5);
+      if (world.overlaps(x, z, 0.6, 0, 3)) continue;
+      // fewer tufts on the trampled roads through the gates
+      if ((Math.abs(x) < 4 || Math.abs(z - 9) < 3) && Math.random() < 0.85) continue;
+      const s = 0.6 + Math.random() * 0.9;
+      pl.push(place(x, 0, z, Math.random() * 6, 0, s));
+    }
+    const grass = instanced(new THREE.Group().add(new THREE.Mesh(geo, mat)), pl, { castShadow: false });
+    for (const m of grass) { m.userData.noThermal = true; }
+  }
+
+  // security lamps (switched on for night missions)
+  const lamps = new THREE.Group();
+  const lampLights = [];
+  {
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x3a3a38, roughness: 0.6, metalness: 0.6 });
+    const headMat = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0xffb65c, emissiveIntensity: 7, roughness: 0.4 });
+    const add = (x, y, z, pole, lx, ly, lz) => {
+      if (pole) {
+        const p = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, y, 8), poleMat);
+        p.position.set(x, y / 2, z); p.castShadow = true; p.userData.heat = 0.3; p.userData.env = true;
+        lamps.add(p);
+      }
+      const h = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.12, 0.26), headMat);
+      h.position.set(x, y, z); h.userData.heat = 0.75;
+      lamps.add(h);
+      const l = new THREE.PointLight(0xffb866, 26, 24, 2);
+      l.position.set(lx, ly, lz);
+      lamps.add(l);
+      lampLights.push(l);
+    };
+    add(-3.5, 2.75, -15.72, false, -3.5, 2.5, -15.2);
+    add(15.72, 4.9, -26.2, false, 15.2, 4.6, -26.2);
+    add(-3.95, 3.72, 42, false, -3.95, 3.5, 41.2);
+    add(21, 6.2, 18.2, true, 21, 5.9, 18.2);
+  }
+
   const meshes = G.build(scene, mats, shadows);
 
   // ---------------- navigation ----------------
@@ -609,7 +671,7 @@ export function buildLevel(scene, assets, opts = {}) {
   }
 
   return {
-    world, nav, covers, spawnPoints, waypoints, explosiveBarrels, minimap, meshes, props,
+    world, nav, covers, spawnPoints, waypoints, explosiveBarrels, minimap, meshes, props, grassUniforms, lamps,
     playerSpawn: { x: 3, z: -20.5, yaw: Math.PI },
     resupply: { x: -6.5, z: -26.45, r: 2.0 },
     bounds: BOUND,

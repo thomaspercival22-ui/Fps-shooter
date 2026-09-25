@@ -114,6 +114,21 @@ button { font-family: inherit; }
 #fps { position: absolute; left: 50%; bottom: calc(4px + var(--sab)); transform: translateX(-50%); font: 11px var(--mono); color: #9f9; opacity: .7; }
 
 #scope { position: absolute; inset: 0; }
+#mode-label { position: absolute; top: calc(56px + var(--sat)); left: 50%; transform: translateX(-50%); font: 700 11px var(--mono); letter-spacing: .2em; color: rgba(255,255,255,.75); text-shadow: 0 1px 2px #000; }
+#osd { position: absolute; inset: 0; font: 700 13px var(--mono); color: #fff; text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000; letter-spacing: .06em; }
+#osd > div { position: absolute; display: flex; flex-direction: column; gap: 3px; }
+.osd-tl { left: calc(26% + var(--sal)); top: calc(62px + var(--sat)); }
+.osd-tr { right: calc(26% + var(--sar)); top: calc(62px + var(--sat)); text-align: right; }
+.osd-bl { left: calc(27% + var(--sal)); bottom: calc(54px + var(--sab)); }
+.osd-br { right: calc(34% + var(--sar)); bottom: calc(54px + var(--sab)); text-align: right; }
+.osd-hint { left: 50%; bottom: calc(10px + var(--sab)); transform: translateX(-50%); font-size: 10px !important; opacity: .7; white-space: nowrap; }
+.osd-cross { left: 50%; top: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px; border: 2px solid rgba(255,255,255,.9); border-radius: 50%; box-shadow: 0 0 0 1px #000; }
+#osd-horizon { left: 30%; right: 30%; top: 50%; height: 2px; background: rgba(255,255,255,.85); box-shadow: 0 0 0 1px #000; }
+#osd-armed.armed { color: #ff4a3a; animation: blink .6s infinite; }
+#osd-msg { position: absolute; left: 50%; top: 38%; transform: translateX(-50%); font: 800 22px var(--mono); color: #fff; letter-spacing: .15em; text-shadow: 2px 2px 0 #000; opacity: 0; }
+body.drone #crosshair, body.drone #weapon-box, body.drone #health-box, body.drone #btn-ads, body.drone #btn-reload,
+body.drone #btn-frag, body.drone #btn-flash, body.drone #hitmarker, body.drone #scope, body.drone #mode-label,
+body.drone #btn-nvg, body.drone #btn-thermal, body.drone #wave-info, body.drone #score-box { display: none !important; }
 #scope-reticle { position: absolute; inset: 0; width: 100%; height: 100%; }
 
 /* ---------------- Touch controls ---------------- */
@@ -152,6 +167,10 @@ button { font-family: inherit; }
 #btn-swap   { width: 46px; height: 46px; right: calc(196px + var(--sar)); bottom: calc(40px + var(--sab)); }
 #btn-frag   { width: 48px; height: 48px; right: calc(210px + var(--sar)); bottom: calc(150px + var(--sab)); }
 #btn-flash  { width: 48px; height: 48px; right: calc(200px + var(--sar)); bottom: calc(210px + var(--sab)); }
+.tbtn.mode { width: 40px; height: 38px; top: calc(12px + var(--sat)); border-radius: 8px; font: 800 10px var(--font); letter-spacing: .04em; }
+#btn-nvg { left: calc(192px + var(--sal)); }
+#btn-thermal { left: calc(238px + var(--sal)); }
+#btn-drone { left: calc(284px + var(--sal)); }
 #btn-pause  { width: 38px; height: 38px; left: calc(146px + var(--sal)); top: calc(12px + var(--sat)); border-radius: 8px; }
 
 body.desktop #touch { display: none; }

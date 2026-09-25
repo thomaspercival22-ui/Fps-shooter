@@ -4,11 +4,16 @@
 // Faces +Z in its local space; its right side is -X.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { soldierAtlas, atlasUV } from './textures.js';
+import { soldierAtlas, atlasUV, soldierNormalMap } from './textures.js';
+import { buildM4, buildM1014, buildSniper } from './gunmodels.js';
 
 const materials = {};
+let normalTex = null;
+// Soldiers can show flipped-down night vision goggles (set by the game at night).
+export const soldierOptions = { night: false };
 function material(kit) {
-  if (!materials[kit]) materials[kit] = new THREE.MeshStandardMaterial({ map: soldierAtlas(kit), roughness: 0.88, metalness: 0.02 });
+  if (!normalTex) normalTex = soldierNormalMap();
+  if (!materials[kit]) materials[kit] = new THREE.MeshStandardMaterial({ map: soldierAtlas(kit), normalMap: normalTex, normalScale: new THREE.Vector2(0.7, 0.7), roughness: 0.9, metalness: 0.02 });
   return materials[kit];
 }
 
@@ -67,6 +72,12 @@ function geometries(kit) {
   ];
   if (heavy) head.push(part(B(0.17, 0.12, 0.05), 'black', { pos: [0, 0.07, 0.1] })); // ballistic mask
   G.head = mergeGeometries(head);
+  G.nvg = mergeGeometries([
+    part(CY(0.019, 0.017, 0.075, 10), 'black', { pos: [0.034, 0.1, 0.135], rot: [Math.PI / 2, 0, 0] }),
+    part(CY(0.019, 0.017, 0.075, 10), 'black', { pos: [-0.034, 0.1, 0.135], rot: [Math.PI / 2, 0, 0] }),
+    part(B(0.09, 0.03, 0.03), 'black', { pos: [0, 0.135, 0.125] }),
+    part(B(0.03, 0.05, 0.03), 'black', { pos: [0, 0.18, 0.12] }),
+  ]);
   G.upperArm = mergeGeometries([part(C(0.058, 0.2, 8), 'camo', { pos: [0, -0.14, 0] }), part(B(0.09, 0.08, 0.09), 'pouch', { pos: [0, -0.06, 0] })]);
   G.foreArm = mergeGeometries([part(C(0.048, 0.18, 8), 'camo', { pos: [0, -0.12, 0] })]);
   G.hand = mergeGeometries([part(B(0.06, 0.09, 0.08), 'black', { pos: [0, -0.04, 0.01] })]);
@@ -81,24 +92,48 @@ function geometries(kit) {
 }
 
 // ---------- enemy weapons (forward = +Z, grip at origin) ----------
+// Built from the same detailed models the player uses, merged into one mesh
+// with vertex colours so each enemy gun is a single draw call.
 const gunCache = {};
+let gunMat = null;
+const GUN_SPECS = {
+  rifle: { build: buildM4, grip: [-0.07, -0.06], fore: [-0.035, 0.16], muzzle: [0, 0.54], butt: -0.35 },
+  lmg: { build: buildM4, grip: [-0.07, -0.06], fore: [-0.035, 0.16], muzzle: [0, 0.54], butt: -0.35, boxMag: true },
+  shotgun: { build: buildM1014, grip: [-0.07, -0.12], fore: [-0.04, 0.23], muzzle: [0.008, 0.6], butt: -0.41 },
+  dmr: { build: buildSniper, grip: [-0.09, -0.1], fore: [-0.06, 0.2], muzzle: [0, 0.81], butt: -0.53 },
+};
 function gunGeometry(type) {
   if (gunCache[type]) return gunCache[type];
+  const spec = GUN_SPECS[type] || GUN_SPECS.rifle;
+  const g = spec.build();
+  g.root.updateMatrixWorld(true);
   const parts = [];
-  const add = (g, r, o) => parts.push(part(g, r, o));
-  const long = type === 'dmr' || type === 'lmg';
-  const len = type === 'shotgun' ? 0.5 : long ? 0.62 : 0.5;
-  add(B(0.04, 0.07, 0.3), 'metal', { pos: [0, 0.03, 0.03] });                 // receiver
-  add(CY(0.013, 0.012, len, 8), 'metal', { pos: [0, 0.04, 0.18 + len / 2], rot: [Math.PI / 2, 0, 0] }); // barrel
-  add(B(0.05, 0.055, 0.24), type === 'rifle' ? 'furniture' : 'metal', { pos: [0, 0.03, 0.28] }); // handguard
-  add(B(0.035, 0.14, 0.04), 'metal', { pos: [0, -0.06, -0.02], rot: [0.3, 0, 0] }); // grip
-  add(B(0.04, 0.09, 0.2), type === 'rifle' ? 'furniture' : 'metal', { pos: [0, 0.0, -0.19] }); // stock
-  if (type === 'lmg') add(B(0.09, 0.1, 0.12), 'furniture', { pos: [0, -0.06, 0.12] }); // box mag
-  else if (type !== 'shotgun') add(B(0.03, 0.16, 0.06), 'metal', { pos: [0, -0.07, 0.11], rot: [-0.3, 0, 0] }); // mag
-  else add(CY(0.016, 0.016, 0.4, 8), 'metal', { pos: [0, 0.01, 0.35], rot: [Math.PI / 2, 0, 0] }); // tube
-  if (type === 'dmr') add(CY(0.022, 0.022, 0.26, 10), 'metal', { pos: [0, 0.11, 0.05], rot: [Math.PI / 2, 0, 0] }); // scope
-  else add(B(0.03, 0.04, 0.06), 'metal', { pos: [0, 0.09, 0.05] }); // optic
-  gunCache[type] = { geo: mergeGeometries(parts), muzzleZ: 0.18 + len, grip: new THREE.Vector3(0, -0.05, -0.01), fore: new THREE.Vector3(0, 0.0, 0.18), butt: -0.29 };
+  const visible = (o) => { for (let p = o; p; p = p.parent) if (!p.visible) return false; return true; };
+  g.root.traverse((o) => {
+    if (!o.isMesh || !visible(o) || o.material.transparent || o.material.blending === THREE.AdditiveBlending) return;
+    let geo = o.geometry.clone().applyMatrix4(o.matrixWorld);
+    if (geo.index) geo = geo.toNonIndexed();
+    for (const k of Object.keys(geo.attributes)) if (k !== 'position' && k !== 'normal') geo.deleteAttribute(k);
+    const n = geo.attributes.position.count, c = o.material.color, col = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    parts.push(geo);
+  });
+  if (spec.boxMag) {
+    let box = new THREE.BoxGeometry(0.08, 0.1, 0.11).toNonIndexed();
+    box.translate(0.02, -0.08, -0.05);
+    box.deleteAttribute('uv');
+    const col = new Float32Array(box.attributes.position.count * 3).fill(0.03);
+    box.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    parts.push(box);
+  }
+  const geo = mergeGeometries(parts);
+  geo.rotateY(Math.PI); // player models point down -Z; soldiers aim down +Z
+  if (!gunMat) gunMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.55 });
+  gunCache[type] = {
+    geo, mat: gunMat, muzzleY: spec.muzzle[0], muzzleZ: spec.muzzle[1],
+    grip: new THREE.Vector3(0, spec.grip[0], spec.grip[1]), fore: new THREE.Vector3(0, spec.fore[0], spec.fore[1]), butt: spec.butt,
+  };
   return gunCache[type];
 }
 
@@ -122,28 +157,38 @@ export class Soldier {
   constructor(scene, kit, weaponType) {
     const mat = material(kit);
     const G = geometries(kit);
-    const mk = (geo) => { const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true; return m; };
+    this.meshes = [];
+    const mk = (geo, heat = 0.85, m2 = mat) => {
+      const m = new THREE.Mesh(geo, m2);
+      m.castShadow = true; m.receiveShadow = true;
+      m.userData.heat = heat; m.userData.baseHeat = heat;
+      this.meshes.push(m);
+      return m;
+    };
     this.root = new THREE.Group();
     this.faller = new THREE.Group();
     this.root.add(this.faller);
     this.hips = new THREE.Group(); this.hips.position.y = 0.97; this.faller.add(this.hips);
     this.hips.add(mk(G.pelvis));
     this.spine = new THREE.Group(); this.spine.position.y = 0.08; this.hips.add(this.spine);
-    this.spine.add(mk(G.chest));
+    this.spine.add(mk(G.chest, 0.78));
     this.neck = new THREE.Group(); this.neck.position.set(0, 0.52, 0.0); this.spine.add(this.neck);
     this.head = new THREE.Group(); this.head.position.y = 0.04; this.neck.add(this.head);
-    this.head.add(mk(G.head));
+    this.head.add(mk(G.head, 1.0));
+    this.nvg = mk(G.nvg, 0.4);
+    this.nvg.visible = soldierOptions.night;
+    this.head.add(this.nvg);
     this.arm = {};
     for (const [side, x, z] of [['R', -0.2, 0.02], ['L', 0.2, 0.06]]) {
-      const up = new THREE.Group(); up.position.set(x, 0.46, z); this.spine.add(up); up.add(mk(G.upperArm));
-      const fo = new THREE.Group(); fo.position.y = -0.31; up.add(fo); fo.add(mk(G.foreArm));
-      const ha = new THREE.Group(); ha.position.y = -0.28; fo.add(ha); ha.add(mk(G.hand));
+      const up = new THREE.Group(); up.position.set(x, 0.46, z); this.spine.add(up); up.add(mk(G.upperArm, 0.84));
+      const fo = new THREE.Group(); fo.position.y = -0.31; up.add(fo); fo.add(mk(G.foreArm, 0.88));
+      const ha = new THREE.Group(); ha.position.y = -0.28; fo.add(ha); ha.add(mk(G.hand, 0.95));
       this.arm[side] = { up, fo, ha, shoulder: new THREE.Vector3(x, 0.46, z) };
     }
     this.leg = {};
     for (const [side, x] of [['R', -0.1], ['L', 0.1]]) {
       const th = new THREE.Group(); th.position.set(x, -0.04, 0); this.hips.add(th); th.add(mk(G.thigh));
-      const sh = new THREE.Group(); sh.position.y = -0.44; th.add(sh); sh.add(mk(G.shin));
+      const sh = new THREE.Group(); sh.position.y = -0.44; th.add(sh); sh.add(mk(G.shin, 0.8));
       this.leg[side] = { th, sh };
     }
     // weapon
@@ -152,10 +197,11 @@ export class Soldier {
     this.gunPivot = new THREE.Group();
     this.gunPivot.position.set(-0.12, 0.42, 0.16);
     this.spine.add(this.gunPivot);
-    this.gun = mk(gg.geo);
+    this.gun = mk(gg.geo, 0.3, gg.mat);
     this.gun.position.z = -gg.butt - 0.03;
     this.gunPivot.add(this.gun);
-    this.muzzle = new THREE.Object3D(); this.muzzle.position.set(0, 0.04, gg.muzzleZ); this.gun.add(this.muzzle);
+    this.gunHeat = 0;
+    this.muzzle = new THREE.Object3D(); this.muzzle.position.set(0, gg.muzzleY, gg.muzzleZ); this.gun.add(this.muzzle);
     this.flashSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: flashTexture(), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, toneMapped: false }));
     this.flashSprite.scale.setScalar(0.45);
     this.flashSprite.visible = false;
@@ -184,6 +230,7 @@ export class Soldier {
     this.flashSprite.material.rotation = Math.random() * 6;
     this.flashSprite.scale.setScalar(0.35 + Math.random() * 0.25);
     this.flashT = 0.05;
+    this.gunHeat = Math.min(0.6, this.gunHeat + 0.02);
   }
   muzzleWorld(out) { this.muzzle.updateWorldMatrix(true, false); return out.setFromMatrixPosition(this.muzzle.matrixWorld); }
   headWorld(out) { this.head.updateWorldMatrix(true, false); return out.set(0, 0.11, 0.01).applyMatrix4(this.head.matrixWorld); }
@@ -232,6 +279,9 @@ export class Soldier {
 
   update(dt, world, camPos) {
     if (this.flashT > 0) { this.flashT -= dt; if (this.flashT <= 0) this.flashSprite.visible = false; }
+    this.gunHeat = Math.max(0, this.gunHeat - dt * 0.012);
+    this.gun.userData.heat = 0.3 + this.gunHeat;
+    this.nvg.visible = soldierOptions.night;
     if (this.dead) { this._updateDead(dt, world); return; }
     const P = this.pose, mv = this.move;
     // hit reaction springs
@@ -336,6 +386,11 @@ export class Soldier {
 
   _updateDead(dt, world) {
     this.deathT += dt;
+    // bodies slowly cool down (visible through thermal)
+    if ((this.deathT % 1) < dt) {
+      const k = Math.max(0.38, 1 - this.deathT / 120);
+      for (const m of this.meshes) if (m !== this.gun) m.userData.heat = m.userData.baseHeat * k;
+    }
     const t = this.deathT;
     // knees buckle, then the body topples with gravity and a small bounce
     const buckle = smooth(t / 0.35);

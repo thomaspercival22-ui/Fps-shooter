@@ -19,7 +19,7 @@ class Particles {
     geo.setAttribute('rot', new THREE.BufferAttribute(this.rot, 1).setUsage(THREE.DynamicDrawUsage));
     this.mat = new THREE.ShaderMaterial({
       transparent: true, depthWrite, blending,
-      uniforms: { map: { value: map }, scale: { value: 500 }, fogColor: { value: new THREE.Color() }, fogNear: { value: 50 }, fogFar: { value: 600 } },
+      uniforms: { map: { value: map }, scale: { value: 500 }, fogColor: { value: new THREE.Color() }, fogNear: { value: 50 }, fogFar: { value: 600 }, lightK: { value: 1 } },
       vertexShader: `
         attribute vec4 color; attribute float size; attribute float rot;
         uniform float scale; varying vec4 vC; varying float vR; varying float vFog;
@@ -32,13 +32,14 @@ class Particles {
           gl_Position = projectionMatrix * mv;
         }`,
       fragmentShader: `
-        uniform sampler2D map; uniform vec3 fogColor; varying vec4 vC; varying float vR; varying float vFog;
+        uniform sampler2D map; uniform vec3 fogColor; uniform float lightK; varying vec4 vC; varying float vR; varying float vFog;
         void main(){
           vec2 c = gl_PointCoord - 0.5;
           float s = sin(vR), co = cos(vR);
           vec2 uv = vec2(c.x * co - c.y * s, c.x * s + c.y * co) + 0.5;
           vec4 t = texture2D(map, uv);
           vec4 o = t * vC;
+          o.rgb *= lightK;
           o.rgb = mix(o.rgb, fogColor * o.a, vFog * 0.8);
           gl_FragColor = o;
         }`,
@@ -78,6 +79,61 @@ class Particles {
     const geo = this.points.geometry;
     geo.setDrawRange(0, n);
     for (const k of ['position', 'color', 'size', 'rot']) geo.attributes[k].needsUpdate = true;
+  }
+}
+
+/** Infrared aiming lasers: invisible to the naked eye, bright under night vision. */
+class IRBeams {
+  constructor(scene, max = 20) {
+    this.max = max;
+    const geo = new THREE.BufferGeometry();
+    this.pos = new Float32Array(max * 8 * 3);
+    this.alpha = new Float32Array(max * 8);
+    const idx = [];
+    for (let i = 0; i < max; i++) { const b = i * 8; idx.push(b, b + 1, b + 2, b, b + 2, b + 3, b + 4, b + 5, b + 6, b + 4, b + 6, b + 7); }
+    geo.setIndex(idx);
+    geo.setAttribute('position', new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage));
+    geo.setAttribute('alpha', new THREE.BufferAttribute(this.alpha, 1).setUsage(THREE.DynamicDrawUsage));
+    const mat = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false,
+      vertexShader: 'attribute float alpha; varying float vA; void main(){ vA = alpha; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+      fragmentShader: 'varying float vA; void main(){ gl_FragColor = vec4(vec3(2.6) * vA, vA); }',
+    });
+    this.mesh = new THREE.Mesh(geo, mat);
+    this.mesh.frustumCulled = false;
+    this.mesh.renderOrder = 4;
+    this.mesh.userData.noThermal = true;
+    scene.add(this.mesh);
+  }
+  draw(list, cam) {
+    const P = this.pos, A = this.alpha, cp = cam.position;
+    const d = new THREE.Vector3(), side = new THREE.Vector3(), toCam = new THREE.Vector3();
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(cam.quaternion), up = new THREE.Vector3(0, 1, 0).applyQuaternion(cam.quaternion);
+    let n = 0;
+    for (const b of list) {
+      if (n >= this.max) break;
+      d.subVectors(b.to, b.from); const len = d.length(); if (len < 0.1) continue; d.divideScalar(len);
+      toCam.subVectors(cp, b.from).normalize();
+      side.crossVectors(d, toCam).normalize();
+      const w0 = 0.004 + b.from.distanceTo(cp) * 0.0009, w1 = 0.004 + b.to.distanceTo(cp) * 0.0009;
+      const k = n * 24, ka = n * 8;
+      const put = (o, v) => { P[k + o] = v.x; P[k + o + 1] = v.y; P[k + o + 2] = v.z; };
+      put(0, b.from.clone().addScaledVector(side, w0)); put(3, b.from.clone().addScaledVector(side, -w0));
+      put(6, b.to.clone().addScaledVector(side, -w1)); put(9, b.to.clone().addScaledVector(side, w1));
+      A[ka] = A[ka + 1] = 0.9; A[ka + 2] = A[ka + 3] = 0.35;
+      // the dot where the laser lands
+      const s = 0.03 + b.to.distanceTo(cp) * 0.004;
+      const c = b.to;
+      put(12, c.clone().addScaledVector(right, -s).addScaledVector(up, -s)); put(15, c.clone().addScaledVector(right, s).addScaledVector(up, -s));
+      put(18, c.clone().addScaledVector(right, s).addScaledVector(up, s)); put(21, c.clone().addScaledVector(right, -s).addScaledVector(up, s));
+      A[ka + 4] = A[ka + 5] = A[ka + 6] = A[ka + 7] = b.hit ? 1 : 0;
+      n++;
+    }
+    const geo = this.mesh.geometry;
+    geo.attributes.position.needsUpdate = true;
+    geo.attributes.alpha.needsUpdate = true;
+    geo.setDrawRange(0, n * 12);
+    this.mesh.visible = n > 0;
   }
 }
 
@@ -128,6 +184,8 @@ export class Effects {
     this.magMat = m.fde;
 
     // lights for muzzle flashes and explosions
+    this.lasers = new IRBeams(scene);
+    this.lasers.mesh.visible = false;
     this.flashLight = new THREE.PointLight(0xffb060, 0, 9, 2);
     this.enemyLight = new THREE.PointLight(0xffa050, 0, 7, 2);
     this.boomLight = new THREE.PointLight(0xffc080, 0, 28, 2);
@@ -137,6 +195,9 @@ export class Effects {
     for (let i = 0; i < 4; i++) { const s = new THREE.Sprite(fm.clone()); s.visible = false; scene.add(s); this.flashSprites.push({ s, t: 0, dur: 0 }); }
     this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._s = new THREE.Vector3(); this._z = new THREE.Vector3(0, 0, 1);
   }
+
+  /** Unlit particles (dust, smoke) must darken with the scene at night; glowing ones don't. */
+  setLight(k) { for (const ps of [this.dust, this.smoke, this.debris]) ps.mat.uniforms.lightK.value = k; }
 
   setFog(color, near, far, scale) {
     for (const ps of [this.dust, this.smoke, this.sparks, this.fire, this.debris]) {

@@ -23,6 +23,7 @@ const LINES = {
   retreat: ['Falling back!', 'Pulling back!'],
   heard: ['Heard something.', 'Movement!'],
   moving: ['Moving!', 'Relocating!', 'Changing position!'],
+  drone: ['Drone! Shoot it down!', 'FPV incoming!', 'Drone overhead!'],
 };
 
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3();
@@ -135,6 +136,8 @@ export class Enemy {
       if (p.horizSpeed > 1) rate *= 1.35;
       if (firing) rate *= 3;
       if (!inFov) rate *= 0.4;
+      // darkness: much harder to pick someone out unless they give themselves away
+      if (g.night && !firing) rate *= dist < 10 ? 0.75 : dist < 30 ? 0.45 : 0.25;
       rate /= g.difficulty.react;
       this.awareness = Math.min(1.5, this.awareness + rate * dt);
     } else if (this.alert < 2) {
@@ -150,6 +153,23 @@ export class Enemy {
     } else {
       this.seeTime = 0;
       if (wasSeeing && this.alert >= 2 && Math.random() < 0.25) this.say('lost');
+    }
+  }
+
+  _perceiveDrone() {
+    const g = this.game, d = g.drone;
+    const was = this.droneVisible;
+    this.droneVisible = false;
+    if (!d.active || this.flashed > 0) return;
+    const eye = this.eye(_a);
+    if (eye.distanceTo(d.pos) > 55) return;
+    if (this.alert < 2 && g.time - (this.droneHeard || -99) > 3) return;
+    if (!g.level.world.los(eye.x, eye.y, eye.z, d.pos.x, d.pos.y, d.pos.z)) return;
+    this.droneVisible = true;
+    if (!was) {
+      this.droneReact = g.time + rand(0.4, 0.9) * g.difficulty.react;
+      this.say('drone');
+      if (this.alert < 2) { this.alert = 2; this.replan(); }
     }
   }
 
@@ -179,6 +199,9 @@ export class Enemy {
       } else if (!this.seeing) {
         this.lastKnown.set(pos.x, 0, pos.z);
       }
+    } else if (kind === 'drone') {
+      this.droneHeard = g.time;
+      if (this.alert < 2) { this.alert = 2; this.awareness = Math.max(this.awareness, 0.8); this.replan(); }
     } else if (kind === 'reload') {
       if (this.alert >= 2 && dist < 24) this.mgr.playerReloadHeard = g.time;
     }
@@ -226,7 +249,7 @@ export class Enemy {
     if (this.throwing) return;
 
     // 1) incoming grenade: get away
-    const gren = g.grenades.dangerNear(this.pos, 7.5);
+    const gren = g.grenades.dangerNear(this.pos, 7.5) || g.drone.dangerNear(this.pos, 8);
     if (gren) { this.evade(gren); return; }
     if (this.order === 'evade' && this.orderT < 1.2) return;
 
@@ -460,7 +483,7 @@ export class Enemy {
       if (this.reloading <= 0) { this.reloading = 0; this.ammo = this.type.mag; g.audio.playAt('magIn', this.pos.x, this.pos.y + 1.2, this.pos.z, { vol: 0.5, max: 25 }); }
     }
     this.perceiveT -= dt;
-    if (this.perceiveT <= 0) { this.perceive(0.12 - this.perceiveT); this.perceiveT = 0.12; }
+    if (this.perceiveT <= 0) { this.perceive(0.12 - this.perceiveT); this._perceiveDrone(); this.perceiveT = 0.12; }
     this.thinkT -= dt;
     if (this.thinkT <= 0) { this.think(); this.thinkT = rand(0.35, 0.6); }
 
@@ -608,6 +631,7 @@ export class Enemy {
     // ---- facing ----
     const knowRecent = g.time - this.lastSeen < 8 || this.alert >= 2;
     if (this.seeing && this.flashed <= 0) { faceX = p.pos.x - this.pos.x; faceZ = p.pos.z - this.pos.z; }
+    else if (this.droneVisible && this.flashed <= 0) { faceX = g.drone.pos.x - this.pos.x; faceZ = g.drone.pos.z - this.pos.z; }
     else if (faceX === null && knowRecent && this.alert >= 2 && this.order !== 'evade' && !(this.order === 'cover' && this.coverPhase === 'move' && sp > 2)) {
       faceX = this.lastKnown.x - this.pos.x; faceZ = this.lastKnown.z - this.pos.z;
     } else if (faceX === null && sp > 0.3) { faceX = this.vel.x; faceZ = this.vel.z; }
@@ -619,7 +643,7 @@ export class Enemy {
       this.yawOff = THREE.MathUtils.clamp(angleDiff(this.yaw, want), -0.7, 0.7);
     } else this.yawOff *= 0.9;
     // aim pitch
-    const tgt = this.seeing ? p.eye : _c.set(this.lastKnown.x, this.lastKnown.y + 1.2, this.lastKnown.z);
+    const tgt = this.seeing ? p.eye : this.droneVisible ? g.drone.pos : _c.set(this.lastKnown.x, this.lastKnown.y + 1.2, this.lastKnown.z);
     const hd = Math.hypot(tgt.x - this.pos.x, tgt.z - this.pos.z);
     this.aimPitch = Math.atan2(tgt.y - 0.25 - this.eyeY, Math.max(0.5, hd));
 
@@ -694,6 +718,12 @@ export class Enemy {
       suppress = true;
       if (Math.random() < dt * 0.3) this.say('suppress');
     }
+    let leadVel = p.vel;
+    if (!target && this.droneVisible && this.flashed <= 0 && !hidden && g.time >= (this.droneReact || 0)) {
+      // shoot at the incoming drone
+      target = _c.copy(g.drone.pos);
+      leadVel = g.drone.vel;
+    }
     if (!target) { this.burstLeft = 0; return; }
     const eye = this.eye(_a);
     const dx = target.x - eye.x, dz = target.z - eye.z;
@@ -713,13 +743,13 @@ export class Enemy {
       const d = pointSegDist(e.pos.x, e.pos.y + 1.2, e.pos.z, eye.x, eye.y, eye.z, target.x, target.y, target.z);
       if (d < 0.7 && e.pos.distanceTo(this.pos) < eye.distanceTo(target)) { this.burstLeft = 0; this.burstPauseUntil = g.time + 0.5; return; }
     }
-    this._fireAt(target, suppress);
+    this._fireAt(target, suppress, leadVel);
     this.burstLeft--;
     this.nextShot = g.time + (60 / this.type.rpm) * rand(0.9, 1.15);
     if (this.burstLeft <= 0) this.burstPauseUntil = g.time + rand(...this.type.burstPause) * (suppress ? 1.6 : 1);
   }
 
-  _fireAt(target, suppress) {
+  _fireAt(target, suppress, leadVel = this.game.player.vel) {
     const g = this.game, p = g.player, T = this.type, D = g.difficulty;
     const eye = this.eye(_a);
     const aim = _b.copy(target);
@@ -727,7 +757,7 @@ export class Enemy {
     if (!suppress) {
       // lead the target
       const tFlight = dist / T.velocity;
-      aim.addScaledVector(p.vel, tFlight * 0.85);
+      aim.addScaledVector(leadVel, tFlight * 0.85);
     }
     const settle = 1 + 1.5 * Math.max(0, 1 - this.seeTime / 1.5);
     const moving = Math.hypot(this.vel.x, this.vel.z) > 1 ? 1.6 : 1;
