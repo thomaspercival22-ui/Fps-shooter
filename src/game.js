@@ -384,8 +384,11 @@ export class Game {
     document.body.classList.remove('sniper-mission');
     this.grenades.clear();
     this.ballistics.clear();
+    this.drone.reset();            // a drone still in the air: land it and stop its motor
     this.audio.ctx?.resume();
     this.audio.stopAmbience();
+    this.audio.stopLoop('rain');
+    this.audio.setLowHealth(0);
     this.voices.cancel();
   }
 
@@ -552,10 +555,12 @@ export class Game {
     const rs = this.mission?.resupply || this.level.resupply;
     this.resupplyT -= dt;
     if (Math.hypot(rs.x - p.pos.x, rs.z - p.pos.z) < rs.r + 0.6 && this.resupplyT <= 0 && p.alive) {
-      const needs = Object.values(w.slots).some((s) => s.reserve < s.def.reserve) || w.frags < GRENADES.maxFrag || w.flashes < GRENADES.maxFlash || this.drone.count < 2;
+      // a mission's ammo box can carry less than the HQ crate (Overwatch: rifle rounds only)
+      const frags = rs.frags ?? GRENADES.maxFrag, flashes = rs.flashes ?? GRENADES.maxFlash, drones = rs.drones ?? 2;
+      const needs = Object.values(w.slots).some((s) => s.reserve < s.def.reserve) || w.frags < frags || w.flashes < flashes || this.drone.count < drones;
       if (needs) {
-        w.refill();
-        this.drone.count = Math.max(this.drone.count, 2);
+        w.refill(frags, flashes);
+        this.drone.count = Math.max(this.drone.count, drones);
         this.hud.pickup('RESUPPLIED');
         this.audio.play('pickup', { vol: 0.9 });
         this.resupplyT = 25;

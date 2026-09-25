@@ -238,7 +238,7 @@ export class SniperMission extends Mission {
   start() {
     const g = this.game, L = g.level, sc = L.sniper;
     this.hide = sc.hide;
-    this.resupply = { x: sc.hide.x + sc.ammo[0], z: sc.hide.z + sc.ammo[1], r: 0.9 };
+    this.resupply = { x: sc.hide.x + sc.ammo[0], z: sc.hide.z + sc.ammo[1], r: 0.9, frags: 0, flashes: 0, drones: 1 };
     g.enemies.noIntel = true;
     g.enemies.farThreat = new THREE.Vector3(sc.hide.x, sc.hide.y, sc.hide.z);
     this.hostiles = sc.hostiles.map((h) => {
@@ -308,8 +308,7 @@ export class SniperMission extends Mission {
     return `${this.st.hvtKilled ? 'HVT DOWN' : 'HVT ALIVE'} · HOSTILES ${h} · SPOTTER ${this.spotterAlive ? 'OK' : 'KIA'} · ${fmtTime(left)}`;
   }
 
-  _updateWind(dt) {
-    this.t += 0;
+  _updateWind() {
     const g = this.game, T = g.time;
     const gust = 1 + 0.28 * Math.sin(T * 0.21) + 0.14 * Math.sin(T * 0.67 + 1.3);
     const dirW = this.windDir + 0.18 * Math.sin(T * 0.05);
@@ -455,7 +454,7 @@ export class SniperMission extends Mission {
     const t = this._mils(s.aim, s.tgt), R = s.tgt.distanceTo(s.aim.o), dx = m.x - t.x, dy = m.y - t.y;
     const hi = dy * R / 1000, rt = dx * R / 1000, short = s.struck && s.aim.f.dot(_w.copy(s.splash).sub(s.aim.o)) < s.D - 2;
     if (Math.hypot(dx, dy) > 12) {
-      const dial = Math.round(s.R / 25) * 25;
+      const dial = Math.round(s.R / 50) * 50;
       this.say(`Way off, I lost the splash. Target is ${Math.round(s.R)} m, you're dialled for ${s.zero}.${Math.abs(dial - s.zero) >= 50 ? ` Dial ${dial}.` : ''}`, 0.8, null, () => g.hud.scopeMark(null));
       return;
     }
@@ -595,7 +594,7 @@ export class SniperMission extends Mission {
     const cross = this.wind.x * right.x + this.wind.z * right.z;           // + pushes the round right
     const drift = 0.5 * cross * 0.55 * tof * tof;
     const mils = Math.abs(drift) / R * 1000;
-    const dial = Math.round(R / 25) * 25;
+    const dial = Math.round(R / 50) * 50; // the turret clicks in 50 m steps
     const hold = mils < 0.05 ? 'no wind hold' : `hold ${mils.toFixed(1)} mil ${drift > 0 ? 'left' : 'right'}`;
     if (this.spotterAlive) g.hud.radio('SPOTTER', `${R} metres. Dial ${dial}, ${hold}.`);
     g.audio.play('magTap', { vol: 0.3, rate: 2.6 });

@@ -703,10 +703,10 @@ export class AudioEngine {
   /** Continuous low-health muffling (0..1). */
   setLowHealth(k) {
     if (!this.ctx) return;
-    if (this.muffle.frequency.value > 19000 || k > 0) {
-      const target = 20000 - k * 17000;
-      this.muffle.frequency.setTargetAtTime(target, this.ctx.currentTime, 0.2);
-    }
+    // while healthy, leave the filter alone (a flashbang may be ramping it); on the way back up
+    // (regen, a medkit, a new life) open it again even if health jumps straight to full
+    if (k > 0 || this.lowK > 0) this.muffle.frequency.setTargetAtTime(20000 - k * 17000, this.ctx.currentTime, 0.2);
+    this.lowK = k;
   }
 }
 

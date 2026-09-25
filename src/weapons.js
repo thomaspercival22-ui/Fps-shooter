@@ -193,9 +193,9 @@ export class WeaponSystem {
 
   addLook(dx, dy) { this.lookDX += dx; this.lookDY += dy; }
 
-  refill() {
+  refill(frags = GRENADES.maxFrag, flashes = GRENADES.maxFlash) {
     for (const s of Object.values(this.slots)) { if (s.mags) this._fillMags(s); else s.reserve = s.def.reserve; }
-    this.frags = GRENADES.maxFrag; this.flashes = GRENADES.maxFlash;
+    this.frags = Math.max(this.frags, frags); this.flashes = Math.max(this.flashes, flashes);
   }
   addAmmo(fraction = 0.35) {
     for (const s of Object.values(this.slots)) {
