@@ -33,6 +33,7 @@ export const DEFAULTS = {
   time: 'day',            // mission time: day | night
   weather: 'clear',       // clear | rain
   optic: 'holo',          // M4 optic: holo | nv (digital night vision scope)
+  mission: 'compound',    // compound (waves) | tower (hostage rescue CQB) | sniper (Overwatch)
   gfx: 3,                 // settings revision (graphics defaults)
 };
 

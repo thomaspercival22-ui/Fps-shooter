@@ -13,6 +13,8 @@ export class Ballistics {
   constructor(game) {
     this.game = game;
     this.bullets = [];
+    // crosswind (m/s): pushes rounds sideways, most over long flights
+    this.wind = new THREE.Vector3();
     // camera-facing tracer ribbons (one draw call)
     const geo = new THREE.BufferGeometry();
     this.tPos = new Float32Array(MAX_TRACERS * 4 * 3);
@@ -49,6 +51,8 @@ export class Ballistics {
       penPower: o.weapon ? o.weapon.penetration : 1,
       hitSomething: false,
       bounces: 0,
+      // the spotter watching this round: who it was aimed at and how close it came
+      spot: o.owner === 'player' ? this.game.mission?.takeSpot?.() || null : null,
     });
   }
 
@@ -60,6 +64,10 @@ export class Ballistics {
       let remaining = dt;
       let alive = true;
       let guard = 0;
+      if (this.wind.x || this.wind.z) {
+        // drift: a simple drag-driven push towards the air's motion
+        b.vel.x += this.wind.x * 0.55 * dt; b.vel.z += this.wind.z * 0.55 * dt;
+      }
       while (alive && remaining > 0 && guard++ < 4) {
         const start = b.pos;
         const vy = b.vel.y - G * remaining;
@@ -69,9 +77,29 @@ export class Ballistics {
         dir.divideScalar(len);
         const hw = W.raycast(start.x, start.y, start.z, dir.x, dir.y, dir.z, len, RAY_BULLET);
         let tMax = hw ? hw.t : len;
+        if (b.spot) {
+          // closest approach to the intended target on this step
+          const hb = b.spot.target.hb, cx = (hb.neck.x + hb.hips.x) / 2, cy = hb.neck.y * 0.55 + hb.hips.y * 0.45, cz = (hb.neck.z + hb.hips.z) / 2;
+          const t = Math.max(0, Math.min(tMax, (cx - start.x) * dir.x + (cy - start.y) * dir.y + (cz - start.z) * dir.z));
+          const px = start.x + dir.x * t - cx, py = start.y + dir.y * t - cy, pz = start.z + dir.z * t - cz, d = Math.hypot(px, py, pz);
+          if (d < b.spot.best) { b.spot.best = d; b.spot.off.set(px, py, pz); }
+        }
         // save world-hit data before other queries overwrite the shared hit object
         const wh = hw ? { t: hw.t, x: hw.x, y: hw.y, z: hw.z, nx: hw.nx, ny: hw.ny, nz: hw.nz, box: hw.box, exitT: hw.exitT, mat: hw.mat } : null;
 
+        const hc = g.civilians.list.length ? g.civilians.intersect(start.x, start.y, start.z, dir.x, dir.y, dir.z, tMax) : null;
+        if (hc) {
+          // a person in the line of fire, nearer than anything else the round could hit
+          const he2 = b.owner === 'player' ? g.enemies.intersect(start.x, start.y, start.z, dir.x, dir.y, dir.z, hc.t, null) : null;
+          if (!he2) {
+            b.traveled += hc.t;
+            const pt = new THREE.Vector3(start.x + dir.x * hc.t, start.y + dir.y * hc.t, start.z + dir.z * hc.t);
+            this._hitCivilian(b, hc, pt, dir);
+            if (b.owner === 'player') g.mission?.onImpact?.(pt);
+            alive = false;
+            break;
+          }
+        }
         if (b.owner === 'player') {
           const he = g.enemies.intersect(start.x, start.y, start.z, dir.x, dir.y, dir.z, tMax, null);
           // suppression of enemies the round passes close to
@@ -84,6 +112,7 @@ export class Ballistics {
             b.traveled += he.t;
             const pt = new THREE.Vector3(start.x + dir.x * he.t, start.y + dir.y * he.t, start.z + dir.z * he.t);
             this._hitEnemy(b, he, pt, dir);
+            g.mission?.onImpact?.(pt);
             alive = false;
             break;
           }
@@ -162,6 +191,7 @@ export class Ballistics {
           }
           alive = false;
           b.pos.copy(pt);
+          if (b.owner === 'player') g.mission?.onImpact?.(pt);
           break;
         }
         // no hit: advance
@@ -170,7 +200,10 @@ export class Ballistics {
         b.traveled += len;
         remaining = 0;
       }
-      if (!alive || b.traveled > 700 || b.pos.y < -5) this.bullets.splice(i, 1);
+      if (!alive || b.traveled > 1200 || b.pos.y < (g.level.rainFloor ?? -5)) {
+        this.bullets.splice(i, 1);
+        if (b.spot) g.mission?.onShotResult?.(b.spot);
+      }
       else if (b.tracer) b.tracerAlive = true;
       if (!alive && b.tracer) this._fadeTracer(b);
     }
@@ -193,11 +226,24 @@ export class Ballistics {
     const dmg = b.damage * mul;
     const wasFlashed = e.flashed > 0;
     const killed = e.takeDamage(dmg, he.part, dir.x, dir.z, 'player');
+    if (b.spot) b.spot.hit = { who: e, part: he.part, killed };
     g.weapons.stats.hits++;
     g.effects.bloodPuff(pt, dir, he.part === 'head' ? 1.4 : 1);
     g.audio.playAt(`imp_flesh${(Math.random() * 2) | 0}`, pt.x, pt.y, pt.z, { vol: 0.5, occlude: false });
     g.hud.hitMarker(killed ? 'kill' : he.part === 'head' ? 'head' : 'hit');
     if (killed) g.registerKill(e, { headshot: he.part === 'head', weapon: w ? w.name : '', stunned: wasFlashed, distance: b.traveled });
+  }
+
+  _hitCivilian(b, hc, pt, dir) {
+    const g = this.game, c = hc.civ, w = b.weapon;
+    let mul = this._falloff(b);
+    if (hc.part === 'head') mul *= w ? w.headMul : 3;
+    else if (hc.part === 'limb') mul *= w ? w.limbMul : 0.8;
+    const killed = c.takeDamage(b.damage * mul, hc.part, dir.x, dir.z, b.owner);
+    if (b.spot) b.spot.hit = { who: c, part: hc.part, killed };
+    g.effects.bloodPuff(pt, dir, hc.part === 'head' ? 1.4 : 1);
+    g.audio.playAt(`imp_flesh${(Math.random() * 2) | 0}`, pt.x, pt.y, pt.z, { vol: 0.5, occlude: false });
+    if (b.owner === 'player') g.hud.hitMarker('civ');
   }
 
   _fadeTracer(b) { b.tracer = false; }

@@ -15,7 +15,7 @@ const WALL = 42;         // compound wall half-size
 // Penetration: fraction of damage a bullet keeps after passing through.
 const PEN = { container: 0.5, crate: 0.55, sheet: 0.7, barrel: 0.45, tyre: 0.3, glass: 0.9 };
 
-class GeoBatch {
+export class GeoBatch {
   constructor() { this.geos = new Map(); }
   add(key, geo) {
     if (!this.geos.has(key)) this.geos.set(key, []);
@@ -225,6 +225,36 @@ export function buildLevel(scene, assets, opts = {}) {
   const win = (from, w = 1.4, bottom = 1.0, top = 2.1) => ({ from, to: from + w, bottom, top });
 
   // ---------------- ground + distant dunes ----------------
+  // The Overwatch sniper hide sits on a ridge ~580 m out, on the sun side (the light is behind the
+  // shooter); the dunes between it and the compound are kept under every sightline.
+  const HIDE = (() => {
+    const sd = assets.sunDir || new THREE.Vector3(0.5, 0.5, 0.7);
+    let a = Math.hypot(sd.x, sd.z) > 0.15 ? Math.atan2(sd.x, sd.z) : 2.4;
+    const D = 580, H = 70;
+    return { x: Math.sin(a) * D, z: Math.cos(a) * D, y: H, D, ux: Math.sin(a), uz: Math.cos(a), yaw: Math.atan2(Math.sin(a), Math.cos(a)) };
+  })();
+  const terrainH = (x, z) => {
+    const r = Math.hypot(x, z);
+    const t = THREE.MathUtils.smoothstep(r, 95, 320);
+    let y = t * (TX.fbm(x / 90, z / 90, 4, 4) * 38 + TX.fbm(x / 30, z / 30, 9, 3) * 8) - (r > 90 ? 0.02 : 0);
+    const { ux, uz, D, y: H } = HIDE;
+    const rc = x * ux + z * uz, lat = Math.abs(x * uz - z * ux);
+    // the ridge: a flat top for the hide, steep towards the compound, long slopes behind and to the sides
+    const a = rc - D;
+    const e = Math.hypot(a > 0 ? a / 230 : -a / 55, lat / 170);
+    const ridge = H * (1 - THREE.MathUtils.smoothstep(e, 0.12, 1.0)) + (e > 0.12 ? (TX.fbm(x / 25, z / 25, 21, 3) - 0.5) * 6 * Math.min(1, e) : 0);
+    y = Math.max(y, ridge);
+    // sightline corridor: below the lines from the scope (crouched) to the near side of the compound
+    if (rc > 80 && rc < D - 7) {
+      const eye = H + 1.0, bound = eye * (rc - 70) / (D - 70) - 1.6;
+      const half = 75 * (D - rc) / D;
+      const w = 1 - THREE.MathUtils.smoothstep(lat, half + 15, half + 70);
+      if (y > bound) y += (bound - y) * w;
+    }
+    return y;
+  };
+  // the detail patch around the hide (the big ground mesh is too coarse there)
+  const patchK = (x, z) => 1 - THREE.MathUtils.smoothstep(Math.max(Math.abs(x - HIDE.x), Math.abs(z - HIDE.z)), 96, 128);
   let groundMatRef = null;
   {
     const size = 1800, seg = 128;
@@ -233,10 +263,7 @@ export function buildLevel(scene, assets, opts = {}) {
     const p = g.attributes.position;
     for (let i = 0; i < p.count; i++) {
       const x = p.getX(i), z = p.getZ(i);
-      const r = Math.hypot(x, z);
-      const t = THREE.MathUtils.smoothstep(r, 95, 320);
-      const dunes = TX.fbm(x / 90, z / 90, 4, 4) * 38 + TX.fbm(x / 30, z / 30, 9, 3) * 8;
-      p.setY(i, t * dunes - (r > 90 ? 0.02 : 0));
+      p.setY(i, terrainH(x, z) - 4 * patchK(x, z));
     }
     g.computeVertexNormals();
     const uv = g.attributes.uv;
@@ -247,6 +274,20 @@ export function buildLevel(scene, assets, opts = {}) {
     ground.userData.heat = 0.29; ground.userData.env = true;
     ground.matrixAutoUpdate = false;
     scene.add(ground);
+    // 2 m detail around the ridge top
+    const pg = new THREE.PlaneGeometry(256, 256, 128, 128);
+    pg.rotateX(-Math.PI / 2);
+    pg.translate(HIDE.x, 0, HIDE.z);
+    const pp = pg.attributes.position;
+    for (let i = 0; i < pp.count; i++) pp.setY(i, terrainH(pp.getX(i), pp.getZ(i)));
+    pg.computeVertexNormals();
+    const puv = pg.attributes.uv;
+    for (let i = 0; i < puv.count; i++) puv.setXY(i, pp.getX(i) / GROUND_TILE, -pp.getZ(i) / GROUND_TILE);
+    const patch = new THREE.Mesh(pg, groundMat);
+    patch.receiveShadow = true;
+    patch.userData.heat = 0.29; patch.userData.env = true;
+    patch.matrixAutoUpdate = false;
+    scene.add(patch);
   }
 
   // ---------------- HESCO perimeter ----------------
@@ -516,20 +557,22 @@ export function buildLevel(scene, assets, opts = {}) {
 
   // ---------------- sandbag positions ----------------
   const bagSlots = [];
-  const bagWall = (x0, z0, x1, z1, layers = 5) => {
+  const bagWall = (x0, z0, x1, z1, layers = 5, base = 0) => {
     const len = Math.hypot(x1 - x0, z1 - z0);
     const ang = Math.atan2(x1 - x0, z1 - z0);
     const n = Math.max(1, Math.round(len / 0.68));
     for (let l = 0; l < layers; l++) {
       for (let i = 0; i < n; i++) {
         const t = (i + 0.5 + (l % 2) * 0.25) / (n + (l % 2) * 0.5);
-        bagSlots.push({ x: x0 + (x1 - x0) * t, y: l * 0.175, z: z0 + (z1 - z0) * t, ry: ang + (Math.random() - 0.5) * 0.12 });
+        bagSlots.push({ x: x0 + (x1 - x0) * t, y: base + l * 0.175, z: z0 + (z1 - z0) * t, ry: ang + (Math.random() - 0.5) * 0.12 });
       }
     }
     const pad = 0.26;
-    const b = world.add(Math.min(x0, x1) - pad, 0, Math.min(z0, z1) - pad, Math.max(x0, x1) + pad, layers * 0.175 + 0.02, Math.max(z0, z1) + pad, { mat: 'sand' });
+    const b = world.add(Math.min(x0, x1) - pad, base, Math.min(z0, z1) - pad, Math.max(x0, x1) + pad, base + layers * 0.175 + 0.02, Math.max(z0, z1) + pad, { mat: 'sand' });
+    if (base > 0) return b;
     coverBoxes.push(b);
     minimap.push(b);
+    return b;
   };
   // north gate nest
   bagWall(-2.6, -37.6, 2.6, -37.6); bagWall(-2.8, -37.2, -2.8, -34.8); bagWall(2.8, -37.2, 2.8, -34.8);
@@ -544,6 +587,37 @@ export function buildLevel(scene, assets, opts = {}) {
   bagWall(-16, 42 + 5, -12, 42 + 5);
   // courtyard
   bagWall(-18, 6, -18, 10, 4); bagWall(16, -12, 20, -12, 4);
+  // Overwatch hide: a flat ridge top, sandbag parapet facing the compound, invisible limits
+  {
+    const { x, z, y: H, ux, uz } = HIDE;
+    const fx = -ux, fz = -uz, rx = -fz, rz = fx;          // forward (to the compound) and right
+    // the ridge top and the limits are laid out in the hide's own frame (it faces the compound at an
+    // angle), as rows of small boxes, so nothing sticks out into the line of fire
+    const at = (lat, fwd) => [x + rx * lat + fx * fwd, z + rz * lat + fz * fwd];
+    for (let lat = -4.2; lat <= 4.21; lat += 1.4) for (let fw = -4.4; fw <= 0.61; fw += 1.25) {
+      const [px, pz] = at(lat, fw);
+      world.add(px - 0.8, 0, pz - 0.8, px + 0.8, H, pz + 0.8, { mat: 'sand' });
+    }
+    const inv = { blocksBullets: false, blocksSight: false };
+    const chain = (a0, f0, a1, f1) => {
+      const n = Math.ceil(Math.hypot(a1 - a0, f1 - f0) / 0.3);
+      for (let i = 0; i <= n; i++) { const [px, pz] = at(a0 + (a1 - a0) * i / n, f0 + (f1 - f0) * i / n); world.add(px - 0.18, H, pz - 0.18, px + 0.18, H + 3, pz + 0.18, inv); }
+    };
+    chain(-3.6, -4.0, 3.6, -4.0); chain(-3.6, -4.0, -3.6, 0.95); chain(3.6, -4.0, 3.6, 0.95); chain(-3.6, 0.95, 3.6, 0.95);
+    // the parapet is at an angle: its collision is a row of small boxes along the bags
+    const parapet = (ax, az, bx, bz, layers) => {
+      bagWall(ax, az, bx, bz, layers, H);
+      world.boxes.pop(); // bagWall's own (axis-aligned) box would be far too big for a diagonal run
+      const n = Math.ceil(Math.hypot(bx - ax, bz - az) / 0.35);
+      for (let i = 0; i <= n; i++) {
+        const px = ax + (bx - ax) * i / n, pz = az + (bz - az) * i / n;
+        world.add(px - 0.2, H, pz - 0.2, px + 0.2, H + layers * 0.175, pz + 0.2, { mat: 'sand' });
+      }
+    };
+    const cx = x + fx * 1.25, cz = z + fz * 1.25;
+    parapet(cx - rx * 1.7, cz - rz * 1.7, cx + rx * 1.7, cz + rz * 1.7, 4);
+    parapet(cx - rx * 2.0 - fx * 0.4, cz - rz * 2.0 - fz * 0.4, cx - rx * 2.0 - fx * 1.9, cz - rz * 2.0 - fz * 1.9, 4);
+  }
 
   // ---------------- props (instanced GLTF models) ----------------
   const props = new THREE.Group();
@@ -696,7 +770,7 @@ export function buildLevel(scene, assets, opts = {}) {
       const pt = pick();
       if (!pt) continue;
       const sc = scale[0] + Math.random() * (scale[1] - scale[0]);
-      perPart[i % parts.length].push(place(pt[0], -sink * sc, pt[1], Math.random() * Math.PI * 2, 0, sc));
+      perPart[i % parts.length].push(place(pt[0], (pt[2] || 0) - sink * sc, pt[1], Math.random() * Math.PI * 2, 0, sc));
       spots.push([pt[0], pt[1], sc]);
       i++;
     }
@@ -731,9 +805,23 @@ export function buildLevel(scene, assets, opts = {}) {
   }
   scatter(new THREE.Group().add(M.rock_09.clone()), 60, freeSpot(0, false), { scale: [8, 22], sink: 0.006, heat: 0.35 });
   // desert shrubs and dead branches
-  scatter(M.wild_rooibos_bush, 80, freeSpot(0.8), { scale: [1.2, 2.3], heat: 0.26, noThermal: false });
-  scatter(M.wild_rooibos_bush, 60, freeSpot(0, false), { scale: [1.4, 2.8], heat: 0.26 });
+  scatter(M.wild_rooibos_bush, 48, freeSpot(0.8), { scale: [1.2, 2.3], heat: 0.26, noThermal: false });
+  scatter(M.wild_rooibos_bush, 30, freeSpot(0, false), { scale: [1.6, 3.0], heat: 0.26 });
   scatter(M.dry_branches_medium_01, 45, freeSpot(0.8), { scale: [0.9, 1.5], heat: 0.28 });
+  // the ridge around the hide: boulders and scrub (kept out of the firing lane)
+  const ridgeSpot = (r0, r1) => () => {
+    const a = Math.random() * Math.PI * 2, r = r0 + Math.random() * (r1 - r0);
+    const x = HIDE.x + Math.cos(a) * r, z = HIDE.z + Math.sin(a) * r;
+    const fwd = -((x - HIDE.x) * HIDE.ux + (z - HIDE.z) * HIDE.uz);
+    if (fwd > 2 && Math.abs((x - HIDE.x) * HIDE.uz - (z - HIDE.z) * HIDE.ux) < fwd * 0.9 + 3) return null;
+    return [x, z, terrainH(x, z)];
+  };
+  scatter(new THREE.Group().add(M.rock_09.clone()), 14, ridgeSpot(4, 30), { scale: [3, 9], sink: 0.01, heat: 0.35 });
+  scatter(M.wild_rooibos_bush, 26, ridgeSpot(3, 40), { scale: [1.2, 2.4], heat: 0.26 });
+  scatter(M.namaqualand_stones_01, 60, ridgeSpot(1.5, 14), { scale: [0.8, 2.2], sink: 0.01, heat: 0.34, castShadow: false });
+  // ammo can beside the rifle
+  const hideAmmo = [(-HIDE.uz) * -1.9 + HIDE.ux * 0.4, (HIDE.ux) * -1.9 + HIDE.uz * 0.4];
+  instanced(M.ammo_box, [place(HIDE.x + hideAmmo[0], HIDE.y, HIDE.z + hideAmmo[1], HIDE.yaw + 0.3)], { heat: 0.3 });
   // quiver trees beyond the perimeter
   scatter(new THREE.Group().add(M.quiver_tree_02.clone()), 14, freeSpot(0, false), { scale: [2.4, 3.8], heat: 0.27 });
 
@@ -817,6 +905,65 @@ export function buildLevel(scene, assets, opts = {}) {
   nav.build();
 
   // ---------------- cover points ----------------
+  const covers = makeCovers(coverBoxes, nav, BOUND);
+
+  const spawnPoints = [
+    [-62, -62], [0, -64], [62, -62], [64, 0], [62, 62], [0, 64], [-62, 62], [-64, 0],
+    [-64, -30], [64, 30], [30, -64], [-30, 64], [64, -32], [-64, 32], [34, 64], [-34, -64],
+  ].map(([x, z]) => ({ x, z })).filter((p) => nav.walkable(p.x, p.z));
+
+  // patrol / reinforcement waypoints inside the compound
+  const waypoints = [];
+  for (let i = 0; i < 400 && waypoints.length < 60; i++) {
+    const x = (Math.random() * 2 - 1) * (WALL - 3), z = (Math.random() * 2 - 1) * (WALL - 3);
+    if (nav.walkable(x, z)) waypoints.push({ x, z });
+  }
+
+  // Overwatch: who is in the compound (the HVT walks between the HQ and the warehouse)
+  const E = Math.PI / 2, Wd = -Math.PI / 2, S = 0, N = Math.PI;
+  const sniper = {
+    hide: { x: HIDE.x, y: HIDE.y, z: HIDE.z, yaw: HIDE.yaw },
+    ammo: hideAmmo,
+    hvt: { x: -2.2, z: -13.6, yaw: S, look: 6, route: [[-3.2, -12.8], [3.5, -6.0], [11.0, -7.4], [26.5, -15.2], [21.0, -8.0], [4.0, -5.0], [-6.0, -9.5]], escape: { x: -46, z: 9 } },
+    workers: [
+      { x: 18.0, z: 8.2, yaw: E, look: 4, route: [[18.0, 8.2], [26.5, 16.5], [21.5, 24.5]] },
+      { x: -8.0, z: 4.0, yaw: N, look: 0, route: [[-8.0, 4.0], [-14.2, -5.8], [-3.0, 12.0]] },
+      { x: -30.2, z: 21.6, yaw: S, look: 5, pose: 'stand' },
+      { x: 8.0, z: 20.0, yaw: S, look: 2, route: [[8.0, 20.0], [2.0, 29.0], [-6.0, 20.5]] },
+      { x: 30.5, z: -16.8, yaw: S, look: 0, pose: 'stand' },
+    ],
+    hostiles: [
+      { type: 'rifleman', x: 0.2, z: -36.0, yaw: N, hold: true },
+      { type: 'rifleman', x: -0.3, z: 36.0, yaw: S, hold: true },
+      { type: 'rifleman', x: -36.4, z: 8.6, yaw: Wd, hold: true },
+      { type: 'rifleman', x: 36.2, z: -3.4, yaw: E, hold: true },
+      { type: 'marksman', x: 1.5, y: 3.65, z: -18.2, yaw: S, hold: true },
+      { type: 'rifleman', x: -0.8, z: -11.2, yaw: S, bodyguard: true },
+      { type: 'rifleman', x: -4.2, z: -11.6, yaw: S, bodyguard: true },
+      { type: 'rifleman', x: -30, z: -34, yaw: E, patrol: [[-30, -34], [34, -36], [36, 30], [-34, 34]] },
+      { type: 'rifleman', x: 34, z: 32, yaw: Wd, patrol: [[34, 32], [-34, 34], [-36, -30], [34, -36]] },
+      { type: 'assaulter', x: 24.5, z: 19.5, yaw: E },
+      { type: 'heavy', x: -29.6, z: -6.4, yaw: E },
+      { type: 'rifleman', x: -24.8, z: 22.0, yaw: E },
+      { type: 'rifleman', x: 27.6, z: -16.6, yaw: S },
+    ],
+  };
+  // indoor spots to run to when a sniper opens up
+  const shelters = [[-6, -22], [4, -22], [-3, -26], [22, -26], [30, -24], [20, -31], [-30.5, 17], [-18.5, 27], [-32.5, 31], [-33, -11.5], [15.5, 16], [31.5, 24]]
+    .map(([x, z]) => ({ x, z })).filter((p) => nav.walkable(p.x, p.z));
+
+  return {
+    sniper, shelters,
+    world, nav, covers, spawnPoints, waypoints, explosiveBarrels, minimap, meshes, props, grassUniforms, lamps,
+    ao, groundUniforms: groundMatRef.userData.groundUniforms,
+    playerSpawn: { x: 3, z: -20.5, yaw: Math.PI },
+    resupply: { x: -6.5, z: -26.45, r: 2.0 },
+    bounds: BOUND,
+  };
+}
+
+/** Cover spots along the faces of waist- and head-high boxes, facing away from each face. */
+export function makeCovers(coverBoxes, nav, bound) {
   const covers = [];
   for (const b of coverBoxes) {
     const h = b.y1;
@@ -835,7 +982,7 @@ export function buildLevel(scene, assets, opts = {}) {
         const x = f.along === 'z' ? f.fixed + f.nx * 0.6 : t;
         const z = f.along === 'z' ? t : f.fixed + f.nz * 0.6;
         if (!nav.walkable(x, z)) continue;
-        if (Math.abs(x) > BOUND - 1 || Math.abs(z) > BOUND - 1) continue;
+        if (Math.abs(x) > bound - 1 || Math.abs(z) > bound - 1) continue;
         const edgeDist = Math.min(t - f.a, f.b - t);
         covers.push({
           x, z, dx: -f.nx, dz: -f.nz, h, low: h < 1.5,
@@ -845,26 +992,7 @@ export function buildLevel(scene, assets, opts = {}) {
       }
     }
   }
-
-  const spawnPoints = [
-    [-62, -62], [0, -64], [62, -62], [64, 0], [62, 62], [0, 64], [-62, 62], [-64, 0],
-    [-64, -30], [64, 30], [30, -64], [-30, 64], [64, -32], [-64, 32], [34, 64], [-34, -64],
-  ].map(([x, z]) => ({ x, z })).filter((p) => nav.walkable(p.x, p.z));
-
-  // patrol / reinforcement waypoints inside the compound
-  const waypoints = [];
-  for (let i = 0; i < 400 && waypoints.length < 60; i++) {
-    const x = (Math.random() * 2 - 1) * (WALL - 3), z = (Math.random() * 2 - 1) * (WALL - 3);
-    if (nav.walkable(x, z)) waypoints.push({ x, z });
-  }
-
-  return {
-    world, nav, covers, spawnPoints, waypoints, explosiveBarrels, minimap, meshes, props, grassUniforms, lamps,
-    ao, groundUniforms: groundMatRef.userData.groundUniforms,
-    playerSpawn: { x: 3, z: -20.5, yaw: Math.PI },
-    resupply: { x: -6.5, z: -26.45, r: 2.0 },
-    bounds: BOUND,
-  };
+  return covers;
 }
 
 /**
@@ -872,7 +1000,7 @@ export function buildLevel(scene, assets, opts = {}) {
  * from the collision boxes: R = contact occlusion near walls and objects,
  * G = sky occlusion under roofs, B = roof height / 8.
  */
-function bakeAO(world, bound) {
+export function bakeAO(world, bound) {
   const res = 0.5, min = -(bound + 4), size = (bound + 4) * 2, n = Math.ceil(size / res);
   const contact = new Float32Array(n * n), over = new Float32Array(n * n), roof = new Float32Array(n * n);
   for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
@@ -926,7 +1054,7 @@ function bakeAO(world, bound) {
 }
 
 /** Adds the baked AO to a standard material (works for instanced meshes too). */
-function applyBakedAO(mat, ao, key) {
+export function applyBakedAO(mat, ao, key) {
   const prev = mat.onBeforeCompile;
   mat.onBeforeCompile = (shader, renderer) => {
     prev.call(mat, shader, renderer);
@@ -959,7 +1087,7 @@ function applyBakedAO(mat, ao, key) {
 /** A filled sandbag: a rounded, slightly lumpy pillow (~170 triangles). */
 function sandbagGeometry() {
   const W = 0.46, H = 0.17, L = 0.68;
-  let g = new THREE.BoxGeometry(W, H, L, 6, 3, 8);
+  let g = new THREE.BoxGeometry(W, H, L, 5, 2, 6);
   g.deleteAttribute('uv'); g.deleteAttribute('normal');
   g = mergeVertices(g);
   const p = g.attributes.position;

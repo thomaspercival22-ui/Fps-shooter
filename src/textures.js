@@ -293,43 +293,57 @@ export function glowTexture() {
   return tex(c);
 }
 
-export function muzzleFlashTexture() {
-  const S = 128;
-  const c = canvas(S), ctx = c.getContext('2d');
-  ctx.translate(S / 2, S / 2);
-  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, S / 2);
-  g.addColorStop(0, 'rgba(255,250,220,1)');
-  g.addColorStop(0.2, 'rgba(255,210,120,0.95)');
-  g.addColorStop(0.5, 'rgba(255,140,40,0.5)');
-  g.addColorStop(1, 'rgba(255,90,10,0)');
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  const spikes = 7;
-  for (let i = 0; i <= spikes * 2; i++) {
-    const a = (i / (spikes * 2)) * Math.PI * 2;
-    const r = i % 2 === 0 ? S / 2 * (0.75 + Math.random() * 0.25) : S * 0.14;
-    ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+/**
+ * Muzzle flash seen down the bore: a white-hot core and ragged, turbulent
+ * lobes of burning gas (no hard star edges). Variants differ in lobe count and noise.
+ */
+export function muzzleFlashTexture(seed = 0) {
+  const S = 256, c = canvas(S), ctx = c.getContext('2d'), img = ctx.createImageData(S, S);
+  const lobes = 4 + (seed % 3), ph = seed * 1.7;
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const dx = (x - S / 2) / (S / 2), dy = (y - S / 2) / (S / 2);
+    const r = Math.hypot(dx, dy), a = Math.atan2(dy, dx);
+    const lobe = 0.45 + 0.55 * Math.pow(Math.abs(Math.cos(a * lobes / 2 + ph)), 2.2);
+    const turb = fbm(Math.cos(a) * 2.2 + seed * 3.1, Math.sin(a) * 2.2 + r * 2.5, 17 + seed, 4);
+    const edge = lobe * (0.42 + 0.7 * turb);
+    const k = Math.max(0, 1 - r / edge);                  // 0 at the flame edge, 1 at the centre
+    const fine = fbm(dx * 9 + seed, dy * 9, 5 + seed, 3);
+    const core = Math.exp(-(r * r) / 0.018);
+    const heat = Math.min(1, k * k * 1.6 + core);
+    // colour temperature: white core, yellow, orange, deep red fringe
+    const R = 255, G = 110 + 145 * Math.pow(heat, 0.6), B = 25 + 230 * Math.pow(heat, 2.2);
+    const alpha = Math.min(1, Math.pow(k, 0.8) * (0.55 + 0.6 * fine) + core);
+    const o = (y * S + x) * 4;
+    img.data[o] = R; img.data[o + 1] = G; img.data[o + 2] = B; img.data[o + 3] = alpha * 255;
   }
-  ctx.fill();
+  ctx.putImageData(img, 0, 0);
   return tex(c);
 }
 
-/** Side-on muzzle flash (a flame cone) used on the viewmodel. */
-export function muzzleSideTexture() {
-  const W = 128, H = 64;
-  const c = canvas(W, H), ctx = c.getContext('2d');
-  for (let i = 0; i < 3; i++) {
-    const g = ctx.createRadialGradient(10, H / 2, 0, 10, H / 2, W * (0.6 + i * 0.2));
-    g.addColorStop(0, 'rgba(255,245,210,0.9)');
-    g.addColorStop(0.3, 'rgba(255,190,90,0.6)');
-    g.addColorStop(1, 'rgba(255,110,20,0)');
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.moveTo(0, H / 2);
-    ctx.quadraticCurveTo(W * 0.4, H * (0.1 + i * 0.1), W, H / 2 + (Math.random() - 0.5) * 8);
-    ctx.quadraticCurveTo(W * 0.4, H * (0.9 - i * 0.1), 0, H / 2);
-    ctx.fill();
+/**
+ * Side-on flame plume (muzzle at the left edge, travelling right): the bright
+ * primary flash at the muzzle, a darker gap, then the ball of intermediate
+ * flash where the gas re-ignites, all with turbulent edges.
+ */
+export function muzzleSideTexture(seed = 0) {
+  const W = 256, H = 128, c = canvas(W, H), ctx = c.getContext('2d'), img = ctx.createImageData(W, H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const u = x / W, v = (y - H / 2) / (H / 2);
+    // radius profile: narrow at the muzzle, a bulb at ~40 %, tapering tail
+    const bulb = Math.exp(-(((u - 0.42) / 0.2) ** 2));
+    const rad = (0.16 + 0.1 * u + 0.5 * bulb) * (1 - Math.pow(u, 3));
+    const turb = fbm(u * 6 + seed * 2.3, v * 3, 29 + seed, 4);
+    const edge = rad * (0.65 + 0.7 * turb);
+    const k = Math.max(0, 1 - Math.abs(v) / Math.max(0.01, edge));
+    // brightness along the plume: primary flash, a dim gap, the intermediate flash
+    const along = Math.exp(-u / 0.06) * 1.0 + 0.35 + 0.75 * bulb;
+    const fine = fbm(u * 20 + seed, v * 10, 7 + seed, 3);
+    const heat = Math.min(1, k * along * (0.7 + 0.5 * fine));
+    const o = (y * W + x) * 4;
+    img.data[o] = 255; img.data[o + 1] = 105 + 150 * Math.pow(heat, 0.7); img.data[o + 2] = 20 + 220 * Math.pow(heat, 2.4);
+    img.data[o + 3] = Math.min(1, Math.pow(k, 0.9) * along * (0.5 + 0.6 * fine)) * 255 * (1 - Math.pow(u, 4));
   }
+  ctx.putImageData(img, 0, 0);
   return tex(c);
 }
 

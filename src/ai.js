@@ -35,7 +35,7 @@ function angleDiff(a, b) { let d = b - a; while (d > Math.PI) d -= Math.PI * 2; 
 let nextId = 1;
 
 export class Enemy {
-  constructor(mgr, typeKey, x, z) {
+  constructor(mgr, typeKey, x, z, opts = {}) {
     this.mgr = mgr;
     this.game = mgr.game;
     this.id = nextId++;
@@ -46,7 +46,7 @@ export class Enemy {
     this.pos = new THREE.Vector3(x, 0, z);
     this.vel = new THREE.Vector3();
     this.yaw = 0; this.aimPitch = 0; this.yawOff = 0;
-    this.soldier = new Soldier(this.game.scene, this.type.kit, this.type.weapon);
+    this.soldier = new Soldier(this.game.scene, opts.kit || this.type.kit, this.type.weapon);
     this.soldier.setPosition(x, 0, z);
     this.voicePitch = rand(0.55, 1.0);
     // knowledge
@@ -116,7 +116,8 @@ export class Enemy {
     const dx = p.eye.x - eye.x, dz = p.eye.z - eye.z, dy = p.eye.y - eye.y;
     const dist = Math.hypot(dx, dy, dz);
     let visible = false, inFov = false;
-    if (dist < 140) {
+    const M = g.mission;
+    if (dist < (M?.sightRange || 140)) {
       const face = this.yaw + this.yawOff;
       const fx = Math.sin(face), fz = Math.cos(face);
       const cosA = (dx * fx + dz * fz) / Math.max(0.01, Math.hypot(dx, dz));
@@ -139,6 +140,7 @@ export class Enemy {
       // darkness: much harder to pick someone out unless they give themselves away
       if (g.night && !firing) rate *= dist < 10 ? 0.75 : dist < 30 ? 0.45 : 0.25;
       rate /= g.difficulty.react;
+      if (M?.sightMul) rate *= M.sightMul(dist, firing);
       this.awareness = Math.min(1.5, this.awareness + rate * dt);
     } else if (this.alert < 2) {
       this.awareness = Math.max(0, this.awareness - dt * 0.12);
@@ -253,12 +255,25 @@ export class Enemy {
     if (gren) { this.evade(gren); return; }
     if (this.order === 'evade' && this.orderT < 1.2) return;
 
+    // placed guards keep their post (or patrol route) until something is wrong
+    if (this.post && (this.alert === 0 || (this.post.hold && this.alert < 2))) { if (this.order !== 'guard') this.setOrder('guard'); return; }
+    // hostage takers never leave their hostages
+    if (this.post?.hold) { if (this.order !== 'hold') this.setOrder('hold'); return; }
     if (this.alert < 2) {
       if (this.order !== 'investigate' && this.order !== 'search') this.setOrder('investigate');
       return;
     }
     const tSince = g.time - this.lastSeen;
     const dist = this.pos.distanceTo(this.lastKnown);
+
+    // a sniper far away: no searching or pushing towards him, just get out of his sight
+    if (mgr.farThreat && !this.seeing) {
+      if (!((this.order === 'cover' && this.cover) || this.order === 'shelter')) {
+        const c = this.chooseCover({});
+        if (c) this.takeCover(c); else this.shelter();
+      }
+      return;
+    }
 
     // 2) badly hurt: fall back once
     if (this.hp < this.type.hp * 0.35 && !this.retreated) {
@@ -299,6 +314,7 @@ export class Enemy {
     if (this.order !== 'cover' || !this.cover) {
       const c = this.chooseCover({});
       if (c) this.takeCover(c);
+      else if (mgr.farThreat) this.shelter();
       else this.setOrder('push');
       return;
     }
@@ -314,6 +330,19 @@ export class Enemy {
       if (c) { this.takeCover(c); if (Math.random() < 0.4) this.say('moving'); }
       else this.coverCycles = 0;
     }
+  }
+
+  /** Under fire from far away with no cover in reach: run for the nearest building. */
+  shelter() {
+    const g = this.game, list = g.level.shelters || [];
+    if (this.order === 'shelter' && this.orderT < 12) return;
+    let best = null, bd = Infinity;
+    for (const s of list) {
+      const d = Math.hypot(s.x - this.pos.x, s.z - this.pos.z) + Math.random() * 6;
+      if (d < bd) { bd = d; best = s; }
+    }
+    this.setOrder('shelter');
+    if (best) this.navigate(best.x + rand(-1.5, 1.5), best.z + rand(-1.5, 1.5));
   }
 
   setOrder(o) {
@@ -506,7 +535,7 @@ export class Enemy {
     s.move.fz = sp > 0.1 ? (this.vel.x * sn + this.vel.z * c) / sp : 1;
     s.setPosition(this.pos.x, this.pos.y, this.pos.z);
     s.yaw = this.yaw;
-    s.update(dt, g.level.world, g.camera.position);
+    s.update(dt, g.level.world, (g.drone.active ? g.drone.camera : g.camera).position);
     this._updateHitboxes();
   }
 
@@ -571,6 +600,29 @@ export class Enemy {
         break;
       }
       case 'evade': wantSpeed = this.type.speed * 1.1; if (this.arrived && this.orderT > 1.5) this.replan(); break;
+      case 'shelter': wantSpeed = this.type.speed; if (this.arrived) { this.crouch = true; this._lookAround(dt * 0.3); } break;
+      case 'guard': case 'hold': {
+        const P = this.post;
+        if (this.order === 'guard' && P.patrol) {
+          if (!this.path && !this.arrived) { const pt = P.patrol[P.pi]; this.navigate(pt[0], pt[1]); }
+          wantSpeed = this.type.walk * 0.85;
+          if (this.arrived) {
+            P.wait = (P.wait || 0) + dt;
+            this._lookAround(dt * 0.6);
+            if (P.wait > 3) { P.wait = 0; P.pi = (P.pi + 1) % P.patrol.length; this.arrived = false; this.path = null; }
+          }
+        } else {
+          const d = Math.hypot(P.x - this.pos.x, P.z - this.pos.z);
+          if (d > 0.6 && !this.path) this.navigate(P.x, P.z);
+          wantSpeed = d > 0.6 ? this.type.walk * 1.4 : 0;
+          if (d <= 0.6 && this.order === 'guard') {
+            // bored sentry: looks around his arc
+            const a = P.yaw + Math.sin(g.time * 0.23 + this.id * 1.7) * 0.6;
+            faceX = Math.sin(a); faceZ = Math.cos(a);
+          }
+        }
+        break;
+      }
       case 'blind': {
         // stumble around, arms up
         if (!this.path || this.arrived) this.navigate(this.pos.x + rand(-2, 2), this.pos.z + rand(-2, 2));
@@ -754,11 +806,9 @@ export class Enemy {
     const eye = this.eye(_a);
     const aim = _b.copy(target);
     const dist = eye.distanceTo(aim);
-    if (!suppress) {
-      // lead the target
-      const tFlight = dist / T.velocity;
-      aim.addScaledVector(leadVel, tFlight * 0.85);
-    }
+    const tFlight = dist / T.velocity;
+    if (!suppress) aim.addScaledVector(leadVel, tFlight * 0.85); // lead the target
+    if (dist > 80) aim.y += 4.9 * tFlight * tFlight;               // hold over for bullet drop
     const settle = 1 + 1.5 * Math.max(0, 1 - this.seeTime / 1.5);
     const moving = Math.hypot(this.vel.x, this.vel.z) > 1 ? 1.6 : 1;
     let err = T.spread * D.spread * (1 + dist / 40) * (1 + p.horizSpeed / 6) * moving * (1 + this.suppression * 0.6) * settle;
@@ -766,6 +816,7 @@ export class Enemy {
     if (this.flashed > 0) err *= 6;
     if (p.crouched && this.seeing) err *= 1.1;
     err *= 1 + Math.min(this.shotCount % 12, 8) * 0.04;
+    if (g.mission?.enemyErrMul) err *= g.mission.enemyErrMul(dist);
     const dir = aim.sub(eye).normalize();
     const pellets = T.pellets || 1;
     const muzzle = this.soldier.muzzleWorld(_c);
@@ -783,7 +834,7 @@ export class Enemy {
     if (this.ammo <= 0) this.startReload();
     this.soldier.muzzleFlash();
     this.lastFired = g.time;
-    g.audio.playAt(`shot_${T.sound}_${(Math.random() * 3) | 0}`, muzzle.x, muzzle.y, muzzle.z, { vol: 1.15, ref: 6, travel: true, max: 400 });
+    g.audio.playAt(`shot_${T.sound}_${(Math.random() * 3) | 0}`, muzzle.x, muzzle.y, muzzle.z, { vol: 1.15, ref: 6, travel: true, max: 1000, wet: 1 });
     g.effects.enemyMuzzle(muzzle);
   }
 
@@ -835,9 +886,23 @@ export class EnemyManager {
     return e;
   }
 
+  /** A hostile at a fixed post (or patrol route) who does not know the player is here. */
+  spawnPlaced(typeKey, x, z, { yaw = 0, kit, patrol, hold = false } = {}) {
+    const e = new Enemy(this, typeKey, x, z, { kit });
+    e.alert = 0; e.awareness = 0;
+    e.lastKnown.set(x, 0, z);
+    e.yaw = yaw;
+    e.post = { x, z, yaw, hold, patrol: patrol || null, pi: 0 };
+    e.order = 'guard';
+    this.list.push(e);
+    return e;
+  }
+
   clear() {
     for (const e of this.list) e.soldier.dispose();
     this.list = [];
+    this.farThreat = null;
+    this.noIntel = false;
   }
 
   shareIntel(src) {
@@ -859,7 +924,8 @@ export class EnemyManager {
       const d = Math.hypot(e.pos.x - pos.x, e.pos.z - pos.z);
       if (d > radius) continue;
       let r = radius;
-      if (kind !== 'gunshot' && !W.los(e.pos.x, 1.6, e.pos.z, pos.x, pos.y + 0.5, pos.z)) r *= 0.5;
+      const damp = this.game.level.wallDamp;
+      if ((kind !== 'gunshot' || damp) && !W.los(e.pos.x, 1.6, e.pos.z, pos.x, pos.y + 0.5, pos.z)) r *= kind === 'gunshot' ? damp : 0.5;
       if (d < r) e.hear(pos, kind, d);
     }
   }
@@ -867,6 +933,7 @@ export class EnemyManager {
   /** Bullet passing close by: suppression + alert. */
   nearMiss(e, fromPos) {
     if (!e.alive) return;
+    this.game.mission?.onNearMiss?.(e);
     e.suppression = Math.min(3, e.suppression + 0.6);
     if (e.alert < 2) { e.alert = 2; e.awareness = Math.max(e.awareness, 0.9); e.lastKnown.copy(fromPos); e.replan(); }
   }
@@ -954,7 +1021,7 @@ export class EnemyManager {
     if (this.directorT <= 0) { this.directorT = 1; this._direct(); }
     // cleanup old bodies
     const dead = this.list.filter((e) => !e.alive);
-    if (dead.length > 10) {
+    if (dead.length > (this.game.mission ? 24 : 10)) {
       dead.sort((a, b) => b.deadT - a.deadT);
       const old = dead[0];
       old.soldier.dispose();
@@ -989,7 +1056,7 @@ export class EnemyManager {
     }
     // HQ intel keeps the pressure on if the squad has lost the player for long
     this.intelT += 1;
-    if (g.time - this.squadLastSeen > 18 && this.intelT > 15) {
+    if (!this.noIntel && g.time - this.squadLastSeen > 18 && this.intelT > 15) {
       this.intelT = 0;
       for (const e of this.list) {
         if (!e.alive || e.seeing) continue;

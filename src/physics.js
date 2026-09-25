@@ -19,6 +19,16 @@ export class CollisionWorld {
     this.stampId = 1;
     this.hit = { t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0, box: null, exitT: 0 };
     this._q = [];
+    // boxes entirely outside the grid (e.g. the distant sniper hide), tested one by one
+    this.outside = [];
+    // walkable ground plane at y=0: everywhere, or only inside this rectangle (a tower floor)
+    this.groundRect = null;
+  }
+
+  /** True where the y=0 ground plane exists. */
+  hasGround(x, z) {
+    const r = this.groundRect;
+    return !r || (x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1);
   }
 
   /** Adds a box. props: { mat, pen (bullet penetration resistance per metre, 0 = none), blocksBullets, blocksSight, tag } */
@@ -40,10 +50,12 @@ export class CollisionWorld {
   build() {
     this.grid = new Array(this.nx * this.nz);
     for (let i = 0; i < this.grid.length; i++) this.grid[i] = [];
+    this.outside.length = 0;
     for (const b of this.boxes) this._insert(b);
   }
 
   _insert(b) {
+    if (b.x1 < this.minX || b.x0 > this.maxX || b.z1 < this.minZ || b.z0 > this.maxZ) { this.outside.push(b); return; }
     const c0x = this._cx(b.x0), c1x = this._cx(b.x1);
     const c0z = this._cz(b.z0), c1z = this._cz(b.z1);
     for (let z = c0z; z <= c1z; z++) for (let x = c0x; x <= c1x; x++) this.grid[z * this.nx + x].push(b);
@@ -70,6 +82,7 @@ export class CollisionWorld {
         out.push(b);
       }
     }
+    for (const b of this.outside) if (!(b.x1 < x0 || b.x0 > x1 || b.z1 < z0 || b.z0 > z1)) out.push(b);
     return out;
   }
 
@@ -84,11 +97,15 @@ export class CollisionWorld {
     // ground plane
     if (dy < 0 && oy >= 0) {
       const t = -oy * idy;
-      if (t < best) { best = t; bestBox = null; bestAxis = 3; }
+      if (t < best && this.hasGround(ox + dx * t, oz + dz * t)) { best = t; bestBox = null; bestAxis = 3; }
     }
 
     // Walk the XZ grid cells along the ray (2D DDA).
     const s = ++this.stampId;
+    for (const b of this.outside) {
+      const r = this._slab(b, ox, oy, oz, idx, idy, idz, mode, ignore);
+      if (r && r.t < best) { best = r.t; bestBox = b; bestAxis = r.axis; bestExit = r.exit; }
+    }
     let tStart = 0;
     let px = ox, pz = oz;
     if (px < this.minX || px >= this.maxX || pz < this.minZ || pz >= this.maxZ) {
@@ -146,6 +163,21 @@ export class CollisionWorld {
     return this._finish(best, bestBox, bestAxis, bestExit, ox, oy, oz, dx, dy, dz, maxDist);
   }
 
+  /** Ray vs one box (the slab test used for boxes outside the grid). */
+  _slab(b, ox, oy, oz, idx, idy, idz, mode, ignore) {
+    if (b === ignore || (mode === RAY_BULLET && !b.blocksBullets) || (mode === RAY_SIGHT && !b.blocksSight)) return null;
+    let t1 = (b.x0 - ox) * idx, t2 = (b.x1 - ox) * idx;
+    let tmin = Math.min(t1, t2), tmax = Math.max(t1, t2), axis = 0;
+    t1 = (b.y0 - oy) * idy; t2 = (b.y1 - oy) * idy;
+    if (Math.min(t1, t2) > tmin) { tmin = Math.min(t1, t2); axis = 1; }
+    tmax = Math.min(tmax, Math.max(t1, t2));
+    t1 = (b.z0 - oz) * idz; t2 = (b.z1 - oz) * idz;
+    if (Math.min(t1, t2) > tmin) { tmin = Math.min(t1, t2); axis = 2; }
+    tmax = Math.min(tmax, Math.max(t1, t2));
+    if (tmax < 0 || tmin > tmax || tmin < -1e-3) return null;
+    return { t: Math.max(0, tmin), axis, exit: tmax };
+  }
+
   _finish(best, box, axis, exitT, ox, oy, oz, dx, dy, dz, maxDist) {
     if (axis < 0 || best >= maxDist) return null;
     const h = this.hit;
@@ -170,7 +202,7 @@ export class CollisionWorld {
 
   /** Highest walkable surface under a circle footprint, at or below maxY. */
   groundAt(x, z, r, maxY) {
-    let g = 0;
+    let g = this.hasGround(x, z) ? 0 : -1000;
     const boxes = this.query(x - r, z - r, x + r, z + r);
     for (const b of boxes) {
       if (b.y1 > maxY || b.y1 <= g) continue;
@@ -249,7 +281,7 @@ export class CollisionWorld {
     let impact = 0;
     for (let s = 0; s < steps; s++) {
       pos.x += vel.x * h; pos.y += vel.y * h; pos.z += vel.z * h;
-      if (pos.y < r) {
+      if (pos.y < r && this.hasGround(pos.x, pos.z)) {
         const vi = -vel.y;
         if (vi > impact) impact = vi;
         pos.y = r;

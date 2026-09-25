@@ -278,6 +278,22 @@ export class Effects {
   }
 
   muzzleLight(pos) { this.flashLight.position.copy(pos); this.flashLight.intensity = 5; }
+  /** Unsuppressed shot: burning powder sparks and a puff of propellant smoke drifting off the muzzle. */
+  muzzleBlast(pos, fwd, F) {
+    for (let i = 0; i < F.sparks; i++) {
+      const sp = 14 + Math.random() * 22, jx = (Math.random() - 0.5) * 0.25, jy = (Math.random() - 0.5) * 0.25, jz = (Math.random() - 0.5) * 0.25;
+      this.sparks.emit({ x: pos.x + fwd.x * 0.05, y: pos.y + fwd.y * 0.05, z: pos.z + fwd.z * 0.05, vx: (fwd.x + jx) * sp, vy: (fwd.y + jy) * sp, vz: (fwd.z + jz) * sp,
+        size: 0.012 + Math.random() * 0.012, grow: 0, drag: 3, grav: 2, maxLife: 0.07 + Math.random() * 0.12, r: 1, g: 0.62, b: 0.25, a: 1, fade: 1 });
+    }
+    const n = Math.round(F.smoke * 3);
+    for (let i = 0; i < n; i++) {
+      const k = 0.4 + Math.random() * 1.4;
+      this.smoke.emit({ x: pos.x + fwd.x * (0.1 + i * 0.12), y: pos.y + fwd.y * 0.1, z: pos.z + fwd.z * (0.1 + i * 0.12),
+        vx: fwd.x * k + (Math.random() - 0.5) * 0.3, vy: fwd.y * k + 0.15 + Math.random() * 0.2, vz: fwd.z * k + (Math.random() - 0.5) * 0.3,
+        size: 0.06 + F.smoke * 0.03, grow: 0.9 + F.smoke * 0.3, drag: 2.2, grav: -0.08, maxLife: 0.7 + Math.random() * 0.9 * F.smoke,
+        r: 0.86, g: 0.85, b: 0.82, a: 0.16 + 0.05 * F.smoke, fade: 1.2, fadeIn: 0.02, spin: (Math.random() - 0.5) * 0.6 });
+    }
+  }
   enemyMuzzle(pos) {
     this.enemyLight.position.copy(pos); this.enemyLight.intensity = 3.5;
     this.dust.emit({ x: pos.x, y: pos.y, z: pos.z, vx: 0, vy: 0.3, vz: 0, size: 0.25, grow: 3, drag: 2, maxLife: 0.6, r: 0.7, g: 0.7, b: 0.7, a: 0.25, fade: 1 });

@@ -51,7 +51,7 @@ export function gunGeo(gun, name) {
   return g;
 }
 
-/** Part names of a gun in build order (the enemies' 'lod' copy excluded). */
+/** Part names of a gun in build order (the enemies' 'lod' / 'lod2' copies excluded). */
 export function gunPartNames(gun) {
-  return Object.values(HEADER).filter((h) => h.gun === gun && h.name !== 'lod').map((h) => h.name);
+  return Object.values(HEADER).filter((h) => h.gun === gun && !h.name.startsWith('lod')).map((h) => h.name);
 }

@@ -63,9 +63,15 @@ export function fabricMaterial(palette) {
   for (const [k, v] of Object.entries(palette.colors || {})) colors[k].set(v);
   for (const [k, v] of Object.entries(palette.rough || {})) rough[k] = v;
   for (const [k, v] of Object.entries(palette.metal || {})) metal[k] = v;
-  camoK[R.SHIRT] = 1; camoK[R.PANTS] = palette.pantsCamo === false ? 0 : 2;
-  molle[R.VEST] = 1; molle[R.POUCH] = 0.6;
-  for (const r of [R.HELMET, R.LENS, R.BOOT, R.PALM, R.TPR]) weaveK[r] = r === R.BOOT || r === R.PALM ? 0.35 : 0;
+  if (palette.plain) {
+    // office clothes: plain cloth with a fine weave, bare skin, hair
+    for (const r of [R.FACE, R.HELMET, R.LENS, R.TPR, R.BOOT, R.BLACK]) weaveK[r] = r === R.BOOT || r === R.BLACK ? 0.2 : 0;
+    weaveK[R.SHIRT] = 0.45; weaveK[R.VEST] = 0.3; weaveK[R.PANTS] = 0.4; weaveK[R.POUCH] = 1.6;
+  } else {
+    camoK[R.SHIRT] = 1; camoK[R.PANTS] = palette.pantsCamo === false ? 0 : 2;
+    molle[R.VEST] = 1; molle[R.POUCH] = 0.6;
+    for (const r of [R.HELMET, R.LENS, R.BOOT, R.PALM, R.TPR]) weaveK[r] = r === R.BOOT || r === R.PALM ? 0.35 : 0;
+  }
   const mat = new THREE.MeshPhysicalMaterial({ roughness: 1, metalness: 0, sheen: 0.6, sheenRoughness: 0.7, sheenColor: 0x807866 });
   const u = {
     regionColor: { value: colors }, regionRough: { value: rough }, regionMetal: { value: metal }, regionWeave: { value: weaveK },

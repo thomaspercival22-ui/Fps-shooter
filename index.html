@@ -33,6 +33,7 @@
     <canvas id="damage-overlay"></canvas>
     <div id="scope" class="hidden">
       <canvas id="scope-reticle"></canvas>
+      <div id="scope-data"></div>
     </div>
     <div id="crosshair">
       <i class="ch t"></i><i class="ch b"></i><i class="ch l"></i><i class="ch r"></i><i class="dot"></i>
@@ -42,7 +43,8 @@
     <div id="grenade-indicators"></div>
 
     <canvas id="minimap" width="300" height="300"></canvas>
-    <div id="wave-info"><div id="wave-label">WAVE 1</div><div id="hostiles">HOSTILES 0</div></div>
+    <div id="wave-info"><div id="wave-label">WAVE 1</div><div id="hostiles">HOSTILES 0</div><div id="obj-warn"></div></div>
+    <div id="range-readout"></div>
     <div id="score-box"><span id="score">0</span><small>SCORE</small></div>
     <div id="killfeed"></div>
     <div id="radio"></div>
@@ -88,6 +90,11 @@
       <button class="tbtn" id="btn-mode" aria-label="Fire selector">SEMI<br>AUTO</button>
       <button class="tbtn" id="btn-swap" aria-label="Switch weapon"><svg viewBox="0 0 24 24"><path d="M4 8h12l-3-3 1.4-1.4L20 9l-5.6 5.4L13 13l3-3H4zM20 16H8l3 3-1.4 1.4L4 15l5.6-5.4L11 11l-3 3h12z"/></svg></button>
       <button class="tbtn" id="btn-frag" aria-label="Frag grenade"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="14" rx="6" ry="7"/><rect x="10" y="3" width="4" height="4" rx="1"/><path d="M14 5h4v2h-4z"/></svg><b id="frag-count">2</b></button>
+      <button class="tbtn scopebtn" id="btn-zoom" aria-label="Scope magnification">8x</button>
+      <button class="tbtn scopebtn" id="btn-lase" aria-label="Laser rangefinder">LASE</button>
+      <button class="tbtn scopebtn" id="btn-zero-up" aria-label="Zero up">▲</button>
+      <button class="tbtn scopebtn" id="btn-zero-dn" aria-label="Zero down">▼</button>
+      <div id="zero-label" class="scopebtn">ZERO<br><b>100</b></div>
       <button class="tbtn" id="btn-flash" aria-label="Flashbang"><svg viewBox="0 0 24 24"><rect x="8" y="6" width="8" height="15" rx="2"/><rect x="10" y="2" width="4" height="4"/><path d="M3 9l3 1M3 15l3-1M21 9l-3 1M21 15l-3-1" stroke="currentColor" stroke-width="1.6"/></svg><b id="flash-count">2</b></button>
     </div>
     <div id="pause-hint" class="desktop-only">ESC to pause</div>
@@ -108,7 +115,7 @@
       <div class="title-block">
         <div class="kicker">Operation</div>
         <h1>TIPS MANIA</h1>
-        <p class="tag">Hold the compound. Survive the waves.</p>
+        <p class="tag" id="menu-tag">Hold the compound. Survive the waves.</p>
       </div>
       <button class="mbtn primary" id="btn-deploy">DEPLOY</button>
       <button class="mbtn" id="btn-loadout">LOADOUT</button>
@@ -124,6 +131,7 @@
         <h2>Primary weapon</h2>
         <div class="choices" id="primary-choices"></div>
         <h2>Mission</h2>
+        <div class="choices" id="mission-choices"></div>
         <div class="choices" id="time-choices"></div>
         <div class="choices" id="weather-choices"></div>
         <h2>Difficulty</h2>
@@ -177,6 +185,16 @@
             <li>At night enemies struggle to see you, but their infrared lasers give them away under night vision. Thermal shows body heat through the dark.</li>
             <li>The FPV drone's video gets worse with range and walls. Dive it into enemies or tap fire to detonate. Enemies will try to shoot it down.</li>
           </ul>
+          <h3>Tower Hostage Rescue</h3>
+          <ul>
+            <li>No waves: clear floor 47 room by room. Hostage takers kill a hostage if you miss, wound them without dropping them, or let them see you coming. Flash the room, then take one clean shot.</li>
+            <li>Walk up to a hostage in a cleared room to cut them loose. Civilians are no-shoot targets.</li>
+          </ul>
+          <h3>Overwatch (sniper)</h3>
+          <ul>
+            <li>Crouch behind the sandbags to rest the rifle. LASE for the range, dial the ZERO to it, hold into the wind by the mil dots, and breathe out.</li>
+            <li>Your spotter calls every shot: how far off you were and how many mils to hold. The marksman on the HQ roof is hunting you: if you are slow he kills your spotter, then you.</li>
+          </ul>
         </div>
       </div>
       <button class="mbtn" id="btn-howto-close">BACK</button>
@@ -195,6 +213,7 @@
   <div id="gameover" class="screen hidden">
     <div class="panel">
       <h2 id="go-title">K.I.A.</h2>
+      <div id="go-grade" class="hidden"></div>
       <div id="go-stats"></div>
       <button class="mbtn primary" id="btn-retry">REDEPLOY</button>
       <button class="mbtn" id="btn-go-menu">MAIN MENU</button>

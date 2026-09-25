@@ -247,6 +247,30 @@ body.desktop .desktop-only { display: block; }
 #go-stats { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; font: 13px var(--mono); color: #ddd; margin-bottom: 6px; }
 #go-stats .hl { color: var(--accent-2); font-weight: 700; }
 
+/* sniper tools: magnification, laser rangefinder, elevation turret */
+.scopebtn { display: none !important; }
+body.has-zoom .tbtn.scopebtn { display: flex !important; }
+body.has-zoom #zero-label.scopebtn { display: block !important; }
+#btn-zoom { width: 42px; height: 42px; right: calc(188px + var(--sar)); bottom: calc(96px + var(--sab)); font: 800 12px var(--font); }
+#btn-lase { width: 42px; height: 42px; right: calc(244px + var(--sar)); bottom: calc(96px + var(--sab)); font: 800 10px var(--font); border-radius: 10px; }
+#btn-zero-up, #btn-zero-dn { width: 36px; height: 30px; right: calc(300px + var(--sar)); border-radius: 8px; font: 700 12px var(--font); }
+#btn-zero-up { bottom: calc(120px + var(--sab)); }
+#btn-zero-dn { bottom: calc(86px + var(--sab)); }
+#zero-label { position: absolute; right: calc(296px + var(--sar)); bottom: calc(154px + var(--sab)); width: 44px; text-align: center; font: 600 9px/1.2 var(--font); letter-spacing: .12em; color: #ddd; text-shadow: 0 1px 2px #000; }
+#zero-label b { font: 800 13px var(--mono); letter-spacing: 0; }
+body.sniper-mission #btn-frag, body.sniper-mission #btn-flash, body.sniper-mission #btn-mode, body.sniper-mission #minimap { display: none !important; }
+#scope-data { position: absolute; left: 50%; bottom: 7%; transform: translateX(-50%); font: 700 12px var(--mono); letter-spacing: .06em; color: #d9e4d2; text-shadow: 0 1px 2px #000; white-space: nowrap; }
+#obj-warn { font: 800 12px var(--font); letter-spacing: .2em; color: #ff5a4a; margin-top: 3px; min-height: 0; animation: warnblink 0.8s steps(2) infinite; }
+#obj-warn:empty { display: none; }
+@keyframes warnblink { 50% { opacity: .35; } }
+#range-readout { position: absolute; left: 50%; top: calc(50% + 34px); transform: translateX(-50%); font: 700 13px var(--mono); color: #e8f0e0; text-shadow: 0 1px 3px #000; opacity: 0; transition: opacity .3s; }
+#hitmarker.civ i { background: #4fb3ff; }
+
+#go-grade { font: 900 64px/1 var(--font); color: var(--accent-2); text-align: center; margin: -4px 0 6px; text-shadow: 0 2px 12px rgba(0,0,0,.6); }
+#go-grade.grade-F { color: #ff5a4a; }
+#go-grade.grade-S { color: #ffe27a; }
+.choice.locked { opacity: .35; }
+
 #rotate { background: #0d0f0c; flex-direction: column; gap: 14px; z-index: 50; display: none; color: var(--muted); }
 #rotate p { margin: 0; font-size: 14px; letter-spacing: .1em; }
 @media (orientation: portrait) and (pointer: coarse) { #rotate { display: flex; } }

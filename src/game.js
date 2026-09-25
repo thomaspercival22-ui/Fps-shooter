@@ -5,6 +5,9 @@ import { settings, getBest, setBest, MOBILE } from './settings.js';
 import { SUN_INTENSITY, ENV_INTENSITY } from './assets.js';
 import { DIFFICULTY, SCORE, GRENADES } from './config.js';
 import { buildLevel } from './level.js';
+import { buildTower } from './tower.js';
+import { CivilianManager } from './civilian.js';
+import { MISSIONS, TowerMission, SniperMission } from './missions.js';
 import { Player } from './player.js';
 import { WeaponSystem } from './weapons.js';
 import { EnemyManager } from './ai.js';
@@ -73,8 +76,10 @@ export class Game {
     sun.shadow.normalBias = 0.035;
     scene.add(sun, sun.target);
 
-    this.level = buildLevel(scene, assets, { shadows: true });
-    this.barrelMatrices = this.level.explosiveBarrels.map((b) => { const m = new THREE.Matrix4(); b.meshes[0].getMatrixAt(b.index, m); return m; });
+    this.levels = {};
+    this.levelKind = null;
+    this.mission = null;
+    this._useLevel('compound');
     this.player = new Player(this);
     this.input = new Input(this);
     this.hud = new HUD(this);
@@ -83,6 +88,7 @@ export class Game {
     this.ballistics = new Ballistics(this);
     this.grenades = new Grenades(this);
     this.enemies = new EnemyManager(this);
+    this.civilians = new CivilianManager(this);
     this.weapons = new WeaponSystem(this, settings.primary);
     this.weapons.scene.environment = assets.envMap;
     this.pickupModels = { ammo: assets.models.ammo_box, health: assets.models.medical_box };
@@ -124,6 +130,47 @@ export class Game {
   }
 
   // ---------------- setup ----------------
+  /**
+   * Makes a level current, building it the first time. The level we leave is
+   * detached and its GPU buffers freed (its data stays, so switching back is quick).
+   */
+  _useLevel(kind) {
+    if (this.levelKind === kind) return false;
+    const old = this.level;
+    if (old) {
+      this.scene.remove(old.root);
+      if (old.lamps.parent) old.lamps.parent.remove(old.lamps);
+      old.root.traverse((o) => { if (o.isMesh && o.geometry) o.geometry.dispose(); });
+    }
+    let L = this.levels[kind];
+    if (!L) {
+      const root = new THREE.Group();
+      root.name = `level:${kind}`;
+      L = kind === 'tower' ? buildTower(root, this.assets, { shadows: true }) : buildLevel(root, this.assets, { shadows: true });
+      L.root = root;
+      this.levels[kind] = L;
+    }
+    this.scene.add(L.root);
+    this.level = L;
+    this.levelKind = kind;
+    this.barrelMatrices = L.explosiveBarrels.map((b) => { const m = new THREE.Matrix4(); b.meshes[0].getMatrixAt(b.index, m); return m; });
+    this.hud?.buildMinimap(L);
+    this.audio.setEnvironment(L.indoor ? 'indoor' : 'outdoor');
+    if (this.rain) {
+      const u = this.rain.uniforms;
+      u.roofMap.value = L.ao.tex; u.roofMin.value = L.ao.min; u.roofSize.value = L.ao.size;
+      this.rain.indoor = !!L.indoor;
+    }
+    return true;
+  }
+
+  /** Builds (if needed) and switches to the mission's level, then compiles its shaders off the main thread. */
+  async prepareMission(missionKey) {
+    const M = MISSIONS[missionKey] || MISSIONS.compound;
+    if (!this._useLevel(M.level)) return;
+    try { await this.renderer.compileAsync(this.scene, this.camera); } catch { /* compiled on first use instead */ }
+  }
+
   applyQuality() {
     const name = QUALITY[settings.quality] ? settings.quality : 'medium';
     const q = { ...QUALITY[name] };
@@ -174,9 +221,16 @@ export class Game {
   // ---------------- flow ----------------
   start() {
     this.difficulty = DIFFICULTY[settings.difficulty] || DIFFICULTY.regular;
-    const optic = settings.primary === 'm4' ? settings.optic : 'holo';
-    if (this.weapons.slots.primary.key !== settings.primary || this.weapons.optic !== optic) {
-      this.weapons = new WeaponSystem(this, settings.primary);
+    const M = MISSIONS[settings.mission] || MISSIONS.compound;
+    this.missionKey = MISSIONS[settings.mission] ? settings.mission : 'compound';
+    this.enemies.clear();
+    this.civilians.clear();
+    if (this._useLevel(M.level)) this.renderer.compile(this.scene, this.camera);
+    this.level.shadowFocus = null;
+    const primary = M.primary || settings.primary;
+    const optic = primary === 'm4' ? settings.optic : 'holo';
+    if (this.weapons.slots.primary.key !== primary || this.weapons.optic !== optic) {
+      this.weapons = new WeaponSystem(this, primary);
       this.weapons.scene.environment = this.assets.envMap;
       this.onResize();
     } else {
@@ -189,16 +243,18 @@ export class Game {
       this.weapons.state = 'draw'; this.weapons.stateT = 0; this.weapons.reload = null; this.weapons.throwing = null; this.weapons.adsT = 0;
       this.weapons.heldFrag.visible = this.weapons.heldFlash.visible = false;
       this.weapons.stats = { shots: 0, hits: 0 };
+      this.weapons.zoomIdx = 0; this.weapons.zero = 100;
     }
-    this.enemies.clear();
     this.grenades.clear();
     this.ballistics.clear();
     this.effects.clear();
     for (const pk of this.pickups) this.scene.remove(pk.mesh);
     this.pickups = [];
     this._resetBarrels();
-    const s = this.level.playerSpawn;
-    this.player.reset(s.x, s.z, s.yaw);
+    const s = this.level.sniper && this.missionKey === 'sniper' ? this.level.sniper.hide : this.level.playerSpawn;
+    this.player.reset(s.x, s.z, s.yaw, s.y || 0);
+    this.ballistics.wind.set(0, 0, 0);
+    this.camera.near = 0.1; this.camera.updateProjectionMatrix();
     this.input.reset();
     this.input.setAdsButton(false);
     this.score = 0;
@@ -213,8 +269,13 @@ export class Game {
     this.input.enabled = true;
     this.hud.show(true);
     this.hud.setScore(0);
-    this.hud.setWave(1, 0);
-    this.hud.banner('OPERATION TIPS MANIA', 'Hold the compound', 3.5);
+    this.hud.setObjective(null);
+    this.mission?.dispose?.();
+    this.mission = this.missionKey === 'tower' ? new TowerMission(this) : this.missionKey === 'sniper' ? new SniperMission(this) : null;
+    document.body.classList.toggle('sniper-mission', this.missionKey === 'sniper');
+    this.audio.setEnvironment(this.level.indoor ? 'indoor' : this.missionKey === 'sniper' ? 'ridge' : 'outdoor');
+    if (this.mission) this.mission.start();
+    else { this.hud.setWave(1, 0); this.hud.banner('OPERATION TIPS MANIA', 'Hold the compound', 3.5); }
     this.audio.startAmbience();
     this.flashAmount = 0;
     this.viewMode = 'normal';
@@ -251,7 +312,13 @@ export class Game {
       this.lightDir.copy(this.sunDir);
       if (this.level.lamps.parent) s.remove(this.level.lamps);
     }
+    this.level.setNight?.(night);
     this._applyWeather(settings.weather === 'rain');
+    if (this.missionKey === 'sniper' && this.state === 'playing') {
+      // Overwatch: the target is 600 m out, so the air has to be clear enough to shoot through
+      this.fog.near = Math.max(this.fog.near * 4, 300); this.fog.far = Math.max(this.fog.far * 3.2, 1400);
+      this.atmos.fogDensity *= 0.35;
+    }
     this.fog.color.copy(this.fogColor);
     this.atmos.sunDir.copy(this.lightDir);
     this.effects.setLight(night ? 0.07 : 1);
@@ -311,6 +378,10 @@ export class Game {
     this.input.enabled = false;
     this.hud.show(false);
     this.enemies.clear();
+    this.civilians.clear();
+    this.mission?.dispose?.();
+    this.mission = null;
+    document.body.classList.remove('sniper-mission');
     this.grenades.clear();
     this.ballistics.clear();
     this.audio.ctx?.resume();
@@ -326,7 +397,23 @@ export class Game {
     this.voices.cancel();
   }
 
+  /** A scripted mission ended (success or failure): show its debrief. */
+  missionOver(debrief) {
+    this.state = 'dead';
+    this.input.enabled = false;
+    this.weapons.setTrigger(false);
+    this.hud.show(false);
+    document.exitPointerLock?.();
+    this.onGameOver?.(debrief);
+  }
+
   _gameOver() {
+    if (this.mission) {
+      const d = this.mission.debrief();
+      d.title = 'K.I.A.'; d.success = false; d.rows[0] = ['Result', 'Killed in action'];
+      this.missionOver(d);
+      return;
+    }
     this.state = 'dead';
     this.hud.show(false);
     document.exitPointerLock?.();
@@ -408,7 +495,7 @@ export class Game {
   }
 
   // ---------------- combat events ----------------
-  emitNoise(pos, radius, kind) { this.enemies.onNoise(pos, radius, kind); }
+  emitNoise(pos, radius, kind) { this.enemies.onNoise(pos, radius, kind); this.civilians.onNoise(pos, radius, kind); }
 
   registerKill(e, info) {
     let pts = SCORE.kill;
@@ -426,6 +513,8 @@ export class Game {
   }
 
   onEnemyKilled(e) {
+    this.mission?.onEnemyKilled?.(e);
+    if (this.missionKey === 'sniper') return;
     const r = Math.random();
     const kind = r < 0.5 ? 'ammo' : r < 0.72 ? 'health' : null;
     if (kind) this._dropPickup(kind, e.pos.x + (Math.random() - 0.5), e.pos.z + (Math.random() - 0.5));
@@ -460,7 +549,7 @@ export class Game {
       if (take || pk.t > 45) { this.scene.remove(pk.mesh); this.pickups.splice(i, 1); }
     }
     // resupply crate
-    const rs = this.level.resupply;
+    const rs = this.mission?.resupply || this.level.resupply;
     this.resupplyT -= dt;
     if (Math.hypot(rs.x - p.pos.x, rs.z - p.pos.z) < rs.r + 0.6 && this.resupplyT <= 0 && p.alive) {
       const needs = Object.values(w.slots).some((s) => s.reserve < s.def.reserve) || w.frags < GRENADES.maxFrag || w.flashes < GRENADES.maxFlash || this.drone.count < 2;
@@ -498,7 +587,7 @@ export class Game {
   explode(pos, R, dmg, owner) {
     const W = this.level.world, p = this.player;
     this.effects.explosion(pos);
-    this.audio.playAt('explosion', pos.x, pos.y, pos.z, { vol: 1.7, ref: 12, travel: true, max: 900, occlude: false });
+    this.audio.playAt('explosion', pos.x, pos.y, pos.z, { vol: 1.7, ref: 12, travel: true, max: 900, occlude: false, wet: 0.7 });
     this.enemies.onNoise(pos, 130, 'gunshot');
     // player
     const chest = new THREE.Vector3(p.pos.x, p.pos.y + p.eyeH * 0.7, p.pos.z);
@@ -524,6 +613,17 @@ export class Game {
       const killed = e.takeDamage(dd, 'blast', dir.x, dir.z, owner === 'player' || owner === 'drone' ? 'player' : 'env');
       if (killed && owner !== 'enemy') this.registerKill(e, { grenade: owner === 'player', drone: owner === 'drone', distance: 0 });
     }
+    // people caught in the blast
+    for (const c of this.civilians.list) {
+      if (!c.alive || c.gone) continue;
+      const cc = new THREE.Vector3(c.pos.x, c.pos.y + 0.9, c.pos.z);
+      const d = cc.distanceTo(pos);
+      if (d >= R) { if (d < R * 3) c.alarm(pos, 1); continue; }
+      const vis = W.los(pos.x, pos.y + 0.3, pos.z, cc.x, cc.y, cc.z, RAY_ALL);
+      const dir = cc.clone().sub(pos).normalize();
+      c.takeDamage(dmg * Math.pow(1 - d / R, 1.3) * (vis ? 1 : 0.2), 'blast', dir.x, dir.z, owner === 'player' || owner === 'drone' ? 'player' : 'env');
+    }
+    this.civilians.onNoise(pos, 60, 'gunshot');
     // chain reactions
     for (const b of this.level.explosiveBarrels) {
       if (b.alive && Math.hypot(b.x - pos.x, b.z - pos.z) < R * 0.7) this.damageBarrel(b, 100);
@@ -533,8 +633,9 @@ export class Game {
   flashbangAt(pos) {
     const W = this.level.world, p = this.player;
     this.effects.explosion(pos, true);
-    this.audio.playAt('flashbang', pos.x, pos.y, pos.z, { vol: 1.5, ref: 12, travel: true, max: 700, occlude: false });
+    this.audio.playAt('flashbang', pos.x, pos.y, pos.z, { vol: 1.5, ref: 12, travel: true, max: 700, occlude: false, wet: 0.8 });
     this.enemies.flashbang(pos, GRENADES.flash.radius);
+    this.civilians.flashbang(pos, GRENADES.flash.radius);
     this.enemies.onNoise(pos, 90, 'gunshot');
     const d = p.eye.distanceTo(pos);
     if (d < 25 && p.alive && W.los(pos.x, pos.y + 0.1, pos.z, p.eye.x, p.eye.y, p.eye.z)) {
@@ -560,14 +661,15 @@ export class Game {
 
   _menuCamera(dt) {
     this.menuAngle += dt * 0.04;
-    const r = 58, a = this.menuAngle;
-    this.camera.position.set(Math.sin(a) * r, 16, Math.cos(a) * r);
-    this.camera.lookAt(0, 2, -6);
+    const V = this.level.menuView || { cx: 0, cy: 2, cz: -6, r: 58, y: 16 }, a = this.menuAngle;
+    this.camera.position.set(V.cx + Math.sin(a) * V.r, V.y, V.cz + Math.cos(a) * V.r);
+    this.camera.lookAt(V.cx, V.cy, V.cz);
     this.camera.fov = this.baseFov;
     this.camera.updateProjectionMatrix();
     this._followShadow(new THREE.Vector3(0, 0, 0));
     this.effects.update(dt);
     this.enemies.list.forEach((e) => e.update(dt));
+    this.civilians.update(dt);
   }
 
   update(dt) {
@@ -576,6 +678,10 @@ export class Game {
     if (input.consume('pause')) { this.pause(); return; }
     if (input.consume('nvg')) this.toggleNvg();
     if (input.consume('thermal')) this.cycleThermal();
+    if (input.consume('zoom')) w.cycleZoom();
+    if (input.consume('zeroUp')) w.dialZero(50);
+    if (input.consume('zeroDown')) w.dialZero(-50);
+    if (input.consume('lase')) { if (this.mission?.lase) this.mission.lase(); else this.lase(); }
     if (input.consume('drone') && p.alive) { if (this.drone.active) this.drone.exit(); else if (!this.drone.deploy()) this.hud.pickup(this.drone.count <= 0 ? 'NO DRONES LEFT' : ''); }
     this.level.grassUniforms.uTime.value = this.time;
     this.rain.update(dt, this.drone.active ? this.drone.camera : this.camera);
@@ -588,7 +694,7 @@ export class Game {
     let [dx, dy] = input.takeLook();
     const d = w.def;
     const adsE = w.adsT;
-    const zoomMul = d.scope ? settings.adsSens / (d.adsZoom * 0.55) : settings.adsSens;
+    const zoomMul = d.scope ? settings.adsSens / (w.scopeZoom * 0.55) : settings.adsSens;
     let mul = 1 + (zoomMul - 1) * adsE;
     this._computeAimTarget();
     if (settings.aimAssist && input.touchMode && this.aimTarget && this.aimTarget.friction) mul *= 0.55;
@@ -613,12 +719,17 @@ export class Game {
     if (p.sprinting && input.touchMode && input.ads) input.setAdsButton(false);
     w.update(dt, input.ads && p.alive);
     // camera zoom
-    const zoom = 1 + (d.adsZoom - 1) * (d.scope ? (w.isScoped ? 1 : 0) : w.adsT);
+    const zoom = 1 + ((d.scope ? w.scopeZoom : d.adsZoom) - 1) * (d.scope ? (w.isScoped ? 1 : 0) : w.adsT);
     const fov = this.baseFov / zoom;
-    if (Math.abs(this.camera.fov - fov) > 0.01) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
+    soldierOptions.lodScale = 1 / zoom; // people seen through a scope keep their detail
+    // long sightlines: push the near plane out while looking through a scope (the gun is drawn separately)
+    const near = this.missionKey === 'sniper' ? (w.isScoped ? 2.5 : 0.3) : 0.1;
+    if (Math.abs(this.camera.fov - fov) > 0.01 || this.camera.near !== near) { this.camera.fov = fov; this.camera.near = near; this.camera.updateProjectionMatrix(); }
     if (w.isScoped) {
       // scope sway (steadier when crouched / still)
-      const sw = (p.crouched ? 0.3 : 1) * (1 + Math.min(1, p.horizSpeed / 3) * 2) * 0.0018;
+      // Overwatch: crouched in the hide the rifle rests on its bipod on the sandbags; only breathing moves it
+      const rested = this.missionKey === 'sniper' && p.crouched && p.horizSpeed < 0.3;
+      const sw = (rested ? 0.1 : p.crouched ? 0.3 : 1) * (1 + Math.min(1, p.horizSpeed / 3) * 2) * 0.0018;
       this.camera.rotation.x += Math.sin(this.time * 0.9) * sw;
       this.camera.rotation.y += Math.sin(this.time * 0.6 + 1) * sw * 1.3;
       this.camera.updateMatrixWorld();
@@ -636,8 +747,8 @@ export class Game {
       if (this.heartT <= 0) { this.audio.play('heartbeat', { vol: 0.4 + lowK * 0.5 }); this.heartT = 1.05 - lowK * 0.35; }
     }
 
-    // lighting follows the player
-    this._followShadow(p.pos);
+    // lighting follows the player (or what a sniper is looking at)
+    this._followShadow(this.level.shadowFocus || p.pos);
     this._shadowCheckT -= dt;
     if (this._shadowCheckT <= 0) {
       this._shadowCheckT = 0.15;
@@ -666,7 +777,16 @@ export class Game {
     this.ballistics.update(dt);
     this.effects.update(dt);
     this._updatePickups(dt);
-    this._updateWaves(dt);
+    this.civilians.update(dt);
+    if (this.mission) this.mission.update(dt);
+    else this._updateWaves(dt);
+  }
+
+  /** Rangefinder outside the sniper mission: just the distance. */
+  lase() {
+    const cam = this.camera, f = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion), o = cam.position;
+    const h = this.level.world.raycast(o.x, o.y, o.z, f.x, f.y, f.z, 1400);
+    this.hud.rangeReadout(h ? `${Math.round(h.t)} m` : '----');
   }
 
   /** While flying the FPV drone the operator stays put (and can still be shot). */
@@ -823,7 +943,7 @@ export class Game {
       if (droneView) cam.layers.enable(2);
       r.render(this.scene, cam);
       const A = this.atmos, gu = this.level.groundUniforms;
-      A.wet = this.weather === 'rain' ? 1 : 0;
+      A.wet = this.weather === 'rain' && !this.level.indoor ? 1 : 0;
       A.contact = !this.night && this.weather !== 'rain' ? 1 : 0.35;
       A.heightMap = gu.heightMap.value; A.macroMap = gu.macroMap.value;
       P.world(cam, A);

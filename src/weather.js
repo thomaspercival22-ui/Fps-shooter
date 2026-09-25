@@ -107,6 +107,7 @@ export class Rain {
   set(on) {
     this.active = on;
     this.group.visible = on;
+    this.splashes.visible = !this.indoor; // high above the street there is nothing for drops to land on
     const g = this.game;
     this._wetten(on);
     const gu = g.level.groundUniforms;

@@ -2,7 +2,11 @@
 
 *TIPS ultimate FPS shooter game*
 
-A tactical first-person shooter built for phones. You play in landscape with touch controls, and after the first load it runs completely offline. You hold a desert compound against waves of squad-based enemies that take cover, flank you, suppress you and throw grenades.
+A tactical first-person shooter built for phones. You play in landscape with touch controls, and after the first load it runs completely offline. There are three missions (pick one under **Mission** in the menu):
+
+- **Compound Defence:** hold a desert compound against waves of squad-based enemies that take cover, flank you, suppress you and throw grenades.
+- **Tower Hostage Rescue:** a close-quarters assault on floor 47 of an office tower. There are no waves: 16 hostiles are at their posts, 4 hostages are held at gunpoint, and civilians hide among the desks.
+- **Overwatch:** a sniper mission from a ridge about 580 m from the compound. You make precision shots with wind, bullet drop, a rangefinder, a variable-power scope and a spotter who calls your shots.
 
 ![Gameplay](docs/screenshot.jpg)
 
@@ -22,12 +26,28 @@ The game is a static web app that installs itself as a Progressive Web App. It n
 
 ## What's in it
 
+- **Tower Hostage Rescue (Mission → Tower Hostage Rescue):**
+  - **The floor:** you breach from stairwell A into a full office floor, 48 × 36 m. It has a concrete core with lifts, restrooms and an IT closet, a glass curtain wall with the city 183 m below, glass-fronted private offices, a boardroom, the CEO's office, open-plan desks, a kitchen, a server room, reception with the company wall, a lounge and meeting rooms. Walls are plasterboard (rounds go through), the core is concrete, and the glass partitions let you see (and be seen) through rooms.
+  - **Hostiles** stand guard or walk patrol routes. They only react to what they see and hear, and gunshots carry less through walls. There are no waves and no reinforcements.
+  - **Hostages** kneel, some hooded, with a hostage taker next to them. A hostage taker executes a hostage almost immediately if you **miss** (a round cracking past or landing near him or his hostages), if you **wound him without dropping him**, or if you **get too close** where he can see you. If he hears the assault elsewhere he gives it a few seconds. A flashbang stuns him and buys time. Walk up to a hostage once the room is clear to cut them loose; they get up and walk out through stairwell B.
+  - **Civilians** put their hands up when you burst in, cower under desks, or run from gunfire. Hitting one costs points, and killing one or a hostage is a rules-of-engagement violation.
+  - **Debrief** with time, hostages rescued, hostiles down, civilians harmed, accuracy and a grade from S to F.
+  - **At night** the power is out: only the green exit signs, emergency lights, server LEDs and the city glow through the windows. Use NVG or thermal.
+- **Overwatch sniper mission (Mission → Overwatch):**
+  - **The hide:** a sandbagged position on a ridge on the sun side of the compound (the light is behind you), about 580 m from its centre. Crouched behind the parapet, the rifle rests on its bipod and barely moves; standing, the scope wanders.
+  - **The target:** the HVT is a grey-haired man in a grey suit who walks between the HQ and the warehouse with two bodyguards. If rounds land near him he runs for the west gate, and if he gets out, the mission fails.
+  - **Real long-range shooting:** bullets drop about 2 m over 600 m and take about 0.7 s to get there. Wind pushes them sideways and gusts change it. The 8/14/24x scope has a first-focal-plane mil-dot reticle (the dots are 1 mil apart at every power). The elevation turret (ZERO ▲▼) sets the range the scope is zeroed for. The laser rangefinder (LASE) reads the distance, and the scope shows magnification, zero, range and wind.
+  - **The spotter** kneels beside you on his spotting scope. He gives you range, dial and wind hold when you lase ("594 metres. Dial 600, hold 0.7 mil left."), calls every shot ("Miss, 40 cm high, 1.1 m left. Hold down 0.7 and right 1.9 mil." / "Hit. Target down."), and updates the wind.
+  - **Counter-sniper:** there is a marksman on the HQ roof. Once you start shooting, every muzzle blast helps him find the hide. When he has it, his scope glints. If you take too long, his first round cracks past, his second kills your spotter, and then he walks his rounds onto you. Kill him first. Other hostiles run for cover or into buildings when rounds land near them. Civilian workers are around the compound, so make sure of your target.
+- **Gunshots that sound real:** each weapon's report is synthesised from what makes a real one. That means the muzzle blast (a pressure pulse that is longer for bigger cartridges), the roar of the propellant gas, the low thump, the bullet's supersonic crack, and the gun's own action cycling (the M4's bolt carrier and buffer spring, the Glock's slide, the M1014's action). The MK13 is a brutal braked boom, the M1014 a deep roar, and the G17 a sharp snap. A live convolution reverb puts the shot in its surroundings: a dense, ringing office floor, slap-back off the compound's buildings, or thunder rolling down the valley from the ridge. Distant shots arrive late and muffled.
+- **Muzzle flashes:** unsuppressed guns now show a real fireball: a white-hot core with ragged, turbulent lobes, a flame plume with the intermediate flash, and a glow that lights up walls at night. The M1014 throws burning powder sparks, and the MK13's brake blasts two jets to the sides. Every unsuppressed shot leaves a puff of smoke.
 - **High-end graphics (Graphics → Ultra, the default on computers; phones start on High):**
   - **Photo-scanned world:** 4K ground scans with parallax occlusion mapping (pebbles and ruts have real depth), blended with rocky patches. Full-detail scans of concrete barriers, ammo crates, a tarped car, generator, fuel cans, gas bottles, cement bags, desert shrubs, quiver trees, boulders and pebbles. HESCO walls with bulging geotextile and welded mesh. Real corrugated containers with rust runs. Buildings with window frames, grilles, sills, rooftop water tanks, drainpipes and power cables.
   - **Lighting:** soft sun shadows that stay sharp where objects touch the ground (PCSS) and get softer further away. Screen-space ambient occlusion. Screen-space ray-traced contact shadows and reflections. Sunlight bouncing off the sand into shaded areas.
   - **Atmosphere:** desert haze that glows towards the sun, light shafts, and heat shimmer over the distant ground. Filmic AgX colour.
   - **Weapon and hands:** every gun is built from sculpted parts at real dimensions (see *Modern weapons* below). The weapon and your hands cast shadows on each other. Your gloves are sculpted hands with real finger joints that close around the grip, so the right index finger sits on the trigger and the left hand clamps the handguard with its thumb over the rail. They have a synthetic-leather palm, moulded knuckle armour and a hook-and-loop cuff. The sleeves are MultiCam-style fabric with folds.
   - **Enemies:** sculpted bodies instead of boxes, with gloved fists, camouflage fabric with a ripstop weave, helmets with rails, headsets and counterweights, balaclavas and glasses, plate carriers with MOLLE webbing and magazine pouches, battle belts, knee pads and boots.
+  - **Light on triangles:** everything is realistic but kept lean. The sculpted guns are simplified to within a fraction of a millimetre (M4 about 115k triangles, MK13 80k, M1014 72k, G17 35k, gloves 9k each). Soldiers and civilians swap to light meshes (about a quarter of the triangles) beyond about 12 m, or beyond 12 m of *apparent* distance through a scope, so targets you are zoomed in on keep their detail. Enemy guns switch to a 2.6–5k-triangle copy far away. The photo-scanned props are decimated to 1–5k triangles each, which halves the compound's scene (from 3.5 M to 1.8 M triangles).
   - **Phones:** phones use a separate memory budget: smaller textures, a lower render resolution and a smaller sky map. On the default High setting the game uses about 0.7 GB, where the old Ultra setting used about 3.4 GB. Ultra is still available on phones, but it needs a lot of memory. If a launch dies while loading (the browser killed the page for using too much memory), the next launch automatically drops one graphics level and tells you on the menu. Medium uses about 0.4 GB.
 - **Rain (Mission → Rain):** a storm with an overcast sky, lightning and thunder that arrives after the flash. Rain streaks and splashes stop under roofs. Everything gets darker and glossier when wet, puddles form in low ground with raindrop ripples, and puddles mirror the scene through ray-traced reflections. Rain gets muffled when you go indoors.
 - **Realistic impacts:** metal rings, wood knocks and splinters, concrete cracks and throws chips, plaster crumbles, sand thumps, glass tinkles, rubber thuds, and rounds splash into puddles. Rounds that hit metal or concrete at a glancing angle ricochet off with a tumbling whine and sparks, and a ricochet can still zip past you.
@@ -80,10 +100,11 @@ The game is a static web app that installs itself as a Progressive Web App. It n
 | Aim (ADS / scope) | The ◎ button (toggle). |
 | Reload, jump, crouch, switch weapon | The matching buttons. You can also tap the ammo counter to switch. |
 | Frag / flashbang | The grenade buttons (they throw where you're looking). |
+| Sniper tools | With the MK13: the magnification button (8x/14x/24x), LASE (rangefinder + spotter call), and ZERO ▲▼ (elevation turret, 50 m steps). |
 
 In settings you can adjust sensitivity, FOV, aim assist, and gyro aiming (off, while aiming, or always). **On-screen joystick & buttons → Always** also shows the touch controls on tablets and computers that don't report a touch screen.
 
-**Keyboard & mouse:** WASD, Shift sprint, Space jump, C crouch, mouse aim, LMB fire, RMB aim, R reload, Q/1/2 switch, B fire selector, G frag, F flashbang, N night vision, T thermal, V drone, Esc pause.
+**Keyboard & mouse:** WASD, Shift sprint, Space jump, C crouch, mouse aim, LMB fire, RMB aim, R reload, Q/1/2 switch, B fire selector, G frag, F flashbang, N night vision, T thermal, V drone, Esc pause. Sniper: mouse wheel or Z magnification, X lase, ] / [ (or PageUp / PageDown) zero up / down.
 
 ## Running it locally (development)
 
@@ -112,7 +133,7 @@ The guns are modelled in `src/gunparts.js` with the hard-surface toolkit in `src
 npm run build-guns     # or: node tools/build-guns.mjs m4 glock   (rebuild only some)
 ```
 
-The meshes are stored compressed with meshoptimizer's codec (about 3.3 MB for all four guns and their low-detail copies) and decoded when a gun is first built.
+The meshes are stored compressed with meshoptimizer's codec (about 2.1 MB for all four guns and their low-detail copies) and decoded when a gun is first built. `node tools/slim-guns.mjs` re-simplifies the packed meshes to the triangle budgets at its top, without sculpting them again, and adds the far-distance `lod2` copies for enemies.
 
 Other tools: `npm run fetch-assets` re-downloads and recompresses the textures and models (follow it with `npm run simplify-models`, which decimates the few scans that are placed dozens of times), `npm run vendor` re-copies three.js into `vendor/`, and `npm run icons` redraws the app icons.
 
@@ -122,9 +143,13 @@ Other tools: `npm run fetch-assets` re-downloads and recompresses the textures a
 index.html, style.css      page, HUD and menus
 manifest.webmanifest, sw.js   PWA: install + offline cache
 src/
-  main.js      boot, menus, settings
-  game.js      main loop, waves, scoring, explosions, flashbangs
-  level.js     the compound map, collision boxes, nav grid, cover points
+  main.js      boot, menus, settings, mission select, debrief
+  game.js      main loop, level switching, waves, scoring, explosions, flashbangs
+  missions.js  the Tower hostage rescue and Overwatch sniper missions (objectives, executions, spotter, counter-sniper, grading)
+  level.js     the compound map, the sniper ridge and hide, collision boxes, nav grid, cover points
+  tower.js     Meridian Tower floor 47, its scenario and the city below
+  officetex.js procedural carpet, ceiling tiles, wood, stone, screens, signage
+  civilian.js  office workers and hostages: posed rig, reactions, rescue, hit boxes
   terrain.js   parallax desert ground, wall grime, HESCO mesh shaders
   containers.js  corrugated shipping containers + weathering
   weather.js   rain, splashes, wet world, lightning
@@ -162,4 +187,4 @@ vendor/meshopt/  meshoptimizer decoder for the compressed gun meshes
 - 3D engine: [three.js](https://threejs.org) (MIT license, see `vendor/three/LICENSE`).
 - Mesh compression: [meshoptimizer](https://github.com/zeux/meshoptimizer) decoder (MIT license, see `vendor/meshopt/LICENSE`); the simplifier and encoder are used by the build tools.
 - Textures, props (barrels, tyres, ammo box, medical box, covered car, generator, jerry cans, propane tanks, AC units, utility boxes, trash bags, security lights, concrete barriers, military crates, cement bags, roller shutters, shrubs, branches, stones, rocks, quiver trees) and the sky: [Poly Haven](https://polyhaven.com), released as CC0 (public domain).
-- Weapons, soldiers, sandbags, HESCO barriers, all effects and all audio are generated in code.
+- Weapons, soldiers, civilians, the office tower and the city, sandbags, HESCO barriers, all effects and all audio are generated in code.

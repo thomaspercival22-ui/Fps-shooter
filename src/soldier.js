@@ -13,7 +13,15 @@ import { G } from './gunregions.js';
 
 const materials = {};
 // Soldiers can show flipped-down night vision goggles (set by the game at night).
-export const soldierOptions = { night: false };
+export const soldierOptions = { night: false, lodScale: 1 };
+// people further than this (in apparent distance: metres divided by scope magnification) use the light meshes
+export const LOD_NEAR = 11, LOD_FAR = 13;
+let lodMap = null;
+/** Hi-res geometry -> its distance LOD (built alongside it, see sdfmodels.js). */
+export function lodOf(geo) {
+  if (!lodMap) { const M = meshes(); lodMap = new Map(Object.keys(M).filter((k) => M[k + 'L']).map((k) => [M[k], M[k + 'L']])); }
+  return lodMap.get(geo) || geo;
+}
 /** Kit colours on the fabric shader: camo shirt and trousers, carrier, webbing, helmet, balaclava, gloves, boots. */
 function material(kit) {
   if (materials[kit]) return materials[kit];
@@ -61,8 +69,8 @@ function floatAttrs(geo) {
   g.setIndex(geo.index.clone());
   return g;
 }
-function sculptedGunGeometry(type, spec) {
-  let geo = floatAttrs(gunGeo(spec.lod, 'lod'));
+function sculptedGunGeometry(type, spec, far = false) {
+  let geo = floatAttrs(gunGeo(spec.lod, far ? 'lod2' : 'lod') || gunGeo(spec.lod, 'lod'));
   if (spec.boxMag) {
     // belt box for the LMG gunner
     const box = new THREE.BoxGeometry(0.08, 0.1, 0.11, 2, 2, 2);
@@ -80,9 +88,10 @@ function sculptedGunGeometry(type, spec) {
     grip: new THREE.Vector3(0, spec.grip[0], spec.grip[1]), fore: new THREE.Vector3(0, spec.fore[0], spec.fore[1]), butt: spec.butt,
   };
 }
-function gunGeometry(type) {
-  if (!gunCache[type]) gunCache[type] = sculptedGunGeometry(type, GUN_SPECS[type] || GUN_SPECS.rifle);
-  return gunCache[type];
+function gunGeometry(type, far = false) {
+  const k = far ? type + ':far' : type;
+  if (!gunCache[k]) gunCache[k] = sculptedGunGeometry(type, GUN_SPECS[type] || GUN_SPECS.rifle, far);
+  return gunCache[k];
 }
 
 let flashTex = null;
@@ -99,6 +108,7 @@ export class Soldier {
       const m = new THREE.Mesh(geo, m2);
       m.castShadow = true; m.receiveShadow = true;
       m.userData.heat = heat; m.userData.baseHeat = heat;
+      m.userData.geoHi = geo; m.userData.geoLo = lodOf(geo);
       this.meshes.push(m);
       return m;
     };
@@ -135,6 +145,8 @@ export class Soldier {
     this.gunPivot.position.set(-0.12, 0.42, 0.16);
     this.spine.add(this.gunPivot);
     this.gun = mk(gg.geo, 0.3, gg.mat);
+    this.gun.userData.geoLo = gunGeometry(weaponType, true).geo;
+    this.far = false;
     this.gun.position.z = -gg.butt - 0.03;
     this.gunPivot.add(this.gun);
     this.gunHeat = 0;
@@ -216,7 +228,18 @@ export class Soldier {
     if (this.gun.parent === this.scene) this.scene.remove(this.gun);
   }
 
+  /** Swaps every part between its detailed and light mesh by apparent distance (with hysteresis). */
+  _lod(camPos) {
+    if (!camPos) return;
+    const d = this.root.position.distanceTo(camPos) * soldierOptions.lodScale;
+    const far = this.far ? d > LOD_NEAR : d > LOD_FAR;
+    if (far === this.far) return;
+    this.far = far;
+    for (const m of this.meshes) m.geometry = far ? m.userData.geoLo : m.userData.geoHi;
+  }
+
   update(dt, world, camPos) {
+    this._lod(camPos);
     if (this.flashT > 0) { this.flashT -= dt; if (this.flashT <= 0) this.flashSprite.visible = false; }
     this.gunHeat = Math.max(0, this.gunHeat - dt * 0.012);
     this.gun.userData.heat = 0.3 + this.gunHeat;

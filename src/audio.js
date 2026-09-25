@@ -69,31 +69,180 @@ class Synth {
 }
 
 // ---------------- recipes ----------------
-function gunshot(p) {
-  const dur = p.long ? 2.4 : 1.6;
-  const s = new Synth(dur);
-  s.out.gain.value = p.gain ?? 0.9;
-  const bus = s.drive(p.drive ?? 2.6);
-  const dry = s.ctx.createGain(); dry.connect(bus);
-  // 1 supersonic crack / muzzle blast transient
-  s.chain(s.noise(0.08), s.filter('highpass', p.crackHp ?? 1800), s.env(0, 0.0006, p.crack ?? 1, 0.045, dry));
-  // 2 blast body with closing lowpass
-  const lp = s.filter('lowpass', p.lp0 ?? 6000, 0.8);
-  lp.frequency.setValueAtTime(p.lp0 ?? 6000, 0);
-  lp.frequency.exponentialRampToValueAtTime(p.lp1 ?? 450, 0.14);
-  s.chain(s.noise(0.6), lp, s.env(0, 0.0015, p.body ?? 0.95, p.bodyDecay ?? 0.22, dry));
-  // 3 low-frequency boom
-  s.chain(s.osc('sine', p.f0 ?? 140, p.f1 ?? 42, 0, 0.14), s.env(0, 0.002, p.boom ?? 0.8, p.boomDecay ?? 0.2, dry));
-  // 4 mechanical action
-  if (p.mech !== false) {
-    s.chain(s.noise(0.03, 0.012), s.filter('bandpass', p.mechF ?? 3200, 5), s.env(0.012, 0.001, 0.25, 0.02, dry));
-    s.chain(s.noise(0.03, 0.05), s.filter('bandpass', (p.mechF ?? 3200) * 0.7, 6), s.env(0.05, 0.001, 0.15, 0.025, dry));
+// ---------------- gunshots ----------------
+// Each weapon's report is built sample by sample from what makes a real one:
+// the muzzle blast (a Friedlander pressure pulse, longer for bigger cartridges),
+// the turbulent roar of the propellant gas, the low "thump" felt in the chest,
+// the bullet's supersonic shock wave, the action cycling (modal metallic
+// resonances: bolt carrier, buffer spring, slide) and the ground reflection.
+// The room or the terrain is added live by the reverb bus (setEnvironment).
+
+/** Seeded random numbers, so every variant of a weapon differs but stays stable. */
+function rng(seed) { let a = seed >>> 0; return () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+
+/** RBJ biquad for sample loops (lp / hp / bp), with a settable cutoff. */
+class BQ {
+  constructor(type, f, q = 0.707) { this.type = type; this.q = q; this.x1 = this.x2 = this.y1 = this.y2 = 0; this.set(f); }
+  set(f) {
+    const w = 2 * Math.PI * Math.min(f, SR * 0.45) / SR, cs = Math.cos(w), al = Math.sin(w) / (2 * this.q), a0 = 1 + al;
+    let b0, b1, b2;
+    if (this.type === 'lp') { b0 = (1 - cs) / 2; b1 = 1 - cs; b2 = b0; }
+    else if (this.type === 'hp') { b0 = (1 + cs) / 2; b1 = -(1 + cs); b2 = b0; }
+    else { b0 = al; b1 = 0; b2 = -al; }
+    this.b0 = b0 / a0; this.b1 = b1 / a0; this.b2 = b2 / a0; this.a1 = -2 * cs / a0; this.a2 = (1 - al) / a0;
   }
-  // 5 reverberant tail + slap-back echoes off the buildings
-  const tail = s.filter('lowpass', p.tailLp ?? 900);
-  s.chain(s.noise(dur), tail, s.env(0.008, 0.03, p.tail ?? 0.2, p.tailDecay ?? 1.1, bus));
-  s.echo(dry, [[0.13, 0.18, 2500], [0.29, 0.12, 1500], [0.52, 0.07, 900], [0.8, 0.04, 700]], bus);
-  return s.render();
+  run(x) {
+    const y = this.b0 * x + this.b1 * this.x1 + this.b2 * this.x2 - this.a1 * this.y1 - this.a2 * this.y2;
+    this.x2 = this.x1; this.x1 = x; this.y2 = this.y1; this.y1 = y;
+    return y;
+  }
+}
+
+function toBuffer(ch) {
+  const len = ch[0].length;
+  const b = new AudioBuffer({ length: len, numberOfChannels: ch.length, sampleRate: SR });
+  ch.forEach((d, i) => b.copyToChannel(d, i));
+  return b;
+}
+
+// action noises: [time, level, [[freq, decay, gain]...]]
+const ACTION = {
+  ar: [[0.004, 0.1, [[1850, 0.02, 1], [3300, 0.012, 0.6], [5200, 0.008, 0.4]]],       // carrier unlocks and runs back
+    [0.022, 0.07, [[1100, 0.02, 0.7], [2450, 0.028, 0.45], [4150, 0.03, 0.3]]],        // buffer spring "sproing"
+    [0.046, 0.1, [[1600, 0.015, 1], [3700, 0.01, 0.5], [6100, 0.006, 0.3]]]],          // bolt locks
+  ak: [[0.006, 0.12, [[900, 0.02, 1], [2100, 0.015, 0.5]]], [0.052, 0.15, [[750, 0.025, 1], [1800, 0.02, 0.6], [3200, 0.012, 0.3]]]],
+  glock: [[0.003, 0.08, [[2900, 0.01, 1], [5100, 0.006, 0.5]]], [0.024, 0.11, [[2300, 0.012, 1], [4200, 0.008, 0.6], [7300, 0.004, 0.3]]]],
+  m1014: [[0.036, 0.1, [[800, 0.025, 1], [1900, 0.02, 0.5]]], [0.078, 0.13, [[1000, 0.02, 1], [2500, 0.015, 0.6], [4100, 0.01, 0.3]]]],
+  dmr: [[0.008, 0.06, [[1400, 0.018, 1], [3000, 0.01, 0.5]]], [0.055, 0.08, [[1200, 0.02, 1], [2800, 0.012, 0.5]]]],
+  belt: [[0.005, 0.12, [[1500, 0.02, 1], [2900, 0.014, 0.6]]], [0.03, 0.1, [[900, 0.03, 0.8], [2000, 0.04, 0.4]]], [0.05, 0.12, [[1300, 0.015, 1], [3400, 0.01, 0.5]]]],
+};
+// per weapon: blast T (s), blast / roar / thump / crack levels, roar low-pass sweep (rf0 -> rf1) and decay, thump frequency
+export const GUNS = {
+  m4s: { T: 0.0007, blast: 0.3, roar: 0.4, rf0: 1900, rf1: 380, rd: 0.02, thump: 0.3, tf: 170, crack: 1.0, act: 'ar', actK: 1.4, drive: 1.8, dur: 0.3 },
+  m4: { T: 0.0006, blast: 1, roar: 0.6, rf0: 7500, rf1: 900, rd: 0.03, thump: 0.45, tf: 120, crack: 0.8, act: 'ar', drive: 2.4, dur: 0.35 },
+  ak: { T: 0.0009, blast: 1, roar: 0.7, rf0: 5000, rf1: 550, rd: 0.042, thump: 0.6, tf: 90, crack: 0.55, act: 'ak', drive: 2.6, dur: 0.4 },
+  pistol: { T: 0.00045, b: 2, blast: 0.9, roar: 0.5, rf0: 6500, rf1: 1400, rd: 0.016, thump: 0.25, tf: 180, crack: 0.2, act: 'glock', drive: 2.1, dur: 0.28 },
+  shotgun: { T: 0.0017, b: 1.2, blast: 1, roar: 0.95, rf0: 3200, rf1: 260, rd: 0.07, thump: 1.1, tf: 62, crack: 0, act: 'm1014', drive: 2.8, dur: 0.45 },
+  sniper: { T: 0.0013, b: 1.3, blast: 1.2, roar: 0.85, rf0: 7000, rf1: 450, rd: 0.06, thump: 1.1, tf: 55, crack: 1.0, drive: 3.0, dur: 0.45 },
+  dmr: { T: 0.001, blast: 1, roar: 0.75, rf0: 6500, rf1: 650, rd: 0.048, thump: 0.6, tf: 75, crack: 0.9, act: 'dmr', drive: 2.7, dur: 0.4 },
+  lmg: { T: 0.0007, blast: 1, roar: 0.62, rf0: 6800, rf1: 850, rd: 0.034, thump: 0.5, tf: 105, crack: 0.75, act: 'belt', drive: 2.5, dur: 0.35 },
+};
+
+function gunshot(g, seed) {
+  const R = rng(seed), j = (v, k = 0.08) => v * (1 + (R() - 0.5) * 2 * k);
+  const n = Math.ceil(g.dur * SR), x = new Float32Array(n);
+  // 1 muzzle blast: sharp rise, positive phase, then the suction of the negative phase
+  const T = j(g.T), bb = g.b ?? 1.6;
+  for (let i = 0, m = Math.min(n, Math.ceil(T * 9 * SR)); i < m; i++) {
+    const t = i / SR;
+    x[i] += g.blast * (1 - t / T) * Math.exp(-bb * t / T) * Math.min(1, i / 2);
+  }
+  // 2 gas roar: turbulent noise through a closing, slightly resonant low-pass
+  const lp = new BQ('lp', g.rf0, 1.1), lp2 = new BQ('lp', g.rf0, 0.7), rd = j(g.rd);
+  for (let i = 0; i < n; i++) {
+    const t = i / SR;
+    if ((i & 31) === 0) { const f = g.rf1 + (g.rf0 - g.rf1) * Math.exp(-t / (rd * 0.7)); lp.set(f); lp2.set(f); }
+    const e = (1 - Math.exp(-t / 0.0004)) * Math.exp(-t / rd);
+    if (e < 2e-4 && t > 0.01) break;
+    x[i] += lp2.run(lp.run(R() * 2 - 1)) * g.roar * e * 1.6;
+  }
+  // 3 low "woomph": the gas pushing the air out, about one cycle long (big cartridges lower and longer)
+  const tf = j(g.tf, 0.06), tau = 0.38 / tf;
+  for (let i = 0, m = Math.min(n, Math.ceil(2.2 / tf * SR)); i < m; i++) {
+    const t = i / SR;
+    x[i] += Math.sin(2 * Math.PI * tf * t) * Math.exp(-t / tau) * g.thump * (1 - Math.exp(-t / 0.0008));
+  }
+  // 4 supersonic crack: the bullet's N-wave, a quarter millisecond long
+  if (g.crack) {
+    const L = 0.00026 * SR, o = 3;
+    for (let i = 0; i < L * 1.15 && i + o < n; i++) { const u = i / L; x[i + o] += g.crack * (u <= 1 ? 1 - 2 * u : 0); }
+  }
+  // 5 the action cycling: struck steel rings at its own modes
+  for (const [t0, a0, modes] of ACTION[g.act] || []) {
+    const i0 = Math.floor(j(t0, 0.12) * SR), a = a0 * (g.actK || 1);
+    for (let i = 0; i < 0.003 * SR && i0 + i < n; i++) x[i0 + i] += (R() * 2 - 1) * a * 0.7 * Math.exp(-i / (0.0005 * SR));
+    for (const [f, d, gm] of modes) {
+      const ff = j(f, 0.04), w = 2 * Math.PI * ff / SR;
+      let p2 = R() * 6;
+      for (let i = 0; i < d * 6 * SR && i0 + i < n; i++) { p2 += w; x[i0 + i] += Math.sin(p2) * a * gm * Math.exp(-i / (d * SR)); }
+    }
+  }
+  // 6 ground reflection a few milliseconds behind, a little duller
+  const dl = Math.round(j(0.0032, 0.2) * SR), glp = new BQ('lp', 5200, 0.7), hp = new BQ('hp', 28, 0.7);
+  const y = new Float32Array(n);
+  let peak = 0;
+  const k = g.drive;
+  for (let i = 0; i < n; i++) {
+    let v = x[i] + (i >= dl ? glp.run(x[i - dl]) * 0.45 : 0);
+    v = hp.run(v);
+    v = Math.tanh(v * k) / Math.tanh(k);                 // the ear / mic overloading
+    y[i] = v; peak = Math.max(peak, Math.abs(v));
+  }
+  const norm = 0.97 / (peak || 1), fade = 0.03 * SR;
+  for (let i = 0; i < n; i++) y[i] *= norm * Math.min(1, (n - i) / fade);
+  return Promise.resolve(toBuffer([y]));
+}
+
+/** The crack of a supersonic round passing close by: a sharp N-wave, then a hiss. */
+function crackN() {
+  const n = Math.ceil(0.08 * SR), y = new Float32Array(n), R = rng(77);
+  const L = 0.0004 * SR;
+  for (let i = 0; i < L * 1.1; i++) { const u = i / L; y[i + 4] += u <= 1 ? 1 - 2 * u : 0; }
+  const hp = new BQ('hp', 2500, 0.7);
+  for (let i = 0; i < n; i++) y[i] = y[i] * 0.9 + hp.run(R() * 2 - 1) * 0.25 * Math.exp(-i / (0.006 * SR));
+  return Promise.resolve(toBuffer([y]));
+}
+
+/**
+ * Impulse responses for the reverb bus: the office floor (dense early
+ * reflections, bright ~0.8 s decay), the compound (slap-back off buildings and
+ * containers, then the desert rolling it away) and the ridge (almost no early
+ * echo, a long rolling thunder down the valley).
+ */
+export function impulse(kind) {
+  const secs = kind === 'indoor' ? 1.5 : kind === 'ridge' ? 4.2 : 2.8, len = Math.ceil(secs * SR);
+  const chans = [];
+  for (let ch = 0; ch < 2; ch++) {
+    const d = new Float32Array(len), R = rng(kind.length * 101 + ch * 7 + 3), lp = new BQ('lp', 8000, 0.7);
+    const burst = (t, gain, f, dec = 0.006) => {
+      const i0 = Math.floor(t * SR), b = new BQ('lp', f, 0.7);
+      for (let i = 0; i < dec * 5 * SR && i0 + i < len; i++) d[i0 + i] += b.run(R() * 2 - 1) * gain * Math.exp(-i / (dec * SR));
+    };
+    if (kind === 'indoor') {
+      for (let k = 0; k < 46; k++) { const t = 0.0015 + R() ** 1.6 * 0.045; const i = Math.floor(t * SR); d[i] += (R() < 0.5 ? -1 : 1) * (0.7 - t * 9) * (0.4 + R() * 0.6); }
+      const rt = 0.8;
+      for (let i = 0; i < len; i++) {
+        const t = i / SR;
+        if ((i & 63) === 0) lp.set(1400 + 7000 * Math.exp(-t / 0.35));
+        d[i] += lp.run(R() * 2 - 1) * 0.3 * Math.exp(-6.9 * t / rt) * Math.min(1, t / 0.01);
+      }
+    } else {
+      const ridge = kind === 'ridge';
+      const echoes = ridge ? 3 : 10;
+      for (let k = 0; k < echoes; k++) {
+        const t = ridge ? 0.02 + R() * 0.07 : 0.03 + R() * 0.32;
+        burst(t, (ridge ? 0.12 : 0.32) * Math.exp(-t * 3) * (0.5 + R() * 0.5), 5500 - t * 9000, 0.004 + R() * 0.008);
+      }
+      // rolling tail: low-passed noise, swelling and fading with the terrain
+      const ph = [R() * 6, R() * 6, R() * 6], fr = ridge ? [0.7, 1.6, 2.9] : [1.4, 2.7, 4.1];
+      const peakT = ridge ? 0.7 : 0.15, dec = ridge ? 1.3 : 0.75, gain = ridge ? 0.16 : 0.1;
+      for (let i = 0; i < len; i++) {
+        const t = i / SR;
+        if ((i & 63) === 0) lp.set((ridge ? 300 : 500) + (ridge ? 1400 : 2600) * Math.exp(-t / (ridge ? 1.0 : 0.6)));
+        const roll = 0.55 + 0.45 * (Math.sin(t * fr[0] * 6.28 + ph[0]) * 0.5 + Math.sin(t * fr[1] * 6.28 + ph[1]) * 0.3 + Math.sin(t * fr[2] * 6.28 + ph[2]) * 0.2);
+        const env = Math.min(1, t / peakT) * Math.exp(-Math.max(0, t - peakT) / dec);
+        d[i] += lp.run(R() * 2 - 1) * gain * env * roll;
+      }
+    }
+    // energy normalisation: how much of the shot the surroundings send back
+    let e = 0;
+    for (let i = 0; i < len; i++) e += d[i] * d[i];
+    const target = kind === 'indoor' ? 0.65 : kind === 'ridge' ? 0.55 : 0.45, k = target / Math.sqrt(e || 1);
+    const f = 0.05 * SR;
+    for (let i = 0; i < len; i++) d[i] *= k * Math.min(1, (len - i) / f);
+    chans.push(d);
+  }
+  return toBuffer(chans);
 }
 
 function explosion(flash = false) {
@@ -358,30 +507,35 @@ export class AudioEngine {
       this.muffle = c.createBiquadFilter(); this.muffle.type = 'lowpass'; this.muffle.frequency.value = 20000; this.muffle.Q.value = 0.5;
       this.sfx = c.createGain();
       this.sfx.connect(this.muffle); this.muffle.connect(this.comp); this.comp.connect(this.master); this.master.connect(c.destination);
+      // reverb send: the room or terrain around the listener (setEnvironment picks the impulse response)
+      try {
+        this.revIn = c.createGain();
+        this.conv = c.createConvolver(); this.conv.normalize = false;
+        this.revOut = c.createGain();
+        this.revIn.connect(this.conv); this.conv.connect(this.revOut); this.revOut.connect(this.muffle);
+      } catch { this.revIn = null; }
+      this.setEnvironment(this.envKind || 'outdoor');
     }
     if (this.ctx.state === 'suspended') this.ctx.resume();
   }
 
   setVolume(v) { this.volume = v; if (this.master) this.master.gain.value = v; }
 
+  /** Acoustic surroundings for the reverb bus: 'outdoor' (compound), 'indoor' (office floor), 'ridge' (sniper hide). */
+  setEnvironment(kind) {
+    this.envKind = kind;
+    if (!this.ctx || !this.conv) return;
+    this.irs = this.irs || {};
+    if (!this.irs[kind]) this.irs[kind] = impulse(kind);
+    if (this.conv.buffer !== this.irs[kind]) this.conv.buffer = this.irs[kind];
+    this.revOut.gain.value = kind === 'indoor' ? 1.0 : kind === 'ridge' ? 0.85 : 0.75;
+  }
+
   async generate(onProgress) {
     const R = {};
     const jobs = [];
     const add = (name, p) => jobs.push(p.then((b) => { R[name] = b; }));
-    const gun = {
-      m4: { crack: 1, crackHp: 2000, lp0: 6500, lp1: 520, bodyDecay: 0.2, f0: 135, f1: 45, boom: 0.8, tail: 0.22 },
-      // suppressed 5.56: the supersonic bullet still cracks, but the blast is a muffled thump and the action clatters
-      m4s: { crack: 0.55, crackHp: 2800, lp0: 2600, lp1: 380, body: 0.45, bodyDecay: 0.07, f0: 150, f1: 70, boom: 0.3, boomDecay: 0.08, tail: 0.06, tailDecay: 0.6, mechF: 2300, drive: 1.8 },
-      ak: { crack: 0.85, crackHp: 1600, lp0: 4800, lp1: 380, bodyDecay: 0.25, f0: 115, f1: 40, boom: 0.9, tail: 0.25, mechF: 2600 },
-      pistol: { crack: 0.9, crackHp: 2500, lp0: 5200, lp1: 700, bodyDecay: 0.13, f0: 190, f1: 65, boom: 0.5, tail: 0.14, mechF: 3800 },
-      shotgun: { crack: 0.85, crackHp: 1200, lp0: 3800, lp1: 260, bodyDecay: 0.34, f0: 95, f1: 34, boom: 1.1, boomDecay: 0.3, tail: 0.35, drive: 3.2 },
-      sniper: { crack: 1.1, crackHp: 1500, lp0: 5500, lp1: 300, bodyDecay: 0.38, f0: 85, f1: 30, boom: 1.1, boomDecay: 0.32, tail: 0.45, tailDecay: 1.8, long: true, mech: false, drive: 3.4 },
-      dmr: { crack: 1, crackHp: 1700, lp0: 5200, lp1: 360, bodyDecay: 0.3, f0: 100, f1: 34, boom: 1, tail: 0.35, tailDecay: 1.4 },
-      lmg: { crack: 0.9, crackHp: 1700, lp0: 5000, lp1: 420, bodyDecay: 0.22, f0: 120, f1: 42, boom: 0.85, tail: 0.24, mechF: 2300 },
-    };
-    for (const [k, p] of Object.entries(gun)) for (let v = 0; v < 3; v++) {
-      add(`shot_${k}_${v}`, gunshot({ ...p, lp0: p.lp0 * (0.92 + Math.random() * 0.16), f0: p.f0 * (0.94 + Math.random() * 0.12) }));
-    }
+    for (const [k, g] of Object.entries(GUNS)) for (let v = 0; v < 3; v++) add(`shot_${k}_${v}`, gunshot(g, k.length * 1000 + v * 97 + 11));
     add('explosion', explosion(false));
     add('flashbang', explosion(true));
     add('dry', clicks([[0, 2600, 5, 0.6, 0.02], [0.015, 1700, 6, 0.3, 0.02]], 0.1));
@@ -402,7 +556,7 @@ export class AudioEngine {
     add('ui', clicks([[0, 3000, 4, 0.4, 0.015]], 0.05));
     add('pickup', clicks([[0, 1600, 3, 0.4, 0.03], [0.06, 2100, 3, 0.4, 0.03], [0.12, 1300, 3, 0.4, 0.04, 200]], 0.3));
     add('whiz0', whiz()); add('whiz1', whiz());
-    add('crack', clicks([[0, 4500, 1, 1.2, 0.006]], 0.05));
+    add('crack', crackN());
     for (let i = 0; i < 3; i++) add(`brass${i}`, brass(1 + i * 0.07));
     add('shellPlastic', clicks([[0, 900, 2, 0.35, 0.04, 300], [0.07, 700, 2, 0.2, 0.03]], 0.2));
     for (let i = 0; i < 4; i++) add(`step${i}`, footstep());
@@ -431,7 +585,7 @@ export class AudioEngine {
   get time() { return this.ctx ? this.ctx.currentTime : 0; }
 
   /** Non-positional sound (player's own gun, UI...). */
-  play(name, { vol = 1, rate = 1, pan = 0, delay = 0, lowpass = 0 } = {}) {
+  play(name, { vol = 1, rate = 1, pan = 0, delay = 0, lowpass = 0, send = 0 } = {}) {
     if (!this.ready || !this.ctx || this.ctx.state !== 'running') return null;
     const buf = this.buffers[name];
     if (!buf) return null;
@@ -447,6 +601,7 @@ export class AudioEngine {
     let out = g;
     if (pan) { const p = c.createStereoPanner(); p.pan.value = pan; g.connect(p); out = p; }
     out.connect(this.sfx);
+    if (send > 0 && this.revIn) { const sg = c.createGain(); sg.gain.value = send; node.connect(sg); sg.connect(this.revIn); }
     this.voices++;
     src.onended = () => { this.voices--; };
     src.start(c.currentTime + delay);
@@ -460,19 +615,21 @@ export class AudioEngine {
   setListener(x, y, z, yaw) { const l = this.listener; l.x = x; l.y = y; l.z = z; l.yaw = yaw; }
 
   /** Positional sound with distance, panning, air absorption, occlusion and sound travel time. */
-  playAt(name, x, y, z, { vol = 1, ref = 3, max = 250, rate = 1, travel = false, occlude = true } = {}) {
+  playAt(name, x, y, z, { vol = 1, ref = 3, max = 250, rate = 1, travel = false, occlude = true, wet = 0 } = {}) {
     const l = this.listener;
     const dx = x - l.x, dy = y - l.y, dz = z - l.z;
     const dist = Math.hypot(dx, dy, dz);
     if (dist > max) return null;
     let gain = vol * ref / (ref + Math.max(0, dist - ref) * 1.1);
     let lp = Math.max(900, 20000 * Math.exp(-dist / 70));
-    if (occlude && this.occlusion && dist > 2 && this.occlusion(x, y, z)) { gain *= 0.5; lp *= 0.18; }
-    if (gain < 0.004) return null;
+    // the reverberant field falls off far slower than the direct sound, and reaches round corners
+    let send = wet ? vol * wet * 10 / (10 + dist * 0.35) : 0;
+    if (occlude && this.occlusion && dist > 2 && this.occlusion(x, y, z)) { gain *= 0.5; lp *= 0.18; send *= 0.8; }
+    if (gain < 0.004 && send < 0.01) return null;
     // listener faces -Z rotated by yaw; right vector = (cos yaw, -sin yaw)
     const rx = Math.cos(l.yaw), rz = -Math.sin(l.yaw);
     const pan = dist > 0.5 ? Math.max(-1, Math.min(1, (dx * rx + dz * rz) / Math.hypot(dx, dz) * 0.8)) : 0;
-    return this.play(name, { vol: gain, rate, pan, lowpass: lp < 19000 ? lp : 0, delay: travel ? dist / 343 : 0 });
+    return this.play(name, { vol: gain, rate, pan, lowpass: lp < 19000 ? lp : 0, delay: travel ? dist / 343 : 0, send });
   }
 
   startAmbience() {

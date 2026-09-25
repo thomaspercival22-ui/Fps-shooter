@@ -15,8 +15,8 @@ export class Player {
     this.reset(0, 0, 0);
   }
 
-  reset(x, z, yaw) {
-    this.pos.set(x, 0.1, z);
+  reset(x, z, yaw, y = 0) {
+    this.pos.set(x, y + 0.1, z);
     this.vel.set(0, 0, 0);
     this.yaw = yaw; this.pitch = 0;
     this.health = PLAYER.maxHealth;

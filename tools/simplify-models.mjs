@@ -9,11 +9,13 @@ import { MeshoptSimplifier as S } from 'meshoptimizer';
 const DIR = new URL('../assets/models/', import.meta.url).pathname;
 // target triangles per model (whole model)
 const BUDGET = {
-  wooden_military_crate: 1600, concrete_road_barrier_02: 10000, namaqualand_stones_01: 2500, quiver_tree_02: 20000,
-  wild_rooibos_bush: 15000, dry_branches_medium_01: 9000, rock_09: 3000,
+  wooden_military_crate: 1000, concrete_road_barrier_02: 1600, namaqualand_stones_01: 1400, quiver_tree_02: 5000,
+  wild_rooibos_bush: 7000, dry_branches_medium_01: 4000, rock_09: 1400, metal_jerrycan: 2000, portable_generator: 4500,
+  exterior_aircon_unit: 3000, covered_car: 4000, utility_box_02: 1800, propane_tank: 1500, security_light: 1500,
+  trashbag: 1400, old_tyre: 1300, Barrel_02: 1200, barrel_03: 900, ammo_box: 1400, medical_box: 1200,
 };
 // small closed scans: borders need no locking and a coarser error bound is invisible
-const FREE_BORDERS = new Set(['namaqualand_stones_01', 'rock_09']);
+const FREE_BORDERS = new Set(['namaqualand_stones_01', 'rock_09', 'wooden_military_crate']);
 const SIZE = { 5120: 1, 5121: 1, 5122: 2, 5123: 2, 5125: 4, 5126: 4 };
 const COMPS = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 };
 const TYPED = { 5121: Uint8Array, 5123: Uint16Array, 5125: Uint32Array, 5126: Float32Array, 5120: Int8Array, 5122: Int16Array };
@@ -24,7 +26,8 @@ for (const [id, budget] of Object.entries(BUDGET)) {
   const file = `${DIR}${id}/${id}.gltf`;
   if (!fs.existsSync(file)) continue;
   const gltf = JSON.parse(fs.readFileSync(file, 'utf8'));
-  if (gltf.asset.extras?.simplified) { console.log('skip', id); continue; }
+  const tris0 = gltf.meshes.flatMap((m) => m.primitives).reduce((n, p) => n + gltf.accessors[p.indices].count / 3, 0);
+  if (tris0 <= budget * 1.05) { console.log('skip', id, tris0); continue; }
   const binPath = `${DIR}${id}/${gltf.buffers[0].uri}`;
   const bin = fs.readFileSync(binPath);
 
@@ -41,7 +44,7 @@ for (const [id, budget] of Object.entries(BUDGET)) {
   const total = prims.reduce((s, p) => s + gltf.accessors[p.indices].count / 3, 0);
   const ratio = Math.min(1, budget / total);
   const flags = FREE_BORDERS.has(id) ? [] : ['LockBorder'];
-  const maxError = FREE_BORDERS.has(id) ? 0.1 : 0.02;
+  const maxError = id === 'wooden_military_crate' ? 0.012 : FREE_BORDERS.has(id) ? 0.1 : 0.02;
   const out = new Map(); // accessor index -> new typed array
   let after = 0;
   for (const p of prims) {

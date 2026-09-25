@@ -6,6 +6,7 @@ import { Game } from './game.js';
 import { gunsReady } from './guns.js';
 import { settings, saveSettings, getBest, textureCap } from './settings.js';
 import { WEAPONS, DIFFICULTY } from './config.js';
+import { MISSIONS } from './missions.js';
 
 const LOADING_KEY = 'dustfall.loading';
 const QUALITY_NAMES = { ultra: 'Ultra', high: 'High', medium: 'Medium', low: 'Low', auto: 'Auto' };
@@ -83,15 +84,17 @@ function setupUI(game) {
   const pc = $('primary-choices');
   const renderPrimaries = () => {
     pc.innerHTML = '';
+    const forced = MISSIONS[settings.mission]?.primary;
     for (const k of primaries) {
       const b = document.createElement('button');
-      b.className = 'choice' + (settings.primary === k ? ' sel' : '');
+      const sel = forced ? forced === k : settings.primary === k;
+      b.className = 'choice' + (sel ? ' sel' : '') + (forced && !sel ? ' locked' : '');
       b.innerHTML = `<b>${WEAPONS[k].name}</b><span>${WEAPONS[k].desc}</span>`;
-      b.onclick = () => { click(); settings.primary = k; saveSettings(); renderPrimaries(); };
+      b.onclick = () => { click(); if (forced) return; settings.primary = k; saveSettings(); renderPrimaries(); };
       pc.appendChild(b);
     }
     // optic choice for the carbine
-    if (settings.primary === 'm4') {
+    if (settings.primary === 'm4' && !forced) {
       const row = document.createElement('div');
       row.className = 'optic-row';
       for (const [k, name, desc] of [['holo', 'Holographic', '1x red dot, NV compatible'], ['nv', 'Digital NV scope', '3.5x day / night vision']]) {
@@ -103,6 +106,18 @@ function setupUI(game) {
       }
       pc.appendChild(row);
     }
+  };
+  const mc = $('mission-choices');
+  const renderMissions = () => {
+    mc.innerHTML = '';
+    for (const [k, m] of Object.entries(MISSIONS)) {
+      const b = document.createElement('button');
+      b.className = 'choice' + (settings.mission === k ? ' sel' : '');
+      b.innerHTML = `<b>${m.name}</b><span>${m.tag}</span>`;
+      b.onclick = () => { click(); settings.mission = k; saveSettings(); renderMissions(); renderPrimaries(); };
+      mc.appendChild(b);
+    }
+    $('menu-tag').textContent = { compound: 'Hold the compound. Survive the waves.', tower: 'Floor 47. Hostages. No second chances.', sniper: 'One ridge. One rifle. 600 metres.' }[settings.mission] || '';
   };
   const dc = $('difficulty-choices');
   const renderDiff = () => {
@@ -137,7 +152,7 @@ function setupUI(game) {
       wc.appendChild(b);
     }
   };
-  renderPrimaries(); renderDiff(); renderTime(); renderWeather();
+  renderMissions(); renderPrimaries(); renderDiff(); renderTime(); renderWeather();
   const showBest = () => {
     const b = getBest();
     $('best-score').textContent = b ? `BEST ${b.score} · WAVE ${b.wave} · ${DIFFICULTY[b.difficulty]?.name || ''}` : '';
@@ -152,7 +167,17 @@ function setupUI(game) {
     keepAwake();
     if (settings.gyro !== 'off') input.enableGyro();
     show('menu', false); show('gameover', false);
+    // a level that has not been built yet takes a moment: show the loading screen while it builds
+    const kind = MISSIONS[settings.mission]?.level || 'compound';
+    if (game.levelKind !== kind) {
+      $('load-text').textContent = kind === 'tower' ? 'Building Meridian Tower...' : 'Building the compound...';
+      $('load-fill').style.width = '100%';
+      show('loading');
+      await new Promise((r) => setTimeout(r, 40));
+      await game.prepareMission(settings.mission);
+    }
     game.start();
+    show('loading', false);
     if (!input.touchMode) $('game').requestPointerLock?.();
   };
   $('btn-deploy').onclick = deploy;
@@ -186,6 +211,16 @@ function setupUI(game) {
   $('btn-go-menu').onclick = () => { click(); show('gameover', false); game.quit(); showBest(); show('menu'); };
   game.onPause = () => show('pause');
   game.onGameOver = (s) => {
+    if (s.rows) {
+      // mission debrief
+      $('go-title').textContent = s.title;
+      $('go-grade').textContent = s.grade;
+      $('go-grade').className = 'grade-' + s.grade;
+      $('go-stats').innerHTML = s.rows.map(([a, b]) => `<span>${a}</span><span>${b}</span>`).join('');
+      show('gameover');
+      return;
+    }
+    show('go-grade', false);
     $('go-title').textContent = s.isBest ? 'NEW BEST' : 'K.I.A.';
     $('go-stats').innerHTML = [
       ['Score', `<span class="hl">${s.score}</span>`], ['Wave reached', s.wave], ['Kills', s.kills], ['Headshots', s.headshots],

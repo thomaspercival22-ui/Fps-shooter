@@ -42,13 +42,13 @@ export const WEAPONS = {
     drawTime: 0.5, sound: 'shotgun', tracerEvery: 0, shell: 'shotgun', jam: 1 / 260, heatPerShot: 0.05,
   },
   sniper: {
-    name: 'MK13 .300', slot: 'primary', desc: 'Bolt-action sniper · 8x scope',
+    name: 'MK13 .300', slot: 'primary', desc: 'Bolt-action sniper · 8-24x scope',
     auto: false, rpm: 45, mag: 5, reserve: 30, chamber: false, bolt: true,
     damage: 125, headMul: 3, limbMul: 0.85, falloffStart: 200, falloffEnd: 400, minDamageMul: 0.9,
     velocity: 850, pellets: 1, penetration: 2.5,
     hipSpread: 6, adsSpread: 0.0, moveSpread: 5,
     recoilPitch: 4.5, recoilYaw: 0.6, recoilRecover: 6, viewKick: 3,
-    adsZoom: 8, scope: true, adsTime: 0.32, reloadTime: 3.0, emptyReloadTime: 3.4, drawTime: 0.6,
+    adsZoom: 8, zooms: [8, 14, 24], zeroable: true, scope: true, adsTime: 0.32, reloadTime: 3.0, emptyReloadTime: 3.4, drawTime: 0.6,
     boltTime: 0.95, sound: 'sniper', tracerEvery: 1, shell: 'rifle', jam: 1 / 700, heatPerShot: 0.08,
   },
   glock: {

@@ -12,14 +12,14 @@ let ready = false;
 const cache = {};
 
 /** Simplifies an indexed SDF mesh towards a triangle budget and compacts its vertices. */
-function simplify(g, tris) {
+function simplify(g, tris, err = 0.02) {
   const S = MeshoptSimplifier;
   const idx = new Uint32Array(g.index.array);
   if (idx.length / 3 <= tris) return g;
   const pos = g.attributes.position.array, nor = g.attributes.normal.array, reg = g.attributes.region.array;
   const attr = new Float32Array(reg.length * 4);
   for (let i = 0; i < reg.length; i++) { attr[i * 4] = nor[i * 3]; attr[i * 4 + 1] = nor[i * 3 + 1]; attr[i * 4 + 2] = nor[i * 3 + 2]; attr[i * 4 + 3] = reg[i]; }
-  let [out] = S.simplifyWithAttributes(idx, new Float32Array(pos), 3, attr, 4, [0.3, 0.3, 0.3, 2], null, Math.floor(tris) * 3, 0.02, []);
+  let [out] = S.simplifyWithAttributes(idx, new Float32Array(pos), 3, attr, 4, [0.3, 0.3, 0.3, 2], null, Math.floor(tris) * 3, err, []);
   out = new Uint32Array(out);
   const [remap, unique] = S.compactMesh(out);
   const res = new THREE.BufferGeometry();
@@ -339,12 +339,165 @@ function shinModel() {
   return m;
 }
 
+// ---------- civilians and hostages (same joint layout, office clothes) ----------
+// Regions: SHIRT shirt/blouse, PANTS trousers, VEST suit jacket, FACE skin, HELMET hair,
+// BOOT shoes, BLACK belt and soles, TPR tie, POUCH hessian hood, LENS eyes.
+function civPelvisModel() {
+  const m = new SDFModel();
+  m.add(place(P.ellipsoid(0.158, 0.115, 0.114), [0, -0.035, 0]), R.PANTS);
+  for (const s of [-1, 1]) {
+    m.add(place(P.sphere(0.078), [s * 0.06, -0.074, -0.042]), R.PANTS, 0.05);
+    m.add(segment([s * 0.092, -0.04, 0.0], [s * 0.098, -0.17, 0.006], 0.082, 0.077), R.PANTS, 0.05);
+  }
+  m.add(place(P.ellipsoid(0.134, 0.045, 0.097), [0, 0.08, 0.004]), R.SHIRT, 0.03);                       // tucked-in shirt
+  m.add(place(P.torus(0.152, 0.013), [0, 0.042, 0], [0, 0, 0], [1, 0.9, 0.76]), R.BLACK, 0.003);         // leather belt
+  m.add(place(P.box(0.02, 0.015, 0.006, 0.003), [0, 0.042, 0.118]), R.TPR, 0.002);                       // buckle
+  m.add(segment([0, 0.02, 0.117], [0, -0.07, 0.112], 0.006), R.PANTS, 0.004);                           // fly placket
+  for (const s of [-1, 1]) m.add(segment([s * 0.12, 0.02, 0.07], [s * 0.1, -0.04, 0.1], 0.005), R.PANTS, 0.003); // pocket seams
+  m.displace = fold(0.003, 30);
+  return m;
+}
+
+function civChestModel(kind) {
+  const m = new SDFModel();
+  const f = kind === 'blouse', suit = kind === 'suit';
+  const body = suit ? R.VEST : R.SHIRT;
+  m.add(place(P.ellipsoid(f ? 0.145 : 0.156, 0.2, f ? 0.104 : 0.112), [0, 0.3, 0]), body);
+  m.add(place(P.ellipsoid(f ? 0.128 : 0.136, 0.14, 0.1), [0, 0.12, 0.005]), body, 0.06);
+  for (const s of [-1, 1]) m.add(place(P.sphere(f ? 0.052 : 0.06), [s * (f ? 0.168 : 0.18), 0.44, 0]), body, 0.06);
+  m.add(segment([-0.11, 0.5, -0.02], [0.11, 0.5, -0.02], f ? 0.042 : 0.048), body, 0.05);
+  if (f) for (const s of [-1, 1]) m.add(place(P.ellipsoid(0.058, 0.052, 0.046), [s * 0.056, 0.335, 0.078]), R.SHIRT, 0.05);
+  m.add(segment([0, 0.46, 0.0], [0, 0.6, 0.012], f ? 0.045 : 0.052, f ? 0.042 : 0.048), R.FACE, 0.02);     // neck
+  if (f) {
+    // open neckline: skin down to the collarbones
+    m.add(place(P.ellipsoid(0.06, 0.05, 0.03), [0, 0.47, 0.07]), R.FACE, 0.02);
+    m.add(place(P.torus(0.07, 0.008), [0, 0.47, 0.03], [0.5, 0, 0], [1, 1, 1.2]), R.SHIRT, 0.004);
+  } else {
+    m.add(place(P.torus(0.056, 0.013), [0, 0.53, 0.012], [0.28, 0, 0]), R.SHIRT, 0.006);                 // shirt collar
+    for (const s of [-1, 1]) m.add(place(P.box(0.022, 0.018, 0.004, 0.003), [s * 0.024, 0.5, 0.062], [0.3, s * 0.4, s * 0.5]), R.SHIRT, 0.003);
+  }
+  if (suit) {
+    // shirt front and tie in the jacket's V, lapels, buttons
+    m.add(place(P.box(0.05, 0.1, 0.012, 0.01), [0, 0.41, 0.098], [-0.12, 0, 0]), R.SHIRT, 0.008);
+    m.add(place(P.box(0.013, 0.013, 0.008, 0.005), [0, 0.505, 0.07]), R.TPR, 0.003);                     // knot
+    m.add(segment([0, 0.49, 0.082], [0, 0.3, 0.118], 0.012, 0.022), R.TPR, 0.004);
+    for (const s of [-1, 1]) {
+      m.add(place(P.box(0.03, 0.12, 0.006, 0.004), [s * 0.058, 0.38, 0.106], [-0.1, 0, s * 0.42]), R.VEST, 0.004);
+    }
+    for (const y of [0.22, 0.15]) m.add(place(P.sphere(0.007), [0.012, y, 0.126]), R.BLACK, 0.001);
+    m.add(place(P.box(0.03, 0.004, 0.004, 0.002), [-0.085, 0.37, 0.11]), R.VEST, 0.002);                 // breast pocket welt
+  } else if (!f) {
+    m.add(segment([0, 0.5, 0.093], [0, 0.08, 0.108], 0.009), R.SHIRT, 0.004);                            // button placket
+    for (let y = 0.44; y > 0.1; y -= 0.075) m.add(place(P.sphere(0.0045), [0, y, 0.113 - (y - 0.1) * 0.02]), R.TPR, 0.001);
+    m.add(place(P.box(0.032, 0.035, 0.004, 0.003), [0.075, 0.37, 0.105], [-0.08, 0, 0]), R.SHIRT, 0.003);  // breast pocket
+  }
+  m.displace = fold(suit ? 0.002 : 0.0035, 26);
+  return m;
+}
+
+function civHeadModel(kind) {
+  const m = new SDFModel();
+  const f = kind === 'f';
+  if (kind === 'hood') {
+    // hessian sack over the head: loose, square-cornered on top, gathered and tied at the neck
+    m.add(place(P.box(0.092, 0.12, 0.1, 0.075), [0, 0.1, 0.006]), R.POUCH);
+    for (const s of [-1, 1]) m.add(place(P.ellipsoid(0.04, 0.03, 0.05), [s * 0.085, 0.205, 0.0], [0, 0, s * 0.5]), R.POUCH, 0.04);
+    m.add(segment([0, 0.04, 0], [0, -0.035, -0.004], 0.1, 0.066), R.POUCH, 0.05);
+    m.add(segment([0, -0.035, 0], [0, -0.075, -0.004], 0.07, 0.085), R.POUCH, 0.02);                    // loose skirt below the cord
+    m.add(place(P.torus(0.058, 0.008), [0, -0.03, 0]), R.BLACK, 0.004);                                  // drawcord
+    m.displace = (x, y, z) => (noise3(x * 26, y * 14, z * 26) - 0.5) * 0.02 + (noise3(x * 70, y * 35, z * 70) - 0.5) * 0.006;
+    return m;
+  }
+  const sc = f ? 0.95 : 1;
+  m.add(place(P.ellipsoid(0.08 * sc, 0.103 * sc, 0.094 * sc), [0, 0.1, 0.004]), R.FACE);                 // cranium
+  m.add(place(P.ellipsoid(0.058 * sc, 0.05, 0.064), [0, 0.035, 0.03]), R.FACE, 0.03);                   // jaw
+  m.add(place(P.ellipsoid(0.03, 0.02, 0.02), [0, 0.012, 0.07]), R.FACE, 0.02);                          // chin
+  m.add(segment([0, 0.105, 0.09], [0, 0.07, 0.104], 0.009, 0.013), R.FACE, 0.012);                      // nose
+  m.add(place(P.ellipsoid(0.066, 0.014, 0.02), [0, 0.126, 0.083]), R.FACE, 0.02);                       // brow
+  for (const s of [-1, 1]) {
+    m.add(place(P.ellipsoid(0.01, 0.026, 0.017), [s * 0.079 * sc, 0.092, -0.004], [0, s * 0.3, 0]), R.FACE, 0.008); // ears
+    m.add(place(P.ellipsoid(0.02, 0.016, 0.014), [s * 0.04, 0.062, 0.07]), R.FACE, 0.02);             // cheeks
+    m.sub(place(P.ellipsoid(0.017, 0.011, 0.012), [s * 0.031, 0.109, 0.089]), 0.008);                  // eye sockets
+    m.add(place(P.sphere(0.0105), [s * 0.031, 0.108, 0.078]), R.LENS, 0.002);
+  }
+  m.sub(place(P.box(0.02, 0.0025, 0.01, 0.002), [0, 0.045, 0.09]), 0.004);                              // mouth line
+  // hair
+  const cap = place(P.ellipsoid(0.088 * sc, 0.1 * sc, 0.101 * sc), [0, 0.118, -0.006]);
+  m.add((x, y, z) => {
+    const front = Math.min(1, Math.max(0, (z - 0.03) / 0.05));
+    const side = Math.min(1, Math.max(0, (Math.abs(x) - 0.06) / 0.03)) * Math.exp(-(((z - 0.0) / 0.05) ** 2));
+    const bottom = (f ? 0.02 : 0.07) + 0.07 * front + 0.03 * side - (f ? 0 : Math.max(0, -z - 0.03) * 0.3);
+    return Math.max(cap(x, y, z), bottom - y);
+  }, R.HELMET, 0.006);
+  if (f) {
+    m.add(segment([0, 0.15, -0.07], [0, 0.02, -0.08], 0.06, 0.045), R.HELMET, 0.03);                     // hair down the back
+    m.add(place(P.sphere(0.034), [0, 0.13, -0.115]), R.HELMET, 0.015);                                    // bun
+  }
+  m.displace = (x, y, z) => (y > 0.1 && z < 0.06 ? (noise3(x * 90, y * 40, z * 90) - 0.5) * 0.0025 : 0);
+  return m;
+}
+
+function civUpperArmModel(region) {
+  const m = new SDFModel();
+  m.add(segment([0, -0.01, 0], [0, -0.3, 0.0], 0.05, 0.04), region);
+  m.add(place(P.ellipsoid(0.043, 0.08, 0.043), [0, -0.14, 0.01]), region, 0.03);
+  m.displace = fold(0.005, 40);
+  return m;
+}
+function civForeArmModel(region) {
+  const m = new SDFModel();
+  m.add(segment([0, 0, 0], [0, -0.2, 0], 0.045, 0.037), region);
+  m.add(place(P.ellipsoid(0.046, 0.07, 0.042), [0, -0.06, 0]), region, 0.03);
+  if (region === R.VEST) m.add(segment([0, -0.2, 0], [0, -0.225, 0], 0.036), R.SHIRT, 0.006);           // shirt cuff
+  else m.add(place(P.torus(0.036, 0.006), [0, -0.205, 0]), R.SHIRT, 0.004);
+  m.add(segment([0, -0.2, 0], [0, -0.285, 0.002], 0.029, 0.026), R.FACE, 0.01);                         // wrist
+  m.displace = (x, y, z) => (y > -0.2 ? fold(0.004, 45)(x, y, z) : 0);
+  return m;
+}
+/** Relaxed bare hand: wrist at the origin, fingers along -y, palm facing +z, thumb on +x (side 1) or -x. */
+function civHandModel(side) {
+  const m = new SDFModel();
+  const t = side;
+  m.add(place(P.box(0.036, 0.043, 0.012, 0.011), [0, -0.05, 0.002]), R.FACE);
+  m.add(segment([0, 0.0, 0], [0, -0.03, 0.002], 0.027, 0.032), R.FACE, 0.015);
+  const fingers = [[0.024, 0.05, 0.3], [0.008, 0.056, 0.35], [-0.009, 0.052, 0.4], [-0.024, 0.042, 0.45]];
+  for (const [x, L, curl] of fingers) {
+    const k0 = [x * t, -0.088, 0.004], k1 = [x * t * 1.05, -0.088 - L * 0.55, 0.004 + L * 0.55 * curl * 0.6], k2 = [x * t * 1.08, -0.088 - L * 0.9, 0.006 + L * curl * 0.9];
+    m.add(segment(k0, k1, 0.0092, 0.0085), R.FACE, 0.006);
+    m.add(segment(k1, k2, 0.0085, 0.0074), R.FACE, 0.004);
+  }
+  m.add(segment([0.03 * t, -0.022, 0.01], [0.045 * t, -0.055, 0.03], 0.012, 0.0095), R.FACE, 0.01);     // thumb
+  m.add(segment([0.045 * t, -0.055, 0.03], [0.042 * t, -0.08, 0.042], 0.0095, 0.0082), R.FACE, 0.005);
+  m.add(place(P.ellipsoid(0.014, 0.024, 0.012), [0.022 * t, -0.04, 0.012]), R.FACE, 0.012);             // thenar pad
+  return m;
+}
+function civThighModel() {
+  const m = new SDFModel();
+  m.add(segment([0, 0, 0], [0, -0.42, 0.005], 0.082, 0.058), R.PANTS);
+  m.add(place(P.ellipsoid(0.072, 0.14, 0.068), [0, -0.15, 0.02]), R.PANTS, 0.04);
+  m.add(segment([0, -0.02, 0.07], [0, -0.4, 0.056], 0.003), R.PANTS, 0.003);                             // trouser crease
+  m.displace = fold(0.004, 34);
+  return m;
+}
+function civShinModel() {
+  const m = new SDFModel();
+  m.add(segment([0, 0, 0], [0, -0.36, 0], 0.058, 0.05), R.PANTS);
+  m.add(place(P.ellipsoid(0.052, 0.1, 0.055), [0, -0.1, -0.02]), R.PANTS, 0.04);
+  m.add(segment([0, -0.02, 0.057], [0, -0.36, 0.05], 0.003), R.PANTS, 0.003);
+  m.add(segment([0, -0.36, 0], [0, -0.41, 0.0], 0.052, 0.054), R.PANTS, 0.01);                          // hem over the shoe
+  m.add(place(P.box(0.038, 0.03, 0.115, 0.028), [0, -0.438, 0.055]), R.BOOT, 0.02);                      // dress shoe
+  m.add(place(P.ellipsoid(0.037, 0.02, 0.05), [0, -0.44, 0.12]), R.BOOT, 0.02);                          // toe
+  m.add(place(P.box(0.041, 0.008, 0.125, 0.006), [0, -0.463, 0.058]), R.BLACK, 0.003);                   // sole
+  m.displace = (x, y, z) => (y > -0.36 ? fold(0.004, 34)(x, y, z) : 0);
+  return m;
+}
+
 // ---------- sculpted polymer gun parts (gun space: x right, y up, -z forward) ----------
 /** Pistol grip (MOE style): raked, finger groove, flared base, beaver tail. */
 
 
 function glove(g) {
-  const geo = simplify(g.m.mesh(g.min, g.max, 0.0009), 16000);
+  const geo = simplify(g.m.mesh(g.min, g.max, 0.0009), 9000);
   geo.userData.wrist = g.wrist;
   return geo;
 }
@@ -397,12 +550,37 @@ export async function buildAll(onProgress, only = null) {
     ['handL', () => { const g = soldierGlove(-1); return simplify(g.m.mesh(g.min, g.max, 0.0016), 2200); }],
     ['thigh', () => simplify(thighModel().mesh([-0.12, -0.5, -0.11], [0.12, 0.1, 0.12], 0.0055), 2200)],
     ['shin', () => simplify(shinModel().mesh([-0.08, -0.49, -0.09], [0.08, 0.08, 0.2], 0.0045), 2600)],
+    ['civPelvis', () => simplify(civPelvisModel().mesh([-0.22, -0.26, -0.2], [0.22, 0.12, 0.2], 0.005), 2400)],
+    ['civChest', () => simplify(civChestModel('shirt').mesh([-0.27, 0.0, -0.2], [0.27, 0.64, 0.2], 0.005), 4200)],
+    ['civChestSuit', () => simplify(civChestModel('suit').mesh([-0.27, 0.0, -0.2], [0.27, 0.64, 0.2], 0.005), 4500)],
+    ['civChestF', () => simplify(civChestModel('blouse').mesh([-0.26, 0.0, -0.2], [0.26, 0.64, 0.2], 0.005), 4200)],
+    ['civHead', () => simplify(civHeadModel('m').mesh([-0.13, -0.04, -0.14], [0.13, 0.24, 0.14], 0.003), 3800)],
+    ['civHeadF', () => simplify(civHeadModel('f').mesh([-0.13, -0.06, -0.18], [0.13, 0.24, 0.14], 0.003), 4200)],
+    ['civHood', () => simplify(civHeadModel('hood').mesh([-0.16, -0.14, -0.16], [0.16, 0.28, 0.16], 0.004), 3000)],
+    ['civUpperArm', () => simplify(civUpperArmModel(R.SHIRT).mesh([-0.08, -0.36, -0.08], [0.08, 0.07, 0.08], 0.0045), 1300)],
+    ['civUpperArmJ', () => simplify(civUpperArmModel(R.VEST).mesh([-0.08, -0.36, -0.08], [0.08, 0.07, 0.08], 0.0045), 1300)],
+    ['civForeArm', () => simplify(civForeArmModel(R.SHIRT).mesh([-0.07, -0.32, -0.07], [0.07, 0.06, 0.07], 0.004), 1400)],
+    ['civForeArmJ', () => simplify(civForeArmModel(R.VEST).mesh([-0.07, -0.32, -0.07], [0.07, 0.06, 0.07], 0.004), 1400)],
+    ['civHandR', () => simplify(civHandModel(-1).mesh([-0.07, -0.16, -0.04], [0.07, 0.03, 0.08], 0.0022), 1500)],
+    ['civHandL', () => simplify(civHandModel(1).mesh([-0.07, -0.16, -0.04], [0.07, 0.03, 0.08], 0.0022), 1500)],
+    ['civThigh', () => simplify(civThighModel().mesh([-0.11, -0.5, -0.1], [0.11, 0.1, 0.11], 0.005), 1800)],
+    ['civShin', () => simplify(civShinModel().mesh([-0.08, -0.49, -0.08], [0.08, 0.08, 0.2], 0.0045), 2400)],
   ];
   for (let i = 0; i < jobs.length; i++) {
     if (only && !only.includes(jobs[i][0])) continue;
     cache[jobs[i][0]] = jobs[i][1]();
     onProgress?.((i + 1) / jobs.length);
     await new Promise((r) => setTimeout(r, 0)); // keep the page responsive
+  }
+  // distance LODs for the characters (about a quarter of the triangles; swapped in beyond ~12 m)
+  const LOD = {
+    pelvis: 800, chest: 1700, chestHeavy: 1800, head: 1200, nvg: 300, upperArm: 380, foreArm: 360, handR: 420, handL: 420, thigh: 520, shin: 640,
+    civPelvis: 600, civChest: 1000, civChestSuit: 1100, civChestF: 1000, civHead: 900, civHeadF: 1000, civHood: 700,
+    civUpperArm: 320, civUpperArmJ: 320, civForeArm: 340, civForeArmJ: 340, civHandR: 300, civHandL: 300, civThigh: 420, civShin: 560,
+  };
+  for (const [name, tris] of Object.entries(LOD)) {
+    if (only && !only.includes(name) && !only.includes(name + 'L')) continue;
+    if (cache[name]) cache[name + 'L'] = simplify(cache[name], tris, 0.08);
   }
   ready = true;
   return cache;

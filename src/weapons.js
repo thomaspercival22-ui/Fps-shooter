@@ -8,13 +8,26 @@ import * as TX from './textures.js';
 
 const BUILDERS = { m4: buildM4, glock: buildGlock, m1014: buildM1014, sniper: buildSniper };
 const DEG = Math.PI / 180;
-const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _q = new THREE.Quaternion(), _e = new THREE.Euler();
+const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _q = new THREE.Quaternion(), _e = new THREE.Euler();
 
 const ease = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
 const seg = (t, a, b) => ease((t - a) / (b - a));
 function spring(s, target, k, d, dt) { // critically-damped-ish spring on {x, v}
   const a = (target - s.x) * k - s.v * d;
   s.v += a * dt; s.x += s.v * dt;
+}
+
+// muzzle flash per weapon: fireball size, plume length, brake jets, duration (s), sparks, smoke, light
+const FLASH = {
+  m4: { core: 0.16, side: 0.3, dur: 0.04, sparks: 2, smoke: 0.7, light: 2.5 },
+  m1014: { core: 0.3, side: 0.5, dur: 0.05, sparks: 16, smoke: 1.5, light: 3.4 },
+  sniper: { core: 0.2, side: 0.36, brake: 0.24, dur: 0.045, sparks: 0, smoke: 1.8, light: 3.2 },
+  glock: { core: 0.12, side: 0.18, dur: 0.035, sparks: 3, smoke: 0.5, light: 1.9 },
+};
+let flashTexCache = null;
+function flashTextures() {
+  if (!flashTexCache) flashTexCache = { front: [0, 1, 2, 3].map((i) => TX.muzzleFlashTexture(i)), side: [0, 1, 2].map((i) => TX.muzzleSideTexture(i)) };
+  return flashTexCache;
 }
 
 export class WeaponSystem {
@@ -48,14 +61,23 @@ export class WeaponSystem {
     for (const s of Object.values(this.slots)) { s.model.root.visible = false; this.rig.add(s.model.root); }
     this.cur.model.root.visible = true;
 
-    // flash sprites
-    this.flashFront = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: TX.muzzleFlashTexture(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
-    const sideMat = new THREE.MeshBasicMaterial({ map: TX.muzzleSideTexture(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
+    // muzzle flash: a fireball facing down the bore, two crossed flame plumes along it and, on a
+    // braked rifle, the side jets from the brake ports (texture variants picked at random per shot)
+    const FT = flashTextures();
+    this.flashTex = FT;
+    const add = { transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false };
+    this.flashFront = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: FT.front[0], ...add }));
+    const sideMat = new THREE.MeshBasicMaterial({ map: FT.side[0], side: THREE.DoubleSide, ...add });
     const side = new THREE.PlaneGeometry(1, 0.5); side.translate(-0.5, 0, 0); side.rotateY(-Math.PI / 2);
     this.flashSide1 = new THREE.Mesh(side, sideMat);
     this.flashSide2 = new THREE.Mesh(side, sideMat); this.flashSide2.rotation.z = Math.PI / 2;
+    const jetMat = new THREE.MeshBasicMaterial({ map: FT.front[1], ...add });
+    this.brakeJets = [-1, 1].map((sgn) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), jetMat); m.userData.sgn = sgn; return m; });
+    // soft halo of light round the fireball
+    this.flashGlow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: TX.glowTexture(), color: 0xffa050, ...add }));
+    this.flashGlow.position.z = -0.03;
     this.flash = new THREE.Group();
-    this.flash.add(this.flashFront, this.flashSide1, this.flashSide2);
+    this.flash.add(this.flashGlow, this.flashFront, this.flashSide1, this.flashSide2, ...this.brakeJets);
     this.flash.traverse((o) => { o.frustumCulled = false; o.renderOrder = 5; });
     this.flash.visible = false;
     this.flashTime = 0;
@@ -105,6 +127,8 @@ export class WeaponSystem {
     this.pendingSwitch = null;
     this.fireMode = 'auto';
     this.stats = { shots: 0, hits: 0 };
+    this.zoomIdx = 0;
+    this.zero = 100;
     this.lightTimer = 0;
     this._t = 0;
   }
@@ -143,6 +167,22 @@ export class WeaponSystem {
   get cur() { return this.slots[this.currentSlot]; }
   get def() { return this.cur.def; }
   get isScoped() { return !!this.def.scope && this.adsT > 0.85 && this.state !== 'draw'; }
+  /** Current magnification (variable-power scopes step through def.zooms). */
+  get scopeZoom() { const z = this.def.zooms; return z ? z[Math.min(this.zoomIdx, z.length - 1)] : this.def.adsZoom; }
+  cycleZoom() {
+    const z = this.def.zooms;
+    if (!z) return false;
+    this.zoomIdx = (this.zoomIdx + 1) % z.length;
+    this.game.audio.play('magTap', { vol: 0.35, rate: 1.6 });
+    return true;
+  }
+  /** Elevation turret: range the scope is zeroed at (metres). */
+  dialZero(step) {
+    if (!this.def.zeroable) return false;
+    this.zero = Math.max(100, Math.min(1000, this.zero + step));
+    this.game.audio.play('magTap', { vol: 0.3, rate: 2.2 });
+    return true;
+  }
   get busy() { return this.state !== 'idle'; }
 
   resize(aspect) {
@@ -325,12 +365,18 @@ export class WeaponSystem {
     // stoppages happen, more often with a hot, dirty gun
     if (c.ammo > 0 && Math.random() < d.jam * (1 + c.heat * 3)) { c.jammed = true; setTimeout(() => this.game.hud.malfunction(), 120); }
     this.lastShot = g.time;
+    g.mission?.onPlayerShot?.();
     this.shotsFired++;
     this.stats.shots++;
     const cam = g.camera;
     cam.updateMatrixWorld();
     const origin = _v.setFromMatrixPosition(cam.matrixWorld);
     const fwd = _v2.set(0, 0, -1).applyQuaternion(cam.quaternion);
+    // scope zeroed at a range: the bore points up just enough for the round to drop onto the reticle there
+    if (d.zeroable && this.adsT > 0.5) {
+      const right = _v3.set(1, 0, 0).applyQuaternion(cam.quaternion);
+      fwd.applyAxisAngle(right, 0.5 * Math.asin(Math.min(1, 9.81 * this.zero / (d.velocity * d.velocity))));
+    }
     // spread (degrees)
     const moving = Math.min(1, p.horizSpeed / 4);
     let spread = THREE.MathUtils.lerp(d.hipSpread + d.moveSpread * moving, d.adsSpread + d.moveSpread * moving * 0.25, this.adsT);
@@ -365,18 +411,37 @@ export class WeaponSystem {
     // a suppressor traps the flash: only a faint glow at the cap, a bigger "first round pop" after a rest
     const firstPop = d.suppressed && g.time - (this._prevShot ?? -9) > 1.2;
     this._prevShot = g.time;
-    const s = d.suppressed ? (firstPop ? 0.05 : 0.026) : d.pellets > 1 ? 0.16 : d.scope ? 0.14 : 0.1;
-    this.flashFront.scale.setScalar(s * (0.8 + Math.random() * 0.5));
-    const side = d.suppressed ? 0.0001 : s * (1.1 + Math.random() * 0.8);
-    this.flashSide1.scale.set(side, side, side);
-    this.flashSide2.scale.set(side, side, side);
+    const F = d.suppressed ? null : FLASH[c.key] || FLASH.m4;
+    const vis = g.night ? 1 : 0.8;           // the same flash reads far brighter in the dark
+    const s = d.suppressed ? (firstPop ? 0.05 : 0.026) : F.core;
+    const T = this.flashTex, pick = (a) => a[(Math.random() * a.length) | 0];
+    this.flashFront.material.map = pick(T.front);
+    this.flashSide1.material.map = pick(T.side);
+    this.flashFront.material.opacity = this.flashSide1.material.opacity = vis;
+    this.flashFront.scale.setScalar(s * (0.75 + Math.random() * 0.5));
+    const side = d.suppressed ? 0.0001 : F.side * (0.8 + Math.random() * 0.45);
+    this.flashSide1.scale.set(side, side * (0.8 + Math.random() * 0.4), side);
+    this.flashSide2.scale.set(side, side * (0.8 + Math.random() * 0.4), side);
     this.flash.rotation.z = Math.random() * Math.PI;
-    this.muzzleLight.intensity = d.suppressed ? (firstPop ? 0.5 : 0.12) : 2.5;
+    for (const j of this.brakeJets) {
+      j.visible = !!F?.brake;
+      if (!j.visible) continue;
+      const b = F.brake * (0.8 + Math.random() * 0.4);
+      j.scale.set(b * 1.3, b * 0.75, 1);
+      j.position.set(j.userData.sgn * b * 0.55, 0, 0.02);
+      j.rotation.set(0, 0, (Math.random() - 0.5) * 0.4);
+      j.material.opacity = vis * 0.85;
+    }
+    this.flashTime = F ? F.dur : 0.045;
+    this.flashGlow.visible = !!F;
+    if (F) { this.flashGlow.scale.setScalar(F.core * 2.6); this.flashGlow.material.opacity = g.night ? 0.45 : 0.25; }
+    this.muzzleLight.intensity = d.suppressed ? (firstPop ? 0.5 : 0.12) : F.light;
     if (!d.suppressed || firstPop) g.effects.muzzleLight(muzzleWorld);
+    if (F) g.effects.muzzleBlast(muzzleWorld, _v3.set(0, 0, -1).applyQuaternion(cam.quaternion), F);
     if (d.suppressed) c.suppHeat = Math.min(1.25, (c.suppHeat || 0) + 0.0125);
     this.gasLife = this.gasT = d.suppressed ? 0.13 : 0.1;
     this.gasSize = d.suppressed ? 0.1 + Math.min(1, c.suppHeat) * 0.04 : d.pellets > 1 ? 0.36 : 0.28;
-    g.audio.playVariant(`shot_${d.sound}_`, 3, { vol: d.sound === 'pistol' ? 0.75 : d.suppressed ? 0.8 : 0.9, rate: 0.97 + Math.random() * 0.06 });
+    g.audio.playVariant(`shot_${d.sound}_`, 3, { vol: d.suppressed ? 0.6 : d.sound === 'pistol' ? 0.8 : 0.95, rate: 0.97 + Math.random() * 0.06, send: d.suppressed ? 0.45 : 0.9 });
     g.emitNoise(p.eye, d.sound === 'pistol' ? 55 : d.suppressed ? 38 : 85, 'gunshot');
     g.hud.onFire();
     // actions

@@ -18,7 +18,10 @@ export class HUD {
       osd: $('osd'), osdMsg: $('osd-msg'), osdBat: $('osd-bat'), osdTime: $('osd-time'), osdRssi: $('osd-rssi'), osdAlt: $('osd-alt'),
       osdSpd: $('osd-spd'), osdHome: $('osd-home'), osdArmed: $('osd-armed'), osdHorizon: $('osd-horizon'), modeLabel: $('mode-label'),
       droneCount: $('drone-count'), btnDrone: $('btn-drone'), btnNvg: $('btn-nvg'), btnThermal: $('btn-thermal'),
+      objWarn: $('obj-warn'), range: $('range-readout'), scopeData: $('scope-data'), btnZoom: $('btn-zoom'), zeroLabel: $('zero-label'),
     };
+    this.rangeT = 0;
+    this.rangeText = '';
     this.cross = [...this.el.cross.querySelectorAll('.ch')];
     this.damageCanvas = $('damage-overlay');
     this.dctx = this.damageCanvas.getContext('2d');
@@ -106,10 +109,10 @@ export class HUD {
 
   hitMarker(kind) {
     const h = this.el.hit;
-    h.className = kind === 'kill' ? 'kill' : kind === 'head' ? 'head' : '';
+    h.className = kind === 'kill' ? 'kill' : kind === 'head' ? 'head' : kind === 'civ' ? 'civ' : '';
     this.hitT = kind === 'kill' ? 0.45 : 0.22;
     h.style.opacity = 1;
-    this.game.audio.play(kind === 'kill' ? 'kill' : kind === 'head' ? 'hitHead' : 'hit', { vol: kind === 'hit' ? 0.4 : 0.55 });
+    this.game.audio.play(kind === 'kill' ? 'kill' : kind === 'head' ? 'hitHead' : 'hit', { vol: kind === 'hit' || kind === 'civ' ? 0.4 : 0.55 });
   }
 
   damageFrom(x, z) {
@@ -156,6 +159,20 @@ export class HUD {
     const h = `HOSTILES ${hostiles}`;
     if (this.last.hostiles !== h) { this.el.hostiles.textContent = h; this.last.hostiles = h; }
   }
+  /** Mission objective line (replaces the wave counter); null returns to the wave display. */
+  setObjective(title, line = '', warn = '') {
+    if (title === null) { this.last.wave = this.last.hostiles = null; if (this.last.warn) { this.el.objWarn.textContent = ''; this.last.warn = ''; } return; }
+    if (this.last.wave !== title) { this.el.wave.textContent = title; this.last.wave = title; }
+    if (this.last.hostiles !== line) { this.el.hostiles.textContent = line; this.last.hostiles = line; }
+    if (this.last.warn !== warn) { this.el.objWarn.textContent = warn; this.last.warn = warn; }
+  }
+  /** Laser rangefinder reading, shown under the crosshair and in the scope. */
+  rangeReadout(text) {
+    this.rangeText = text; this.rangeT = 6;
+    this.el.range.textContent = `RNG ${text}`;
+    this.el.range.style.opacity = 1;
+  }
+
   setScore(s) { if (this.last.score !== s) { this.el.score.textContent = s; this.last.score = s; } }
 
   /** Flashbang whiteout; call captureAfterimage right after the next render. */
@@ -230,8 +247,32 @@ export class HUD {
     // scope
     const scoped = w.isScoped;
     if (this.last.scoped !== scoped) { e.scope.classList.toggle('hidden', !scoped); this.last.scoped = scoped; }
-    const kind = scoped ? `${w.def.scope}|${g.night}` : this.last.scopeKind;
+    const kind = scoped ? `${w.def.scope}|${g.night}|${w.scopeZoom}|${Math.round(g.camera.fov * 100)}` : this.last.scopeKind;
     if (scoped && this.last.scopeKind !== kind) { this.last.scopeKind = kind; this._drawScope(); }
+    // sniper data: magnification, zero, last range, wind (the Kestrel on the stock)
+    if (this.rangeT > 0) { this.rangeT -= dt; if (this.rangeT <= 0) this.el.range.style.opacity = 0; }
+    const hasZoom = !!d.zooms;
+    if (this.last.hasZoom !== hasZoom) { document.body.classList.toggle('has-zoom', hasZoom); this.last.hasZoom = hasZoom; }
+    if (hasZoom) {
+      const zl = `${w.scopeZoom}x`;
+      if (this.last.zl !== zl) { e.btnZoom.textContent = zl; this.last.zl = zl; }
+      const zr = String(w.zero);
+      if (this.last.zr !== zr) { e.zeroLabel.innerHTML = `ZERO<br><b>${zr}</b>`; this.last.zr = zr; }
+    }
+    if (scoped && this.frame % 6 === 0) {
+      let txt = `${w.scopeZoom}x`;
+      if (d.zeroable) txt += ` · ZERO ${w.zero} m`;
+      if (this.rangeT > 0) txt += ` · RNG ${this.rangeText}`;
+      const wd = g.ballistics.wind, ws = Math.hypot(wd.x, wd.z);
+      if (ws > 0.2) {
+        // clock direction the wind comes from, relative to where the scope points
+        const fwdA = Math.atan2(-Math.sin(p.yaw), -Math.cos(p.yaw)), fromA = Math.atan2(-wd.x, -wd.z);
+        let rel = fromA - fwdA; while (rel < 0) rel += Math.PI * 2;
+        const clock = ((Math.round((Math.PI * 2 - rel) / (Math.PI / 6)) + 11) % 12) + 1;
+        txt += ` · WIND ${ws.toFixed(1)} m/s from ${clock}:00`;
+      }
+      if (this.last.sd !== txt) { e.scopeData.textContent = txt; this.last.sd = txt; }
+    } else if (!scoped && this.last.sd) { e.scopeData.textContent = ''; this.last.sd = ''; }
     // damage direction indicators
     const yaw = p.yaw;
     const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
@@ -381,24 +422,31 @@ export class HUD {
     const g = ctx.createRadialGradient(cx, cy, r * 0.8, cx, cy, r);
     g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.85)');
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
-    // mil-dot reticle
+    // mil-dot reticle in the first focal plane: dots are exactly 1 mil apart at every magnification
     ctx.strokeStyle = '#050505'; ctx.fillStyle = '#050505';
-    const thick = Math.max(2, r * 0.012), thin = Math.max(1, r * 0.003);
+    const fov = this.game.camera.fov * Math.PI / 180;
+    const mil = Math.max(r * 0.02, (h / 2) / Math.tan(fov / 2) / 1000);
+    const posts = Math.min(r * 0.95, mil * 10.5);
+    const thick = Math.max(2, r * 0.012), thin = Math.max(1, r * 0.0028);
     ctx.lineWidth = thick;
     ctx.beginPath();
-    ctx.moveTo(cx - r, cy); ctx.lineTo(cx - r * 0.45, cy);
-    ctx.moveTo(cx + r * 0.45, cy); ctx.lineTo(cx + r, cy);
-    ctx.moveTo(cx, cy + r * 0.45); ctx.lineTo(cx, cy + r);
-    ctx.moveTo(cx, cy - r); ctx.lineTo(cx, cy - r * 0.45);
+    ctx.moveTo(cx - r, cy); ctx.lineTo(cx - posts, cy);
+    ctx.moveTo(cx + posts, cy); ctx.lineTo(cx + r, cy);
+    ctx.moveTo(cx, cy + posts); ctx.lineTo(cx, cy + r);
+    ctx.moveTo(cx, cy - r); ctx.lineTo(cx, cy - posts);
     ctx.stroke();
     ctx.lineWidth = thin;
     ctx.beginPath();
-    ctx.moveTo(cx - r * 0.45, cy); ctx.lineTo(cx + r * 0.45, cy);
-    ctx.moveTo(cx, cy - r * 0.45); ctx.lineTo(cx, cy + r * 0.45);
+    ctx.moveTo(cx - posts, cy); ctx.lineTo(cx + posts, cy);
+    ctx.moveTo(cx, cy - posts); ctx.lineTo(cx, cy + posts);
     ctx.stroke();
-    for (let i = 1; i <= 4; i++) {
+    const dotR = Math.max(1.5, Math.min(mil * 0.12, r * 0.009));
+    for (let i = 1; i <= 10; i++) {
+      if (i * mil > posts) break;
       for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        ctx.beginPath(); ctx.arc(cx + dx * i * r * 0.1, cy + dy * i * r * 0.1, Math.max(1.5, r * 0.008), 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(cx + dx * i * mil, cy + dy * i * mil, dotR, 0, Math.PI * 2); ctx.fill();
+        // half-mil hash marks
+        if (mil > 14) { const hx = cx + dx * (i - 0.5) * mil, hy = cy + dy * (i - 0.5) * mil; ctx.fillRect(hx - (dy ? mil * 0.12 : thin / 2), hy - (dx ? mil * 0.12 : thin / 2), dy ? mil * 0.24 : thin, dx ? mil * 0.24 : thin); }
       }
     }
     ctx.fillStyle = 'rgba(255,40,30,0.9)';

@@ -144,6 +144,10 @@ export class Input {
     tap('btn-frag', () => this.events.add('frag'));
     tap('btn-flash', () => this.events.add('flash'));
     tap('btn-pause', () => this.events.add('pause'));
+    tap('btn-zoom', () => this.events.add('zoom'));
+    tap('btn-lase', () => this.events.add('lase'));
+    tap('btn-zero-up', () => this.events.add('zeroUp'));
+    tap('btn-zero-dn', () => this.events.add('zeroDown'));
     document.getElementById('weapon-box').addEventListener('pointerdown', (e) => { if (this.enabled && this.touchMode) { e.preventDefault(); this.events.add('swap'); } });
   }
 
@@ -209,6 +213,10 @@ export class Input {
         case 'KeyB': this.events.add('firemode'); break;
         case 'KeyT': this.events.add('thermal'); break;
         case 'KeyV': this.events.add('drone'); break;
+        case 'KeyZ': this.events.add('zoom'); break;
+        case 'KeyX': this.events.add('lase'); break;
+        case 'BracketRight': case 'Equal': case 'PageUp': this.events.add('zeroUp'); break;
+        case 'BracketLeft': case 'Minus': case 'PageDown': this.events.add('zeroDown'); break;
         case 'Space': this.jump = true; this.upHeld = true; e.preventDefault(); break;
         case 'Escape': case 'KeyP': this.events.add('pause'); break;
       }
@@ -232,6 +240,8 @@ export class Input {
       if (e.button === 2) this.ads = false;
     });
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    // mouse wheel: scope magnification
+    canvas.addEventListener('wheel', (e) => { if (this.enabled && !this.touchMode && this.ads) { e.preventDefault(); this.events.add('zoom'); } }, { passive: false });
     window.addEventListener('mousemove', (e) => {
       if (!this.enabled || document.pointerLockElement !== canvas) return;
       const k = 0.1 * DEG * settings.lookSens;
