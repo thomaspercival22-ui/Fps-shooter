@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { loadAssets } from './assets.js';
 import { AudioEngine, Voices } from './audio.js';
 import { Game } from './game.js';
-import { settings, saveSettings, getBest } from './settings.js';
+import { settings, saveSettings, getBest, textureCap } from './settings.js';
 import { WEAPONS, DIFFICULTY } from './config.js';
 
 const $ = (id) => document.getElementById(id);
@@ -16,7 +16,7 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
 
 async function boot() {
   const canvas = $('game');
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: settings.quality !== 'low', powerPreference: 'high-performance', stencil: false });
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false });
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.0;
   renderer.shadowMap.enabled = true;
@@ -64,6 +64,19 @@ function setupUI(game) {
       b.onclick = () => { click(); settings.primary = k; saveSettings(); renderPrimaries(); };
       pc.appendChild(b);
     }
+    // optic choice for the carbine
+    if (settings.primary === 'm4') {
+      const row = document.createElement('div');
+      row.className = 'optic-row';
+      for (const [k, name, desc] of [['holo', 'Holographic', '1x red dot, NV compatible'], ['nv', 'Digital NV scope', '3.5x day / night vision']]) {
+        const b = document.createElement('button');
+        b.className = 'choice small' + (settings.optic === k ? ' sel' : '');
+        b.innerHTML = `<b>${name}</b><span>${desc}</span>`;
+        b.onclick = () => { click(); settings.optic = k; saveSettings(); renderPrimaries(); };
+        row.appendChild(b);
+      }
+      pc.appendChild(row);
+    }
   };
   const dc = $('difficulty-choices');
   const renderDiff = () => {
@@ -87,7 +100,18 @@ function setupUI(game) {
       tc.appendChild(b);
     }
   };
-  renderPrimaries(); renderDiff(); renderTime();
+  const wc = $('weather-choices');
+  const renderWeather = () => {
+    wc.innerHTML = '';
+    for (const [k, name, desc] of [['clear', 'Clear', 'Dry desert air'], ['rain', 'Rain', 'Storm, puddles, low visibility']]) {
+      const b = document.createElement('button');
+      b.className = 'choice' + (settings.weather === k ? ' sel' : '');
+      b.innerHTML = `<b>${name}</b><span>${desc}</span>`;
+      b.onclick = () => { click(); settings.weather = k; saveSettings(); renderWeather(); };
+      wc.appendChild(b);
+    }
+  };
+  renderPrimaries(); renderDiff(); renderTime(); renderWeather();
   const showBest = () => {
     const b = getBest();
     $('best-score').textContent = b ? `BEST ${b.score} · WAVE ${b.wave} · ${DIFFICULTY[b.difficulty]?.name || ''}` : '';
@@ -184,7 +208,12 @@ function buildSettings(game) {
     row.appendChild(r);
     grid.appendChild(row);
   };
-  seg('Graphics', 'quality', [['auto', 'Auto'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High']], () => game.applyQuality());
+  const loadedCap = textureCap();
+  seg('Graphics', 'quality', [['ultra', 'Ultra'], ['high', 'High'], ['medium', 'Medium'], ['low', 'Low'], ['auto', 'Auto']], () => {
+    game.applyQuality();
+    // texture resolution is chosen while loading: reload from the menu to apply it
+    if (textureCap() !== loadedCap && game.state === 'menu') setTimeout(() => location.reload(), 150);
+  });
   range('Look sensitivity', 'lookSens', 0.2, 3, 0.05);
   range('Aim (ADS) sensitivity', 'adsSens', 0.2, 2, 0.05);
   range('Field of view', 'fov', 70, 110, 1, (v) => `${v}°`);

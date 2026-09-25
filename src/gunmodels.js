@@ -23,17 +23,21 @@ export function gunMaterials() {
   const fPoly = finish({ base: '#242427', wear: '#3d3d40', rough: [0.86, 0.62], dust: 0.45, scratches: 40, seed: 3 });
   const fFde = finish({ base: '#7e6b4d', wear: '#a08e70', rough: [0.84, 0.66], dust: 0.3, scratches: 45, seed: 4 });
   const fOd = finish({ base: '#4b4f3b', wear: '#6e725d', rough: [0.8, 0.6], dust: 0.35, scratches: 45, seed: 5 });
-  const std = (f, metal, normal, ns) => new THREE.MeshStandardMaterial({
+  const std = (f, metal, normal, ns, extra = null) => new (extra ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial)({
     map: f.map, roughnessMap: f.roughness, roughness: 1, metalness: metal,
-    normalMap: normal || f.normal, normalScale: new THREE.Vector2(ns, ns),
+    normalMap: normal || f.normal, normalScale: new THREE.Vector2(ns, ns), ...(extra || {}),
   });
   M = {
-    anod: std(fAnod, 0.55, null, 0.35),
+    // hard-anodised aluminium: a thin, slightly glossy oxide layer over matte metal
+    anod: std(fAnod, 0.55, null, 0.35, { clearcoat: 0.3, clearcoatRoughness: 0.42 }),
     rail: new THREE.MeshStandardMaterial({ map: fAnod.map, roughnessMap: fAnod.roughness, roughness: 1, metalness: 0.55, alphaMap: mlok, alphaTest: 0.5, side: THREE.DoubleSide }),
     polymer: std(fPoly, 0.04, stipple, 0.35),
     fde: std(fFde, 0.03, stipple, 0.25),
     od: std(fOd, 0.08, stipple, 0.2),
-    steel: std(fSteel, 0.9, null, 0.3),
+    // turned / phosphated steel: highlights stretch along the machining direction
+    steel: std(fSteel, 0.9, null, 0.3, { anisotropy: 0.45 }),
+    marks: new THREE.MeshStandardMaterial({ map: TX.rollMarkTexture(), color: 0xb8bcc2, roughness: 0.5, metalness: 0.7, alphaTest: 0.35,
+      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
     bcg: new THREE.MeshStandardMaterial({ color: 0x8a8d92, roughness: 0.28, metalness: 1, roughnessMap: wear }),
     sling: new THREE.MeshStandardMaterial({ map: fFde.map, color: 0xb9a37e, roughness: 0.95, metalness: 0, normalMap: stipple, normalScale: new THREE.Vector2(0.5, 0.5) }),
     dark: new THREE.MeshStandardMaterial({ color: 0x0b0b0c, roughness: 0.6, metalness: 0.3 }),
@@ -42,8 +46,10 @@ export function gunMaterials() {
     rubber: new THREE.MeshStandardMaterial({ color: 0x111112, roughness: 0.95, metalness: 0 }),
     lens: new THREE.MeshStandardMaterial({ color: 0x1b2a38, roughness: 0.05, metalness: 1, transparent: true, opacity: 0.6 }),
     glass: new THREE.MeshStandardMaterial({ color: 0x6f8a99, roughness: 0.02, metalness: 0.9, transparent: true, opacity: 0.16, depthWrite: false }),
-    glove: new THREE.MeshStandardMaterial({ color: 0x3a342b, roughness: 0.85, metalness: 0 }),
-    knuckle: new THREE.MeshStandardMaterial({ color: 0x1e1d1a, roughness: 0.7, metalness: 0 }),
+    // gloves: coyote synthetic back, grey synthetic-leather palm, TPR knuckle guards
+    glove: new THREE.MeshPhysicalMaterial({ color: 0x6a5a45, roughness: 0.82, metalness: 0, sheen: 0.7, sheenColor: 0x9c8b72, sheenRoughness: 0.6 }),
+    palm: new THREE.MeshPhysicalMaterial({ color: 0x3a3733, roughness: 0.62, metalness: 0, sheen: 0.4, sheenColor: 0x6b6660, sheenRoughness: 0.5 }),
+    knuckle: new THREE.MeshStandardMaterial({ color: 0x1d1c1a, roughness: 0.5, metalness: 0 }),
     sleeve: null,
     reticle: new THREE.MeshBasicMaterial({ map: TX.holoReticleTexture(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
     tritium: new THREE.MeshBasicMaterial({ map: TX.dotTexture(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
@@ -51,42 +57,121 @@ export function gunMaterials() {
   // representative colours (enemy guns are vertex-coloured copies of these models)
   const base = { anod: 0x2b2c2f, rail: 0x2b2c2f, polymer: 0x242427, fde: 0x7e6b4d, od: 0x4b4f3b, steel: 0x27282b, sling: 0x6b5a42 };
   for (const [k, c] of Object.entries(base)) M[k].userData.baseColor = new THREE.Color(c);
+  M.rail.userData.keepUV = true; M.marks.userData.keepUV = true;
+  M.marks.userData.baseColor = new THREE.Color(0x2b2c2f);
   // player sleeve camo (multicam-ish)
   const atlas = document.createElement('canvas');
   atlas.width = atlas.height = 256;
   const ctx = atlas.getContext('2d');
-  const img = ctx.createImageData(256, 256);
-  const cols = [[140, 124, 92], [106, 104, 72], [164, 146, 108], [84, 70, 52], [120, 118, 80]];
-  for (let y = 0; y < 256; y++) for (let x = 0; x < 256; x++) {
-    let c = cols[0];
-    if (TX.fbm(x / 30, y / 22, 3, 4, 256 / 30) > 0.55) c = cols[1];
-    if (TX.fbm(x / 18, y / 26, 7, 4, 256 / 18) > 0.6) c = cols[2];
-    if (TX.fbm(x / 12, y / 12, 11, 3, 256 / 12) > 0.66) c = cols[3];
-    if (TX.fbm(x / 8, y / 20, 15, 3, 256 / 8) > 0.7) c = cols[4];
-    const f = 0.92 + Math.random() * 0.1;
-    const k = (y * 256 + x) * 4;
-    img.data[k] = c[0] * f; img.data[k + 1] = c[1] * f; img.data[k + 2] = c[2] * f; img.data[k + 3] = 255;
-  }
-  ctx.putImageData(img, 0, 0);
-  const t = new THREE.CanvasTexture(atlas);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  M.sleeve = new THREE.MeshStandardMaterial({ map: t, roughness: 0.92, metalness: 0 });
+  void ctx;
+  void atlas;
+  const camo = TX.ocpCamoTexture(512);
+  camo.repeat.set(0.55, 0.7);
+  const weave = TX.ripstopNormal(256);
+  weave.repeat.set(9, 12);
+  M.sleeve = new THREE.MeshPhysicalMaterial({ map: camo, normalMap: weave, normalScale: new THREE.Vector2(0.55, 0.55), roughness: 0.9, metalness: 0,
+    sheen: 0.6, sheenColor: 0xbfb296, sheenRoughness: 0.75 });
+  M.glove.normalMap = weave; M.glove.normalScale = new THREE.Vector2(0.4, 0.4);
+  M.palm.normalMap = TX.stippleNormal(); M.palm.normalScale = new THREE.Vector2(0.25, 0.25);
   return M;
 }
 
 // ---------- geometry helpers ----------
+/**
+ * Box centred at (x, y, forward f). Real machined parts never have razor
+ * edges, so anything big enough gets a small chamfer on every edge: the
+ * edges catch the light the way they do on a real gun.
+ */
 function box(w, h, l, x, y, f) {
-  const g = new THREE.BoxGeometry(w, h, l);
+  const c = Math.min(0.0009, 0.16 * Math.min(w, h, l));
+  if (c < 0.00025) {
+    const g = new THREE.BoxGeometry(w, h, l);
+    g.translate(x, y, -f);
+    return g;
+  }
+  const L = l / 2 - c, H = h / 2 - c, k = c * 0.8;
+  const shape = new THREE.Shape([
+    [-L + k, -H], [L - k, -H], [L, -H + k], [L, H - k], [L - k, H], [-L + k, H], [-L, H - k], [-L, -H + k],
+  ].map(([a, b2]) => new THREE.Vector2(a, b2)));
+  const depth = Math.max(0.0002, w - 2 * c);
+  const g = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: true, bevelThickness: c, bevelSize: c, bevelSegments: 1, curveSegments: 1 });
+  g.translate(0, 0, -depth / 2);
+  g.rotateY(Math.PI / 2);
   g.translate(x, y, -f);
   return g;
 }
+/** A 2D outline in the gun's cross-section plane (x right, y up) extruded along the bore from forward f0 to f1. */
+function sweep(pts, f0, f1, bevel = 0.0008, holes = []) {
+  const shape = new THREE.Shape(pts.map(([x, y]) => new THREE.Vector2(x, y)));
+  for (const h of holes) shape.holes.push(new THREE.Path(h.map(([x, y]) => new THREE.Vector2(x, y))));
+  const depth = Math.max(0.0002, f1 - f0 - 2 * bevel);
+  const g = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: bevel > 0, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 2, curveSegments: 8 });
+  g.translate(0, 0, -depth / 2 - (f0 + f1) / 2);
+  return g;
+}
+/** Rounded rectangle outline (x, y centre, width, height, corner radius) as points. */
+function roundRect(cx, cy, w, h, r, rTop = r, steps = 5) {
+  const pts = [];
+  const arc = (x, y, rad, a0) => { for (let i = 0; i <= steps; i++) { const a = a0 + (i / steps) * Math.PI / 2; pts.push([x + Math.cos(a) * rad, y + Math.sin(a) * rad]); } };
+  arc(cx + w / 2 - r, cy - h / 2 + r, r, -Math.PI / 2);
+  arc(cx + w / 2 - rTop, cy + h / 2 - rTop, rTop, 0);
+  arc(cx - w / 2 + rTop, cy + h / 2 - rTop, rTop, Math.PI / 2);
+  arc(cx - w / 2 + r, cy - h / 2 + r, r, Math.PI);
+  return pts;
+}
+/**
+ * Rounded polygon tube along the bore (e.g. an M-LOK handguard). UV u runs
+ * around the tube (one column per face), v along it, for slot alpha maps.
+ */
+function polyTube(apothem, sides, cornerR, f0, len, y = 0) {
+  // faces centred at angles 0, 2pi/n, ... ; rounded corners between them
+  const ring = [];
+  const cd = (apothem - cornerR) / Math.cos(Math.PI / sides);
+  for (let i = 0; i < sides; i++) {
+    const ac = (i + 0.5) * (2 * Math.PI / sides);
+    const cx = Math.cos(ac) * cd, cy = Math.sin(ac) * cd;
+    for (let k = 0; k <= 3; k++) {
+      const a = ac - Math.PI / sides + (k / 3) * (2 * Math.PI / sides);
+      ring.push([cx + Math.cos(a) * cornerR, cy + Math.sin(a) * cornerR, Math.cos(a), Math.sin(a)]);
+    }
+  }
+  const pos = [], nor = [], uv = [], idx = [];
+  const segs = 24, R = ring.length;
+  for (let j = 0; j <= segs; j++) {
+    const z = -(f0 + (j / segs) * len);
+    for (const [x, yy, nx, ny] of ring) {
+      pos.push(x, yy + y, z); nor.push(nx, ny, 0);
+      let u = (Math.atan2(yy, x) + Math.PI / sides) / (Math.PI * 2); u -= Math.floor(u);
+      uv.push(u, j / segs);
+    }
+  }
+  for (let j = 0; j < segs; j++) for (let i = 0; i < R; i++) {
+    const i2 = (i + 1) % R;
+    const a = j * R + i, b2 = j * R + i2, c2 = (j + 1) * R + i, d = (j + 1) * R + i2;
+    if (Math.abs(uv[a * 2] - uv[b2 * 2]) > 0.5) continue; // UV seam sits under the top rail
+    idx.push(a, b2, c2, b2, d, c2);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  return g;
+}
+
 /** Cylinder along the bore from f0 forward by len. rBack at the rear end, rFront at the front. */
 function cyl(rBack, rFront, len, f0, x = 0, y = 0, seg = 18, open = false) {
   // after rotateX(-90deg) the cylinder's top (+Y) points forward (-Z)
   const g = new THREE.CylinderGeometry(rFront, rBack, len, seg, 1, open);
   g.rotateX(-Math.PI / 2);
   g.translate(x, y, -(f0 + len / 2));
+  return g;
+}
+/** Cylinder across the gun (axis along X), e.g. knobs, battery caps. */
+function xcyl(r, len, x, y, f, seg = 16) {
+  const g = new THREE.CylinderGeometry(r, r, len, seg);
+  g.rotateZ(Math.PI / 2);
+  g.translate(x, y, -f);
   return g;
 }
 /** Vertical cylinder (e.g. turrets, shells). */
@@ -138,7 +223,7 @@ class Builder {
     if (!this.parts.has(part)) this.parts.set(part, new Map());
     const m = this.parts.get(part);
     if (!m.has(mat)) m.set(mat, []);
-    m.get(mat).push(norm(geo, mat === M.rail));
+    m.get(mat).push(norm(geo, !!mat.userData.keepUV));
     return this;
   }
   build() {
@@ -150,6 +235,7 @@ class Builder {
       for (const [mat, geos] of mats) {
         const mesh = new THREE.Mesh(mergeGeometries(geos), mat);
         mesh.frustumCulled = false;
+        mesh.castShadow = mesh.receiveShadow = !mat.transparent;
         g.add(mesh);
       }
       root.add(g);
@@ -169,9 +255,10 @@ function reticlePlane(size, y, f) {
 function marker(x, y, f) { const o = new THREE.Object3D(); o.position.set(x, y, -f); return o; }
 
 // ---------- M4A1 carbine ----------
-export function buildM4() {
+export function buildM4(opts = {}) {
   const m = gunMaterials();
   const b = new Builder();
+  const nv = opts.optic === 'nv';
   // upper receiver
   b.add(prof([[-0.105, 0.0], [0.085, 0.0], [0.085, 0.029], [-0.1, 0.029], [-0.105, 0.024]], 0.027), m.anod);
   b.add(box(0.012, 0.012, 0.02, 0, 0.022, 0.08), m.anod); // barrel nut shoulder
@@ -183,6 +270,12 @@ export function buildM4() {
   b.add(box(0.0016, 0.015, 0.056, 0.0008, 0.0075, 0.025), m.anod, 'dust');
   b.add(box(0.0022, 0.003, 0.012, 0.0014, 0.012, 0.03), m.anod, 'dust');
   b.add(cyl(0.0065, 0.0065, 0.028, -0.075, 0.017, 0.016, 12), m.anod);
+  // forward assist knob with serrations, brass deflector behind the port
+  b.add(cyl(0.0056, 0.0056, 0.008, -0.083, 0.017, 0.016, 16), m.steel);
+  for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2; b.add(box(0.0012, 0.0012, 0.007, 0.017 + Math.cos(a) * 0.0057, 0.016 + Math.sin(a) * 0.0057, -0.079), m.dark); }
+  b.add(prof([[-0.004, 0.011], [-0.022, 0.011], [-0.022, 0.029], [-0.013, 0.029]], 0.007, 0.0165, 0.0008), m.anod);
+  // roll marks on the left of the magwell
+  { const d = new THREE.PlaneGeometry(0.066, 0.028); d.rotateY(-Math.PI / 2); d.translate(-0.01265, -0.041, -0.036); b.add(d, m.marks); }
   b.add(box(0.008, 0.012, 0.018, 0.0155, 0.02, -0.03), m.anod);
   // lower receiver with flared magwell
   b.add(prof([[-0.105, 0.0], [0.075, 0.0], [0.078, -0.02], [0.074, -0.06], [0.0, -0.062], [-0.004, -0.04], [-0.07, -0.038], [-0.098, -0.028], [-0.105, -0.018]], 0.025), m.anod);
@@ -217,9 +310,7 @@ export function buildM4() {
   b.add(box(0.012, 0.007, 0.03, 0, 0.024, -0.118), m.anod, 'charge');
   b.add(box(0.046, 0.008, 0.01, 0, 0.024, -0.132), m.anod, 'charge');
   // free-float M-LOK handguard (octagonal, with real slots)
-  const hg = new THREE.CylinderGeometry(0.0255, 0.0255, 0.32, 8, 1, true);
-  hg.rotateY(Math.PI / 8); hg.rotateX(-Math.PI / 2); hg.translate(0, 0.004, -(0.085 + 0.16));
-  b.add(hg, m.rail);
+  b.add(polyTube(0.0252, 8, 0.0045, 0.085, 0.32, 0.004), m.rail);
   b.add(cyl(0.0275, 0.0275, 0.012, 0.402, 0, 0.004, 8), m.anod); // end cap
   b.add(rail(0.09, 0.31, 0.029), m.anod);
   // barrel, gas tube, gas block, compensator
@@ -233,13 +324,37 @@ export function buildM4() {
   b.add(prof([[0.036, -0.212], [0.106, -0.212], [0.108, -0.222], [0.034, -0.222]], 0.028), m.polymer, 'mag');
   b.add(box(0.003, 0.08, 0.004, 0.0125, -0.1, 0.02), m.polymer, 'mag');
   for (let k = 0; k < 3; k++) b.add(box(0.0262, 0.0035, 0.046, 0, -0.105 - k * 0.028, 0.049 + k * 0.012), m.fde, 'mag');
-  // EOTech-style holographic sight
-  b.add(box(0.034, 0.016, 0.1, 0, 0.044, -0.01), m.anod);
-  b.add(box(0.0032, 0.044, 0.05, -0.0205, 0.074, -0.01), m.anod);
-  b.add(box(0.0032, 0.044, 0.05, 0.0205, 0.074, -0.01), m.anod);
-  b.add(box(0.044, 0.0035, 0.054, 0, 0.0975, -0.01), m.anod);
-  b.add(box(0.01, 0.01, 0.03, 0.021, 0.048, -0.045), m.anod); // buttons
-  b.add(box(0.038, 0.044, 0.0015, 0, 0.075, 0.014), m.glass);
+  if (nv) {
+    // digital day/night riflescope: sensor body, objective bell, eyecup, IR illuminator
+    const ax = 0.078; // optical axis height above the bore
+    b.add(prof([[-0.07, 0.036], [0.07, 0.036], [0.07, 0.046], [-0.07, 0.046]], 0.03, 0, 0.002), m.anod); // QD mount
+    b.add(box(0.012, 0.012, 0.03, 0.021, 0.041, -0.03), m.anod);
+    b.add(sweep(roundRect(0, ax, 0.05, 0.058, 0.012), -0.075, 0.065, 0.004), m.polymer);              // sensor/display body
+    b.add(cyl(0.024, 0.031, 0.05, 0.065, 0, ax, 28), m.polymer);                                        // objective bell
+    b.add(cyl(0.029, 0.029, 0.004, 0.113, 0, ax, 28), m.rubber);
+    b.add(cyl(0.026, 0.026, 0.002, 0.116, 0, ax, 28), m.lens);                                          // front lens
+    b.add(cyl(0.02, 0.023, 0.045, -0.12, 0, ax, 24, true), m.rubber);                                    // eyecup
+    for (let i = 0; i < 3; i++) b.add(box(0.008, 0.004, 0.012, -0.012 + i * 0.012, ax + 0.031, -0.02 + i * 0.001), m.rubber); // buttons
+    b.add(cyl(0.011, 0.011, 0.012, -0.03, 0, ax + 0.03, 20), m.anod);                                    // control knob
+    b.add(cyl(0.011, 0.012, 0.085, 0.0, 0.037, ax - 0.006, 20), m.anod);                                 // IR illuminator
+    b.add(cyl(0.0105, 0.0105, 0.002, 0.086, 0.037, ax - 0.006, 20), m.lens);
+    b.add(box(0.012, 0.014, 0.03, 0.03, ax - 0.012, 0.03), m.anod);
+  } else {
+  // EXPS3-style holographic sight: rounded hood around the window, base with
+  // the battery at the front, side buttons, QD lever and adjuster turrets
+  b.add(prof([[-0.058, 0.036], [0.036, 0.036], [0.046, 0.041], [0.046, 0.049], [0.037, 0.056], [-0.05, 0.056], [-0.058, 0.049]], 0.04, 0, 0.0025), m.anod);
+  b.add(sweep(roundRect(0, 0.0765, 0.048, 0.047, 0.004, 0.014), -0.034, 0.018, 0.0014, [roundRect(0, 0.0745, 0.034, 0.027, 0.004).reverse()]), m.anod);
+  b.add(box(0.036, 0.029, 0.0015, 0, 0.0745, 0.012), m.glass);
+  b.add(xcyl(0.0085, 0.006, -0.022, 0.046, 0.024), m.anod); // battery cap
+  for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2; b.add(box(0.005, 0.0012, 0.0012, -0.022, 0.046 + Math.sin(a) * 0.0086, 0.024 + Math.cos(a) * 0.0086), m.dark); }
+  b.add(box(0.004, 0.009, 0.011, -0.021, 0.047, -0.03), m.rubber); // up / down buttons
+  b.add(box(0.004, 0.009, 0.011, -0.021, 0.047, -0.044), m.rubber);
+  b.add(xcyl(0.0035, 0.004, -0.0215, 0.051, -0.018), m.rubber); // NV button
+  b.add(box(0.005, 0.007, 0.034, 0.0215, 0.041, -0.01), m.anod); // QD lever
+  b.add(box(0.008, 0.005, 0.012, 0.024, 0.041, 0.004), m.anod);
+  b.add(xcyl(0.005, 0.005, 0.0265, 0.078, -0.012), m.anod); // windage / elevation turrets
+  b.add(vcyl(0.005, 0.005, 0.006, 0.1025, -0.024), m.anod);
+  }
   // PEQ laser box + weapon light + angled foregrip
   b.add(box(0.03, 0.026, 0.075, 0, 0.049, 0.31), m.fde);
   b.add(cyl(0.005, 0.005, 0.01, 0.35, 0.008, 0.052, 8), m.lens);
@@ -263,8 +378,8 @@ export function buildM4() {
 
   const { root, parts } = b.build();
   parts.dust.position.set(0.0137, 0.0045, 0);
-  const sightY = 0.074;
-  root.add(reticlePlane(0.013, sightY, -0.005));
+  const sightY = nv ? 0.078 : 0.074;
+  if (!nv) root.add(reticlePlane(0.013, sightY, -0.005));
   const muzzle = marker(0, 0, 0.54); root.add(muzzle);
   const eject = marker(0.016, 0.012, 0.025); root.add(eject);
   return {
@@ -458,33 +573,90 @@ export function buildFlashMesh() {
 }
 
 // ---------- arms ----------
-/** A gloved hand: palm block + curled fingers + thumb. Local origin = grip centre. */
+/** Capsule mesh from point a to point b. */
+function bone(a, b, r, mat, seg = 10) {
+  const d = new THREE.Vector3().subVectors(b, a);
+  const len = d.length();
+  const mesh = new THREE.Mesh(new THREE.CapsuleGeometry(r, Math.max(0.001, len), 4, seg), mat);
+  mesh.position.copy(a).addScaledVector(d, 0.5);
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
+  return mesh;
+}
+
+/**
+ * A gloved hand wrapped around a grip (local y = grip axis, origin = grip
+ * centre). Fingers curl around it in three joints; the back of the hand has
+ * TPR knuckle guards, the palm is synthetic leather, a strap closes the cuff.
+ */
 function buildHand(side) {
   const m = gunMaterials();
   const g = new THREE.Group();
-  const palm = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.085, 0.07), m.glove);
-  palm.position.set(side * 0.022, -0.005, 0.01);
-  g.add(palm);
+  const V = (x, y, z) => new THREE.Vector3(side * x, y, z);
+  // palm and back of the hand: a padded, slightly flattened volume on the outside of the grip
+  const palm = new THREE.Mesh(new THREE.SphereGeometry(1, 22, 16), m.palm);
+  palm.scale.set(0.017, 0.047, 0.036); palm.position.copy(V(0.024, -0.006, 0.008));
+  const back = new THREE.Mesh(new THREE.SphereGeometry(1, 22, 16), m.glove);
+  back.scale.set(0.014, 0.046, 0.034); back.position.copy(V(0.031, -0.006, 0.009));
+  g.add(palm, back);
+  // TPR guard over the back of the hand
+  const guard = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10, 0, Math.PI), m.knuckle);
+  guard.scale.set(0.012, 0.03, 0.022); guard.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; guard.position.copy(V(0.041, 0.004, 0.0));
+  g.add(guard);
+  // fingers wrap around the grip: points on an arc, three phalanges each
+  const lens = [1, 0.62, 0.46];
   for (let i = 0; i < 4; i++) {
-    const fg = new THREE.Mesh(new THREE.CapsuleGeometry(0.0095, 0.036, 3, 8), m.glove);
-    fg.rotation.z = Math.PI / 2;
-    fg.position.set(-side * 0.008, 0.026 - i * 0.02, -0.022);
-    g.add(fg);
-    const kn = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.016, 0.02), m.knuckle);
-    kn.position.set(side * 0.03, 0.026 - i * 0.02, -0.018);
-    g.add(kn);
+    const y = 0.027 - i * 0.0185, R = 0.027 - i * 0.0008, rad = 0.0098 - i * 0.0006;
+    const sweepA = [0.2, 1.25, 2.05, 2.7];
+    const pts = sweepA.map((a) => V(Math.cos(a) * R, y - a * 0.002, -Math.sin(a) * R));
+    for (let k = 0; k < 3; k++) {
+      g.add(bone(pts[k], pts[k + 1], rad * (1 - k * 0.08) * (0.9 + lens[k] * 0.1), m.glove));
+      if (k === 0) {
+        // ribbed knuckle pad on the first joint
+        const n = new THREE.Vector3().addVectors(pts[0], pts[1]).multiplyScalar(0.5);
+        const out = n.clone().setY(0).normalize();
+        const pad = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 8), m.knuckle);
+        pad.scale.set(0.0075, 0.0068, 0.0075); pad.position.copy(n).addScaledVector(out, rad * 0.85);
+        g.add(pad);
+      }
+    }
   }
-  const thumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.01, 0.04, 3, 8), m.glove);
-  thumb.rotation.set(0.9, 0, side * 0.4);
-  thumb.position.set(-side * 0.012, 0.035, 0.018);
-  g.add(thumb);
+  // thumb: over the top of the grip on the far side
+  const t0 = V(0.018, 0.03, 0.022), t1 = V(-0.006, 0.042, 0.012), t2 = V(-0.022, 0.04, -0.006);
+  g.add(bone(t0, t1, 0.0112, m.glove), bone(t1, t2, 0.0098, m.glove));
+  // cuff and hook-and-loop wrist strap
+  const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.033, 0.03, 0.035, 22, 1), m.glove);
+  cuff.position.copy(V(0.022, -0.045, 0.045)); cuff.rotation.x = 0.7;
+  const strap = new THREE.Mesh(new THREE.CylinderGeometry(0.0345, 0.0345, 0.016, 22, 1), m.knuckle);
+  strap.position.copy(cuff.position); strap.rotation.copy(cuff.rotation);
+  g.add(cuff, strap);
   g.traverse((o) => { o.frustumCulled = false; });
   return g;
 }
 
-function segment(r0, r1, mat) {
-  const geo = new THREE.CylinderGeometry(r1, r0, 1, 12, 1);
-  geo.translate(0, 0.5, 0);
+/**
+ * Sleeve segment (unit length along +y, scaled to the bone at runtime): an
+ * oval, slightly tapered tube with compression folds bunching at the ends.
+ */
+function sleeveGeometry(r0, r1, seed) {
+  const g = new THREE.CylinderGeometry(1, 1, 1, 36, 30, true);
+  g.translate(0, 0.5, 0);
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    const th = Math.atan2(z, x), t = y;
+    let r = r0 + (r1 - r0) * t;
+    const endK = Math.pow(Math.abs(t - 0.5) * 2, 2.2);
+    const fold = 0.5 + 0.5 * Math.sin(t * 44 + Math.sin(th * 2 + seed) * 1.8 + seed * 3);
+    const lump = TX.fbm(Math.cos(th) * 1.5 + seed, t * 5 + Math.sin(th) * 1.5, seed, 3, 0) - 0.5;
+    r *= 1 + fold * 0.045 * (0.25 + endK) + lump * 0.07;
+    p.setXYZ(i, Math.cos(th) * r * 1.08, y, Math.sin(th) * r * 0.92);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+
+function segment(r0, r1, mat, seed = 1) {
+  const geo = mat === gunMaterials().sleeve ? sleeveGeometry(r0, r1, seed) : (() => { const c = new THREE.CylinderGeometry(r1, r0, 1, 24, 1); c.translate(0, 0.5, 0); return c; })();
   const mesh = new THREE.Mesh(geo, mat);
   mesh.frustumCulled = false;
   return mesh;
@@ -495,9 +667,9 @@ export class Arms {
     const m = gunMaterials();
     this.group = new THREE.Group();
     this.hands = { R: buildHand(1), L: buildHand(-1) };
-    this.fore = { R: segment(0.038, 0.032, m.sleeve), L: segment(0.038, 0.032, m.sleeve) };
-    this.upper = { R: segment(0.044, 0.04, m.sleeve), L: segment(0.044, 0.04, m.sleeve) };
-    this.cuff = { R: segment(0.035, 0.037, m.glove), L: segment(0.035, 0.037, m.glove) };
+    this.fore = { R: segment(0.041, 0.036, m.sleeve, 1), L: segment(0.041, 0.036, m.sleeve, 2) };
+    this.upper = { R: segment(0.047, 0.043, m.sleeve, 3), L: segment(0.047, 0.043, m.sleeve, 4) };
+    this.cuff = { R: segment(0.036, 0.038, m.sleeve, 5), L: segment(0.036, 0.038, m.sleeve, 6) };
     for (const s of ['R', 'L']) this.group.add(this.hands[s], this.fore[s], this.upper[s], this.cuff[s]);
     this.shoulder = { R: new THREE.Vector3(0.2, -0.3, 0.1), L: new THREE.Vector3(-0.18, -0.34, 0.02) };
     this._v = new THREE.Vector3(); this._e = new THREE.Vector3(); this._w = new THREE.Vector3(); this._up = new THREE.Vector3(0, 1, 0);

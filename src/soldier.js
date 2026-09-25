@@ -13,7 +13,9 @@ let normalTex = null;
 export const soldierOptions = { night: false };
 function material(kit) {
   if (!normalTex) normalTex = soldierNormalMap();
-  if (!materials[kit]) materials[kit] = new THREE.MeshStandardMaterial({ map: soldierAtlas(kit), normalMap: normalTex, normalScale: new THREE.Vector2(0.7, 0.7), roughness: 0.9, metalness: 0.02 });
+  // woven fabric with a soft sheen at grazing angles
+  if (!materials[kit]) materials[kit] = new THREE.MeshPhysicalMaterial({ map: soldierAtlas(kit), normalMap: normalTex, normalScale: new THREE.Vector2(0.7, 0.7), roughness: 0.86, metalness: 0.02,
+    sheen: 0.55, sheenRoughness: 0.7, sheenColor: 0x8a806c });
   return materials[kit];
 }
 
@@ -31,9 +33,38 @@ function part(geo, region, { pos = [0, 0, 0], rot = [0, 0, 0], scale = [1, 1, 1]
   return g;
 }
 const B = (w, h, d) => new THREE.BoxGeometry(w, h, d);
-const C = (r, len, seg = 10) => new THREE.CapsuleGeometry(r, len, 3, seg);
-const CY = (r0, r1, h, seg = 10) => new THREE.CylinderGeometry(r1, r0, h, seg);
-const S = (r, ws = 12, hs = 10, ps = 0, pl = Math.PI * 2, ts = 0, tl = Math.PI) => new THREE.SphereGeometry(r, ws, hs, ps, pl, ts, tl);
+const C = (r, len, seg = 16) => new THREE.CapsuleGeometry(r, len, 5, seg);
+const CY = (r0, r1, h, seg = 16) => new THREE.CylinderGeometry(r1, r0, h, seg);
+const S = (r, ws = 20, hs = 14, ps = 0, pl = Math.PI * 2, ts = 0, tl = Math.PI) => new THREE.SphereGeometry(r, ws, hs, ps, pl, ts, tl);
+/** Rounded box (padded pouches, plates, boots): rounded-rectangle outline extruded with a soft bevel. */
+function RB(w, h, d, r = 0.012) {
+  r = Math.min(r, w / 2 - 0.001, h / 2 - 0.001);
+  const x = w / 2 - r, y = h / 2 - r, sh = new THREE.Shape();
+  sh.moveTo(-x, -h / 2); sh.lineTo(x, -h / 2); sh.quadraticCurveTo(w / 2, -h / 2, w / 2, -y); sh.lineTo(w / 2, y);
+  sh.quadraticCurveTo(w / 2, h / 2, x, h / 2); sh.lineTo(-x, h / 2); sh.quadraticCurveTo(-w / 2, h / 2, -w / 2, y);
+  sh.lineTo(-w / 2, -y); sh.quadraticCurveTo(-w / 2, -h / 2, -x, -h / 2);
+  const bv = Math.min(r, d / 2 - 0.001);
+  const g = new THREE.ExtrudeGeometry(sh, { depth: Math.max(0.001, d - 2 * bv), bevelEnabled: true, bevelThickness: bv, bevelSize: bv * 0.6, bevelSegments: 3, curveSegments: 4 });
+  g.translate(0, 0, -(d - 2 * bv) / 2);
+  // UVs in metres so the atlas region tiles at cloth scale
+  const p = g.attributes.position, uv = g.attributes.uv;
+  for (let i = 0; i < p.count; i++) uv.setXY(i, (p.getX(i) + p.getZ(i)) * 3, p.getY(i) * 3);
+  return g;
+}
+/** Fabric limb: capsule with compression folds around the joints. */
+function limb(r, len, seed, folds = 0.05) {
+  const g = C(r, len, 18);
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    const t = (y + len / 2) / len, th = Math.atan2(z, x);
+    const endK = Math.pow(Math.abs(t - 0.5) * 2, 2);
+    const k = 1 + folds * (0.5 + 0.5 * Math.sin(t * 40 + Math.sin(th * 2 + seed) * 2 + seed)) * endK;
+    p.setXYZ(i, x * k, y, z * k);
+  }
+  g.computeVertexNormals();
+  return g;
+}
 
 // Geometry is shared by all soldiers of a kit/weapon.
 const geoCache = {};
@@ -41,62 +72,87 @@ function geometries(kit) {
   if (geoCache[kit]) return geoCache[kit];
   const heavy = kit === 'heavy';
   const G = {};
+  // ---- hips: trousers, padded battle belt with pouches, holster ----
   G.pelvis = mergeGeometries([
-    part(B(0.34, 0.2, 0.22), 'pants', { pos: [0, -0.04, 0] }),
-    part(B(0.36, 0.05, 0.24), 'black', { pos: [0, 0.05, 0] }), // belt
-    part(B(0.07, 0.1, 0.05), 'pouch', { pos: [0.14, 0.0, 0.1] }),
-    part(B(0.09, 0.12, 0.06), 'pouch', { pos: [-0.17, -0.02, 0.02], rot: [0, 0.3, 0] }), // holster
+    part(S(0.165), 'pants', { pos: [0, -0.035, 0], scale: [1.08, 0.72, 0.82] }),
+    part(CY(0.19, 0.19, 0.065, 28), 'pouch', { pos: [0, 0.045, 0], scale: [1, 1, 0.74] }),                  // battle belt
+    part(CY(0.192, 0.192, 0.02, 28), 'black', { pos: [0, 0.045, 0], scale: [1, 1, 0.745] }),                // inner belt
+    part(RB(0.065, 0.1, 0.05), 'pouch', { pos: [0.13, 0.0, 0.11], rot: [0, 0.4, 0] }),                      // mag pouch
+    part(RB(0.11, 0.13, 0.07, 0.02), 'pouch', { pos: [0, 0.0, -0.15] }),                                     // IFAK
+    part(RB(0.05, 0.13, 0.065, 0.01), 'black', { pos: [-0.19, -0.06, 0.02], rot: [0, 0.2, 0.08] }),         // holster
+    part(RB(0.03, 0.06, 0.035, 0.006), 'black', { pos: [-0.19, 0.03, 0.03], rot: [0, 0.2, 0.08] }),         // pistol grip
   ]);
-  const vestW = heavy ? 0.44 : 0.39, vestD = heavy ? 0.33 : 0.29;
+  // ---- torso: combat shirt, plate carrier, cummerbund, pouches ----
+  const vestW = heavy ? 0.36 : 0.32, vestD = heavy ? 0.3 : 0.27;
   const chest = [
-    part(C(0.15, 0.22, 10), 'camo', { pos: [0, 0.25, 0], scale: [1.18, 1, 0.78] }),
-    part(B(vestW, 0.36, vestD), 'vest', { pos: [0, 0.29, 0.005] }),
-    part(B(vestW - 0.06, 0.06, vestD + 0.02), 'black', { pos: [0, 0.14, 0.005] }), // cummerbund band
+    part(C(0.15, 0.22, 20), 'camo', { pos: [0, 0.25, 0], scale: [1.2, 1, 0.8] }),
+    part(RB(vestW, 0.33, 0.055, 0.03), 'vest', { pos: [0, 0.3, vestD / 2 - 0.01] }),                          // front plate bag
+    part(RB(vestW, 0.35, 0.05, 0.03), 'vest', { pos: [0, 0.3, -vestD / 2 + 0.01] }),                          // back plate bag
+    part(CY(0.215, 0.205, 0.16, 28), 'vest', { pos: [0, 0.2, 0], scale: [1, 1, 0.72] }),                    // cummerbund
+    part(RB(0.13, 0.055, 0.05, 0.015), 'vest', { pos: [0, 0.465, vestD / 2 - 0.035] }),                      // collar strap
   ];
+  // triple magazine pouch with flaps and the rifle mags inside
   for (let i = 0; i < 3; i++) {
-    chest.push(part(B(0.075, 0.13, 0.05), 'pouch', { pos: [-0.09 + i * 0.09, 0.2, vestD / 2 + 0.03] }));
-    // rifle magazines sticking out of the open-top pouches
-    chest.push(part(B(0.026, 0.05, 0.062), 'black', { pos: [-0.09 + i * 0.09, 0.285, vestD / 2 + 0.03], rot: [0.12, 0, 0] }));
+    const x = -0.085 + i * 0.085;
+    chest.push(part(RB(0.078, 0.12, 0.05, 0.012), 'pouch', { pos: [x, 0.2, vestD / 2 + 0.035] }));
+    chest.push(part(RB(0.08, 0.035, 0.055, 0.01), 'pouch', { pos: [x, 0.265, vestD / 2 + 0.036], rot: [0.15, 0, 0] })); // flap
+    chest.push(part(RB(0.026, 0.03, 0.058, 0.004), 'black', { pos: [x, 0.29, vestD / 2 + 0.03], rot: [0.1, 0, 0] })); // mag base
   }
-  // shoulder deltoids under the vest straps
-  chest.push(part(S(0.075, 10, 8), 'camo', { pos: [-0.2, 0.46, 0], scale: [1, 0.9, 1.05] }));
-  chest.push(part(S(0.075, 10, 8), 'camo', { pos: [0.2, 0.46, 0], scale: [1, 0.9, 1.05] }));
-  chest.push(part(B(0.05, 0.02, 0.24), 'vest', { pos: [-0.14, 0.49, 0] }), part(B(0.05, 0.02, 0.24), 'vest', { pos: [0.14, 0.49, 0] }));
-  chest.push(part(B(0.12, 0.08, 0.04), 'pouch', { pos: [0.1, 0.36, vestD / 2 + 0.02] })); // radio / admin pouch
-  chest.push(part(B(0.3, 0.34, 0.12), heavy ? 'black' : 'pouch', { pos: [0, 0.3, -vestD / 2 - 0.05] })); // pack
-  chest.push(part(B(0.05, 0.14, 0.05), 'black', { pos: [0.12, 0.47, -vestD / 2 - 0.02] })); // antenna base
-  chest.push(part(CY(0.004, 0.004, 0.35, 5), 'black', { pos: [0.12, 0.66, -vestD / 2 - 0.02], rot: [-0.1, 0, 0] }));
-  chest.push(part(C(0.07, 0.04, 8), 'camo', { pos: [0, 0.5, 0], scale: [1, 0.6, 1] })); // neck/shoulders
-  if (heavy) chest.push(part(B(0.2, 0.12, 0.08), 'vest', { pos: [-0.2, 0.46, 0], rot: [0, 0, 0.3] }), part(B(0.2, 0.12, 0.08), 'vest', { pos: [0.2, 0.46, 0], rot: [0, 0, -0.3] }));
+  chest.push(part(RB(0.12, 0.085, 0.045, 0.015), 'pouch', { pos: [0.02, 0.38, vestD / 2 + 0.035] }));          // admin pouch
+  chest.push(part(CY(0.017, 0.017, 0.11, 10), 'black', { pos: [-0.12, 0.39, vestD / 2 + 0.02] }));             // tourniquet
+  chest.push(part(RB(0.065, 0.14, 0.045, 0.012), 'black', { pos: [0.16, 0.23, 0.1], rot: [0, 1.1, 0] }));      // radio on the cummerbund
+  // shoulders under the padded straps
+  chest.push(part(S(0.078), 'camo', { pos: [-0.2, 0.46, 0], scale: [1, 0.9, 1.05] }));
+  chest.push(part(S(0.078), 'camo', { pos: [0.2, 0.46, 0], scale: [1, 0.9, 1.05] }));
+  chest.push(part(RB(0.055, 0.03, 0.26, 0.012), 'vest', { pos: [-0.13, 0.49, 0], rot: [0, 0, -0.2] }));
+  chest.push(part(RB(0.055, 0.03, 0.26, 0.012), 'vest', { pos: [0.13, 0.49, 0], rot: [0, 0, 0.2] }));
+  // hydration carrier / assault pack, antenna
+  chest.push(part(RB(0.26, 0.34, 0.1, 0.04), heavy ? 'black' : 'pouch', { pos: [0, 0.3, -vestD / 2 - 0.06] }));
+  chest.push(part(CY(0.004, 0.003, 0.4, 6), 'black', { pos: [0.1, 0.62, -vestD / 2 - 0.05], rot: [-0.12, 0, 0] }));
+  chest.push(part(C(0.07, 0.05, 14), 'face', { pos: [0, 0.5, 0.01], scale: [1, 0.7, 1] }));                        // neck (balaclava)
+  if (heavy) chest.push(part(RB(0.19, 0.12, 0.07, 0.03), 'vest', { pos: [-0.2, 0.45, 0], rot: [0, 0, 0.35] }), part(RB(0.19, 0.12, 0.07, 0.03), 'vest', { pos: [0.2, 0.45, 0], rot: [0, 0, -0.35] }));
   G.chest = mergeGeometries(chest);
+  // ---- head: balaclava, ballistic glasses, FAST high-cut helmet, comms headset ----
   const head = [
-    part(S(0.1, 14, 12), 'face', { pos: [0, 0.1, 0.005], scale: [0.92, 1.12, 1.02] }),
-    part(S(0.128, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), 'helmet', { pos: [0, 0.135, -0.005], scale: [1, 0.95, 1.08] }),
-    part(B(0.035, 0.028, 0.035), 'black', { pos: [0, 0.2, 0.12] }), // NVG shroud
-    part(B(0.012, 0.05, 0.1), 'black', { pos: [0.118, 0.14, -0.005] }), // rails
-    part(B(0.012, 0.05, 0.1), 'black', { pos: [-0.118, 0.14, -0.005] }),
-    part(CY(0.04, 0.04, 0.03, 10), 'black', { pos: [0.108, 0.085, 0.0], rot: [0, 0, Math.PI / 2] }), // headset cups
-    part(CY(0.04, 0.04, 0.03, 10), 'black', { pos: [-0.108, 0.085, 0.0], rot: [0, 0, Math.PI / 2] }),
-    part(B(0.006, 0.09, 0.014), 'black', { pos: [0.092, 0.04, 0.045], rot: [0.3, 0, 0.1] }), // chinstrap
-    part(B(0.006, 0.09, 0.014), 'black', { pos: [-0.092, 0.04, 0.045], rot: [0.3, 0, -0.1] }),
-    part(B(0.06, 0.03, 0.09), 'pouch', { pos: [0, 0.2, -0.105], rot: [-0.4, 0, 0] }), // helmet counterweight pouch
+    part(S(0.1, 26, 20), 'face', { pos: [0, 0.1, 0.005], scale: [0.9, 1.12, 1.02] }),
+    part(S(0.103, 26, 10, -0.9, 1.8, 1.25, 0.45), 'black', { pos: [0, 0.105, 0.012], scale: [0.95, 1.1, 1.06], rot: [0, Math.PI / 2 + 0.0, 0] }), // eye protection
+    part(S(0.129, 30, 16, 0, Math.PI * 2, 0, Math.PI * 0.5), 'helmet', { pos: [0, 0.128, -0.006], scale: [1, 0.96, 1.1] }), // shell
+    part(CY(0.131, 0.131, 0.025, 30, 1), 'helmet', { pos: [0, 0.14, -0.006], scale: [1, 1, 1.1] }),           // rim
+    part(RB(0.014, 0.035, 0.12, 0.005), 'black', { pos: [0.124, 0.145, -0.01] }),                              // ARC rails
+    part(RB(0.014, 0.035, 0.12, 0.005), 'black', { pos: [-0.124, 0.145, -0.01] }),
+    part(RB(0.045, 0.035, 0.018, 0.006), 'black', { pos: [0, 0.205, 0.125], rot: [-0.3, 0, 0] }),            // NVG shroud
+    part(RB(0.06, 0.035, 0.1, 0.012), 'pouch', { pos: [0, 0.2, -0.125], rot: [-0.45, 0, 0] }),               // counterweight
+    part(RB(0.08, 0.05, 0.004, 0.006), 'pouch', { pos: [0, 0.255, -0.02], rot: [-Math.PI / 2 + 0.1, 0, 0] }), // loop panel
+    part(CY(0.042, 0.04, 0.035, 18), 'black', { pos: [0.108, 0.085, 0.0], rot: [0, 0, Math.PI / 2] }),       // ear cups
+    part(CY(0.042, 0.04, 0.035, 18), 'black', { pos: [-0.108, 0.085, 0.0], rot: [0, 0, -Math.PI / 2] }),
+    part(CY(0.004, 0.004, 0.07, 6), 'black', { pos: [0.085, 0.06, 0.07], rot: [1.25, 0, 0.4] }),            // boom mic
+    part(RB(0.006, 0.07, 0.014, 0.002), 'black', { pos: [0.088, 0.04, 0.045], rot: [0.3, 0, 0.1] }),         // chinstrap
+    part(RB(0.006, 0.07, 0.014, 0.002), 'black', { pos: [-0.088, 0.04, 0.045], rot: [0.3, 0, -0.1] }),
   ];
-  if (heavy) head.push(part(B(0.17, 0.12, 0.05), 'black', { pos: [0, 0.07, 0.1] })); // ballistic mask
+  if (heavy) head.push(part(S(0.105, 22, 10, 0, Math.PI, 0.9, 1.2), 'black', { pos: [0, 0.08, 0.02], scale: [0.95, 1, 1.1], rot: [0, -Math.PI / 2, 0] })); // ballistic mask
   G.head = mergeGeometries(head);
   G.nvg = mergeGeometries([
-    part(CY(0.019, 0.017, 0.075, 10), 'black', { pos: [0.034, 0.1, 0.135], rot: [Math.PI / 2, 0, 0] }),
-    part(CY(0.019, 0.017, 0.075, 10), 'black', { pos: [-0.034, 0.1, 0.135], rot: [Math.PI / 2, 0, 0] }),
-    part(B(0.09, 0.03, 0.03), 'black', { pos: [0, 0.135, 0.125] }),
-    part(B(0.03, 0.05, 0.03), 'black', { pos: [0, 0.18, 0.12] }),
+    part(CY(0.019, 0.017, 0.075, 16), 'black', { pos: [0.034, 0.1, 0.135], rot: [Math.PI / 2, 0, 0] }),
+    part(CY(0.019, 0.017, 0.075, 16), 'black', { pos: [-0.034, 0.1, 0.135], rot: [Math.PI / 2, 0, 0] }),
+    part(RB(0.09, 0.03, 0.03, 0.008), 'black', { pos: [0, 0.135, 0.125] }),
+    part(RB(0.03, 0.05, 0.03, 0.008), 'black', { pos: [0, 0.18, 0.12] }),
   ]);
-  G.upperArm = mergeGeometries([part(C(0.058, 0.2, 8), 'camo', { pos: [0, -0.14, 0] }), part(B(0.09, 0.08, 0.09), 'pouch', { pos: [0, -0.06, 0] })]);
-  G.foreArm = mergeGeometries([part(C(0.048, 0.18, 8), 'camo', { pos: [0, -0.12, 0] })]);
-  G.hand = mergeGeometries([part(B(0.06, 0.09, 0.08), 'black', { pos: [0, -0.04, 0.01] })]);
-  G.thigh = mergeGeometries([part(C(0.082, 0.3, 8), 'pants', { pos: [0, -0.22, 0] }), part(B(0.1, 0.12, 0.06), 'pouch', { pos: [0.07, -0.2, 0.02] })]);
+  // ---- arms: sleeves with folds, elbow pads, gloves ----
+  G.upperArm = mergeGeometries([part(limb(0.058, 0.2, 1), 'camo', { pos: [0, -0.14, 0] }), part(RB(0.085, 0.07, 0.03, 0.012), 'pouch', { pos: [0, -0.07, 0.055], rot: [0, 0, 0] })]);
+  G.foreArm = mergeGeometries([part(limb(0.048, 0.18, 2), 'camo', { pos: [0, -0.12, 0] }), part(S(0.05, 14, 10, 0, Math.PI), 'black', { pos: [0, -0.005, -0.02], scale: [1, 0.8, 0.9], rot: [0, Math.PI, 0] })]);
+  G.hand = mergeGeometries([
+    part(RB(0.055, 0.085, 0.075, 0.022), 'black', { pos: [0, -0.04, 0.01] }),
+    part(C(0.011, 0.04, 8), 'black', { pos: [0.02, -0.03, 0.05], rot: [1.2, 0, 0] }),                         // thumb
+    part(RB(0.05, 0.03, 0.05, 0.012), 'black', { pos: [0, -0.09, 0.03], rot: [0.6, 0, 0] }),                  // curled fingers
+  ]);
+  // ---- legs: trousers with cargo pockets, knee pads, boots ----
+  G.thigh = mergeGeometries([part(limb(0.084, 0.3, 3, 0.04), 'pants', { pos: [0, -0.22, 0] }), part(RB(0.11, 0.13, 0.04, 0.02), 'pants', { pos: [0.075, -0.22, 0.015], rot: [0, 1.4, 0] })]);
   G.shin = mergeGeometries([
-    part(C(0.062, 0.3, 8), 'pants', { pos: [0, -0.2, 0] }),
-    part(B(0.1, 0.1, 0.05), 'black', { pos: [0, -0.02, 0.06] }), // knee pad
-    part(B(0.11, 0.11, 0.26), 'black', { pos: [0, -0.4, 0.05] }), // boot
+    part(limb(0.064, 0.28, 4, 0.06), 'pants', { pos: [0, -0.2, 0] }),
+    part(S(0.062, 18, 12, 0, Math.PI), 'black', { pos: [0, -0.02, 0.035], scale: [0.95, 1.2, 0.7], rot: [0, -Math.PI / 2, 0] }), // knee pad
+    part(RB(0.1, 0.16, 0.12, 0.035), 'pouch', { pos: [0, -0.37, 0.02] }),                                  // boot upper
+    part(RB(0.11, 0.05, 0.28, 0.025), 'pouch', { pos: [0, -0.43, 0.06] }),                                 // boot foot
+    part(RB(0.115, 0.022, 0.295, 0.01), 'black', { pos: [0, -0.46, 0.06] }),                               // sole
   ]);
   geoCache[kit] = G;
   return G;

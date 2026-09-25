@@ -6,6 +6,8 @@ import { RAY_BULLET, rayCapsule, raySphere, pointSegDist } from './physics.js';
 
 const MAX_TRACERS = 64;
 const G = 9.81;
+// how readily a material deflects a bullet at a glancing angle (0 = it always digs in)
+const RICOCHET = { metal: 0.85, concrete: 0.6, plaster: 0.25, rubber: 0.15, sand: 0.12, wood: 0.05, glass: 0 };
 
 export class Ballistics {
   constructor(game) {
@@ -46,6 +48,7 @@ export class Ballistics {
       whizzed: false,
       penPower: o.weapon ? o.weapon.penetration : 1,
       hitSomething: false,
+      bounces: 0,
     });
   }
 
@@ -118,9 +121,29 @@ export class Ballistics {
           const pt = new THREE.Vector3(wh.x, wh.y, wh.z);
           const n = new THREE.Vector3(wh.nx, wh.ny, wh.nz);
           const dmgMul = this._falloff(b);
-          g.effects.impact(pt, n, wh.mat, b.owner === 'player' ? 1 : 0.7);
-          if (b.owner === 'player' && dmgMul > 0) g.audio.playAt(`imp_${impactSound(wh.mat)}${(Math.random() * 2) | 0}`, pt.x, pt.y, pt.z, { vol: 0.35, max: 60, occlude: false });
-          else if (Math.random() < 0.5) g.audio.playAt(`imp_${impactSound(wh.mat)}${(Math.random() * 2) | 0}`, pt.x, pt.y, pt.z, { vol: 0.5, max: 25, occlude: false });
+          const snd = impactSound(wh.mat, pt, g);
+          g.effects.impact(pt, n, snd === 'water' ? 'sand' : wh.mat, b.owner === 'player' ? 1 : 0.7);
+          if (b.owner === 'player' && dmgMul > 0) g.audio.playAt(`imp_${snd}${(Math.random() * 2) | 0}`, pt.x, pt.y, pt.z, { vol: 0.35, max: 60, occlude: false });
+          else if (Math.random() < 0.5) g.audio.playAt(`imp_${snd}${(Math.random() * 2) | 0}`, pt.x, pt.y, pt.z, { vol: 0.5, max: 25, occlude: false });
+          // glancing hits on hard surfaces ricochet: the round skips off with most of its energy gone
+          const cosI = -(dir.x * n.x + dir.y * n.y + dir.z * n.z);
+          const hard = RICOCHET[wh.mat] ?? 0.3;
+          if (b.bounces < 2 && cosI < 0.42 && Math.random() < hard * (1 - cosI / 0.42) * 1.4) {
+            const vn = 2 * (dir.x * n.x + dir.y * n.y + dir.z * n.z);
+            const rd = new THREE.Vector3(dir.x - vn * n.x, dir.y - vn * n.y, dir.z - vn * n.z);
+            // deformed bullet: scatter off the mirror direction, and it tends to climb off the surface
+            rd.x += (Math.random() - 0.5) * 0.35; rd.y += Math.random() * 0.18; rd.z += (Math.random() - 0.5) * 0.35;
+            rd.normalize();
+            b.speed *= 0.5; b.vel.copy(rd).multiplyScalar(b.speed);
+            b.damage *= 0.35; b.penPower *= 0.3; b.bounces++;
+            b.pos.set(pt.x + n.x * 0.02, pt.y + n.y * 0.02, pt.z + n.z * 0.02);
+            b.tail.copy(b.pos);
+            b.whizzed = false; // a ricochet can still zip past the player
+            g.effects.impact(pt, n, 'metal', 0.6);
+            g.audio.playAt(`rico${(Math.random() * 3) | 0}`, pt.x, pt.y, pt.z, { vol: 0.55, max: 70, occlude: false, rate: 0.9 + Math.random() * 0.25 });
+            remaining *= 1 - Math.min(1, wh.t / len);
+            continue;
+          }
           if (wh.box && wh.box.tag === 'explosive' && wh.box.barrel) g.damageBarrel(wh.box.barrel, b.damage * dmgMul);
           if (wh.box && wh.box.pen > 0) {
             const retained = Math.pow(wh.box.pen, 1 / Math.max(0.2, b.penPower));
@@ -210,9 +233,8 @@ export class Ballistics {
   }
 }
 
-function impactSound(mat) {
-  if (mat === 'metal') return 'metal';
-  if (mat === 'wood') return 'wood';
-  if (mat === 'sand' || mat === 'rubber') return 'sand';
+function impactSound(mat, pt, g) {
+  if (mat === 'sand' && pt.y < 0.05 && g.weather === 'rain') return 'water'; // puddles and mud in the rain
+  if (['metal', 'wood', 'sand', 'rubber', 'plaster', 'glass'].includes(mat)) return mat;
   return 'concrete';
 }

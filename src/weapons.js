@@ -2,6 +2,7 @@
 // recoil, sway, bob, sprint), firing, reloading, switching and grenade throws.
 import * as THREE from 'three';
 import { WEAPONS, GRENADES } from './config.js';
+import { settings } from './settings.js';
 import { buildM4, buildGlock, buildM1014, buildSniper, buildFragMesh, buildFlashMesh, Arms, gunMaterials as gunMaterialsRef } from './gunmodels.js';
 import * as TX from './textures.js';
 
@@ -22,6 +23,12 @@ export class WeaponSystem {
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(50, 1, 0.01, 5);
     this.sun = new THREE.DirectionalLight(0xfff1dc, 2.2);
+    // the weapon and hands shadow themselves (sight on the receiver, hand on the grip)
+    this.sun.castShadow = true;
+    this.sun.shadow.mapSize.set(2048, 2048);
+    Object.assign(this.sun.shadow.camera, { left: -0.45, right: 0.45, top: 0.45, bottom: -0.45, near: 4.2, far: 5.9 });
+    this.sun.shadow.bias = -0.0004;
+    this.sun.shadow.normalBias = 0.0006;
     this.fill = new THREE.HemisphereLight(0xdfe8f2, 0x8a7458, 0.9);
     this.scene.add(this.sun, this.sun.target, this.fill);
     this.muzzleLight = new THREE.PointLight(0xffb060, 0, 1.2, 2);
@@ -30,12 +37,14 @@ export class WeaponSystem {
     this.scene.add(this.rig);
     this.arms = new Arms();
     this.scene.add(this.arms.group);
+    this.arms.group.traverse((o) => { if (o.isMesh) o.castShadow = o.receiveShadow = true; });
 
     this.slots = {
       primary: this._make(primaryKey),
       secondary: this._make('glock'),
     };
     this.currentSlot = 'primary';
+    this.optic = primaryKey === 'm4' ? settings.optic : 'holo';
     for (const s of Object.values(this.slots)) { s.model.root.visible = false; this.rig.add(s.model.root); }
     this.cur.model.root.visible = true;
 
@@ -93,8 +102,11 @@ export class WeaponSystem {
   }
 
   _make(key) {
-    const def = WEAPONS[key];
-    const model = BUILDERS[key]();
+    let def = WEAPONS[key];
+    // optional digital night vision scope on the M4 (3.5x, day colour / night mono)
+    const nv = key === 'm4' && settings.optic === 'nv';
+    if (nv) def = { ...def, name: 'M4A1 NV', scope: 'digital', adsZoom: 3.5, adsTime: 0.26, desc: def.desc };
+    const model = BUILDERS[key](nv ? { optic: 'nv' } : undefined);
     const slot = { key, def, model, ammo: def.mag + (def.chamber ? 1 : 0), reserve: def.reserve, boltReady: true, heat: 0, jammed: false, dustOpen: false };
     if (!def.shellReload) this._fillMags(slot);
     slot.meshes = [];

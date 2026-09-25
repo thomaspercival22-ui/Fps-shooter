@@ -147,10 +147,10 @@ export function atlasUV(name) {
 }
 
 export const KITS = {
-  olive: { camo: ['#5d6348', '#434a35', '#7b7657', '#2f3428'], vest: '#4d5439', helmet: '#5a5f47', face: '#2b2c28', pants: ['#595f47', '#3f4533', '#6f6c52', '#2e3227'], pouch: '#474e36', furniture: '#2a2a28' },
-  black: { camo: ['#2e3033', '#222325', '#3d4044', '#18191a'], vest: '#262729', helmet: '#2b2c2e', face: '#1d1d1e', pants: ['#2f3134', '#232426', '#3a3d40', '#1a1b1c'], pouch: '#2a2b2d', furniture: '#1c1c1c' },
-  tan: { camo: ['#8d7f60', '#6d6046', '#a59776', '#564b37'], vest: '#76674b', helmet: '#80735a', face: '#3a3228', pants: ['#86795b', '#665a41', '#9d8f70', '#51472f'], pouch: '#6f6147', furniture: '#6e5d43' },
-  heavy: { camo: ['#3a3d37', '#2a2c28', '#4a4d45', '#1f201d'], vest: '#2c2e2a', helmet: '#34372f', face: '#1a1a1a', pants: ['#3a3d37', '#2a2c28', '#4a4d45', '#1f201d'], pouch: '#2f312c', furniture: '#1f1f1f' },
+  olive: { camo: ['#5d6348', '#434a35', '#7b7657', '#2f3428'], vest: '#4d5439', helmet: '#5a5f47', face: '#6d6552', pants: ['#595f47', '#3f4533', '#6f6c52', '#2e3227'], pouch: '#474e36', furniture: '#2a2a28' },
+  black: { camo: ['#2e3033', '#222325', '#3d4044', '#18191a'], vest: '#262729', helmet: '#2b2c2e', face: '#3e3f42', pants: ['#2f3134', '#232426', '#3a3d40', '#1a1b1c'], pouch: '#2a2b2d', furniture: '#1c1c1c' },
+  tan: { camo: ['#8d7f60', '#6d6046', '#a59776', '#564b37'], vest: '#76674b', helmet: '#80735a', face: '#8c7a5c', pants: ['#86795b', '#665a41', '#9d8f70', '#51472f'], pouch: '#6f6147', furniture: '#6e5d43' },
+  heavy: { camo: ['#3a3d37', '#2a2c28', '#4a4d45', '#1f201d'], vest: '#2c2e2a', helmet: '#34372f', face: '#3b3d38', pants: ['#3a3d37', '#2a2c28', '#4a4d45', '#1f201d'], pouch: '#2f312c', furniture: '#1f1f1f' },
 };
 
 function camoRegion(ctx, x0, y0, w, h, cols, seed) {
@@ -164,6 +164,9 @@ function camoRegion(ctx, x0, y0, w, h, cols, seed) {
     if (n1 > 0.56) col = c[1];
     if (n2 > 0.6) col = c[2];
     if (n3 > 0.64) col = c[3];
+    // thin dark branches and pale highlights (MultiCam-style layering)
+    if (Math.abs(fbm(x / 22, y / 22, seed + 130, 3) - 0.5) < 0.03 && fbm(x / 60, y / 60, seed + 170, 2) > 0.45) col = c[3].map((v) => v * 0.6);
+    if (fbm(x / 8, y / 8, seed + 210, 3) > 0.72) col = col.map((v) => Math.min(255, v * 1.22 + 12));
     const f = 0.9 + hash(x, y, seed) * 0.12 + ((x + y) % 3 === 0 ? -0.03 : 0); // weave grain
     const k = (y * w + x) * 4;
     img.data[k] = col[0] * f; img.data[k + 1] = col[1] * f; img.data[k + 2] = col[2] * f; img.data[k + 3] = 255;
@@ -532,4 +535,96 @@ export function weaponFinish({ base, wear, dust = 0.35, scratches = 70, rough = 
   const map = tex(col, { repeat: true });
   const roughness = tex(rc, { srgb: false, repeat: true });
   return { map, roughness, normal: normalFromHeight(hgt, S, S, 1.2) };
+}
+
+/** Engraved roll marks for the lower receiver (white on transparent, used as an alpha-tested decal). */
+export function rollMarkTexture() {
+  const c = canvas(512, 218), ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, 512, 218);
+  ctx.fillStyle = '#fff';
+  ctx.textBaseline = 'middle';
+  ctx.font = 'bold 44px "Arial Narrow", Arial, sans-serif';
+  ctx.fillText('M4A1 CARBINE', 18, 44);
+  ctx.font = 'bold 38px "Arial Narrow", Arial, sans-serif';
+  ctx.fillText('CAL 5.56 MM', 18, 104);
+  ctx.font = '34px "Arial Narrow", Arial, sans-serif';
+  ctx.fillText('SER  W  457213', 18, 164);
+  // pitted, worn engraving fill
+  const img = ctx.getImageData(0, 0, 512, 218);
+  for (let i = 3; i < img.data.length; i += 4) if (img.data[i] > 0 && Math.random() < 0.18) img.data[i] = 0;
+  ctx.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  return t;
+}
+
+/** OCP / MultiCam-style camouflage: soft tan and olive blobs with dark brown branches and cream highlights. */
+export function ocpCamoTexture(S = 512) {
+  const c = canvas(S), ctx = c.getContext('2d');
+  const img = ctx.createImageData(S, S);
+  const P = S / 64;
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const u = x / 64, v = y / 64;
+    const n = (k, seed, oct = 4) => fbm(u * k + seed * 0.37, v * k + seed * 0.19, seed, oct, P * k);
+    let col = [166, 150, 118];                                        // tan base
+    if (n(0.75, 31) > 0.56) col = [120, 118, 86];                      // olive
+    if (n(1.25, 37) > 0.6) col = [187, 172, 138];                      // light khaki
+    if (n(1.0, 41) > 0.63) col = [107, 88, 66];                        // brown
+    if (Math.abs(n(2.0, 43, 3) - 0.5) < 0.035 && n(0.5, 47, 2) > 0.45) col = [66, 54, 42]; // branches
+    if (n(2.5, 53, 3) > 0.72) col = [205, 196, 170];                   // highlights
+    const f = 0.93 + Math.random() * 0.09;
+    const k = (y * S + x) * 4;
+    img.data[k] = col[0] * f; img.data[k + 1] = col[1] * f; img.data[k + 2] = col[2] * f; img.data[k + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  return tex(c, { srgb: true, repeat: true });
+}
+
+/** Ripstop weave normal map: fine plain weave with a heavier reinforcing thread grid. */
+export function ripstopNormal(S = 256) {
+  const c = canvas(S), ctx = c.getContext('2d');
+  const img = ctx.createImageData(S, S);
+  const h = new Float32Array(S * S);
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const wx = Math.sin(x * Math.PI / 2) * (((y >> 1) & 1) ? 1 : -1), wy = Math.sin(y * Math.PI / 2) * (((x >> 1) & 1) ? 1 : -1);
+    const grid = (x % 32 < 2 || y % 32 < 2) ? 1.6 : 0;
+    h[y * S + x] = 0.35 * (wx + wy) + grid + (Math.random() - 0.5) * 0.3;
+  }
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const dx = h[y * S + ((x + 1) % S)] - h[y * S + ((x + S - 1) % S)];
+    const dy = h[((y + 1) % S) * S + x] - h[((y + S - 1) % S) * S + x];
+    const n = [-dx * 0.35, -dy * 0.35, 1], l = Math.hypot(...n);
+    const k = (y * S + x) * 4;
+    img.data[k] = (n[0] / l * 0.5 + 0.5) * 255; img.data[k + 1] = (n[1] / l * 0.5 + 0.5) * 255; img.data[k + 2] = (n[2] / l * 0.5 + 0.5) * 255; img.data[k + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  return tex(c, { srgb: false, repeat: true });
+}
+
+/** Overcast storm sky (equirectangular): layered grey cloud deck, brighter towards the horizon. */
+export function overcastSkyTexture() {
+  const W = 1024, H = 512;
+  const c = canvas(W, H), ctx = c.getContext('2d');
+  const img = ctx.createImageData(W, H);
+  for (let y = 0; y < H; y++) {
+    const lat = (0.5 - (y + 0.5) / H) * Math.PI; // +pi/2 at the top
+    const up = Math.max(0, Math.sin(lat));
+    for (let x = 0; x < W; x++) {
+      // clouds are sampled on a plane above the viewer so they shrink towards the horizon
+      const k = 1 / Math.max(0.08, up);
+      const az = (x / W) * Math.PI * 2;
+      const u = Math.cos(az) * k * 0.9, v = Math.sin(az) * k * 0.9;
+      const n = fbm(u + 20, v + 20, 71, 5) * 0.7 + fbm(u * 3 + 5, v * 3, 73, 3) * 0.3;
+      let l = 118 + up * -38 + (n - 0.5) * 70 * Math.min(1, up * 4 + 0.2);
+      if (lat < 0) l = 112; // below the horizon: flat grey (ground haze)
+      const i = (y * W + x) * 4;
+      img.data[i] = l * 0.97; img.data[i + 1] = l; img.data[i + 2] = l * 1.05; img.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const t = tex(c, { srgb: true });
+  t.mapping = THREE.EquirectangularReflectionMapping;
+  t.wrapS = THREE.RepeatWrapping;
+  return t;
 }

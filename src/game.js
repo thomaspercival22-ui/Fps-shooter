@@ -2,6 +2,7 @@
 // scoring, pickups, explosions and flashbangs.
 import * as THREE from 'three';
 import { settings, getBest, setBest } from './settings.js';
+import { SUN_INTENSITY, ENV_INTENSITY } from './assets.js';
 import { DIFFICULTY, SCORE, GRENADES } from './config.js';
 import { buildLevel } from './level.js';
 import { Player } from './player.js';
@@ -13,10 +14,11 @@ import { Grenades } from './grenades.js';
 import { HUD } from './hud.js';
 import { Input } from './input.js';
 import { RAY_ALL } from './physics.js';
-import { PostFX, MODE, thermalMaterial, withThermal } from './post.js';
+import { PostFX, MODE, SHADOW, thermalMaterial, withThermal } from './post.js';
 import { Drone } from './drone.js';
 import { soldierOptions } from './soldier.js';
 import { nightSkyTexture } from './textures.js';
+import { Rain } from './weather.js';
 
 // Direction of the moon painted into the night sky texture.
 const MOON_DIR = (() => {
@@ -26,9 +28,11 @@ const MOON_DIR = (() => {
 
 const DEG = Math.PI / 180;
 const QUALITY = {
-  low: { scale: 0.7, shadows: false, shadowSize: 1024 },
-  medium: { scale: 1.0, shadows: true, shadowSize: 1024 },
-  high: { scale: 1.5, shadows: true, shadowSize: 2048 },
+  low: { scale: 0.7, shadows: false, shadowSize: 1024, soft: false },
+  medium: { scale: 1.0, shadows: true, shadowSize: 1024, soft: false },
+  high: { scale: 1.75, shadows: true, shadowSize: 2048, soft: true },
+  ultra: { scale: 2.5, shadows: true, shadowSize: 4096, soft: true },
+  auto: { scale: 1.35, shadows: true, shadowSize: 2048, soft: true },
 };
 
 export class Game {
@@ -46,20 +50,23 @@ export class Game {
     const scene = this.scene = new THREE.Scene();
     scene.background = assets.skyTex;
     scene.environment = assets.envMap;
-    scene.environmentIntensity = 0.85;
+    scene.environmentIntensity = ENV_INTENSITY;
     scene.backgroundIntensity = 1.0;
     this.fogColor = new THREE.Color(0xd3d9de);
-    scene.fog = new THREE.Fog(this.fogColor, 90, 750);
-    this.camera = new THREE.PerspectiveCamera(60, 1, 0.05, 1500);
+    // classic distance fog for the lower presets; Ultra/High use the post-processed atmosphere
+    this.fog = new THREE.Fog(this.fogColor, 90, 750);
+    scene.fog = this.fog;
+    this.atmos = { fogColor: new THREE.Color(), sunColor: new THREE.Color(), sunDir: new THREE.Vector3(), fogDensity: 0.00045, fogFalloff: 0.012 };
+    this.camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1500);
     scene.add(this.camera);
 
     // sun (direction from the sky HDR)
     this.sunDir = assets.sunDir.clone();
     if (this.sunDir.y < 0.35) { this.sunDir.y = 0.35; this.sunDir.normalize(); }
-    const sun = this.sun = new THREE.DirectionalLight(0xfff0dc, 3.1);
+    const sun = this.sun = new THREE.DirectionalLight(0xfff0dc, SUN_INTENSITY);
     sun.castShadow = true;
     const sc = sun.shadow.camera;
-    sc.left = -38; sc.right = 38; sc.top = 38; sc.bottom = -38; sc.near = 1; sc.far = 220;
+    sc.left = -SHADOW.half; sc.right = SHADOW.half; sc.top = SHADOW.half; sc.bottom = -SHADOW.half; sc.near = SHADOW.near; sc.far = SHADOW.far;
     sun.shadow.bias = -0.0004;
     sun.shadow.normalBias = 0.035;
     scene.add(sun, sun.target);
@@ -79,6 +86,8 @@ export class Game {
     this.pickupModels = { ammo: assets.models.ammo_box, health: assets.models.medical_box };
     this.post = new PostFX(renderer);
     this.drone = new Drone(this);
+    this.rain = new Rain(this, this.level.ao);
+    this.weather = 'clear';
     this.viewMode = 'normal';
     this.thermalPalette = 0;
     this.night = false;
@@ -109,23 +118,31 @@ export class Game {
 
   // ---------------- setup ----------------
   applyQuality() {
-    const q = QUALITY[settings.quality] || QUALITY.medium;
+    const name = QUALITY[settings.quality] ? settings.quality : 'medium';
+    const q = QUALITY[name];
     const dpr = window.devicePixelRatio || 1;
-    this.maxScale = Math.min(dpr, settings.quality === 'high' ? 1.75 : settings.quality === 'auto' ? 1.35 : q.scale);
-    this.renderScale = settings.quality === 'auto' ? Math.min(1.0, this.maxScale) : Math.min(dpr, q.scale);
-    const shadows = settings.quality === 'auto' ? true : q.shadows;
-    const size = settings.quality === 'high' ? 2048 : 1024;
+    this.maxScale = Math.min(dpr, q.scale);
+    this.renderScale = name === 'auto' ? Math.min(1.0, this.maxScale) : Math.min(dpr, q.scale);
     const r = this.renderer;
-    if (r.shadowMap.enabled !== shadows) {
-      r.shadowMap.enabled = shadows;
+    this.post.setQuality(name);
+    const fog = this.post.ao ? null : this.fog;
+    const type = q.soft ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+    if (r.shadowMap.enabled !== q.shadows || r.shadowMap.type !== type || this.scene.fog !== fog) {
+      r.shadowMap.enabled = q.shadows;
+      r.shadowMap.type = type;
+      this.scene.fog = fog;
       this.scene.traverse((o) => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { m.needsUpdate = true; }); });
     }
-    r.shadowMap.type = settings.quality === 'high' ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
-    this.post.setQuality(settings.quality === 'low' ? 'low' : 'high');
+    // shadows are redrawn once per frame by render(), not on every render call
+    r.shadowMap.autoUpdate = false;
+    const size = q.shadowSize;
     if (this.sun.shadow.mapSize.x !== size) {
       this.sun.shadow.mapSize.set(size, size);
       this.sun.shadow.map?.dispose(); this.sun.shadow.map = null;
     }
+    // finer shadow texels need less bias
+    this.sun.shadow.bias = -0.0004 * 1024 / size - 0.00005;
+    this.sun.shadow.normalBias = 0.012 + 0.024 * 1024 / size;
     this.onResize();
   }
 
@@ -143,13 +160,14 @@ export class Game {
     this.hud?.resize(w, h);
     if (this.post) { const b = this.renderer.getDrawingBufferSize(new THREE.Vector2()); this.post.setSize(b.x, b.y); }
     const bufH = h * this.renderScale;
-    this.effects?.setFog(this.fogColor, this.scene.fog.near, this.scene.fog.far, bufH / (2 * Math.tan(this.camera.fov * DEG / 2)));
+    this.effects?.setFog(this.fogColor, this.fog.near, this.fog.far, bufH / (2 * Math.tan(this.camera.fov * DEG / 2)));
   }
 
   // ---------------- flow ----------------
   start() {
     this.difficulty = DIFFICULTY[settings.difficulty] || DIFFICULTY.regular;
-    if (this.weapons.slots.primary.key !== settings.primary) {
+    const optic = settings.primary === 'm4' ? settings.optic : 'holo';
+    if (this.weapons.slots.primary.key !== settings.primary || this.weapons.optic !== optic) {
       this.weapons = new WeaponSystem(this, settings.primary);
       this.weapons.scene.environment = this.assets.envMap;
       this.onResize();
@@ -206,21 +224,49 @@ export class Game {
       if (!this.nightSky) this.nightSky = nightSkyTexture();
       s.background = this.nightSky; s.backgroundIntensity = 0.6;
       s.environmentIntensity = 0.05;
-      this.fogColor.set(0x06080d); s.fog.near = 20; s.fog.far = 230;
+      this.fogColor.set(0x06080d); this.fog.near = 20; this.fog.far = 230;
+      this.atmos.fogColor.setRGB(0.006, 0.008, 0.014); this.atmos.sunColor.setRGB(0.01, 0.012, 0.02);
+      this.atmos.fogDensity = 0.004; this.atmos.fogFalloff = 0.02;
       this.sun.color.set(0x9db4ff); this.sun.intensity = 0.45;
       this.lightDir.copy(MOON_DIR);
       if (!this.level.lamps.parent) s.add(this.level.lamps);
     } else {
       s.background = this.assets.skyTex; s.backgroundIntensity = 1.0;
-      s.environmentIntensity = 0.85;
-      this.fogColor.set(0xd3d9de); s.fog.near = 90; s.fog.far = 750;
-      this.sun.color.set(0xfff0dc); this.sun.intensity = 3.1;
+      s.environmentIntensity = ENV_INTENSITY;
+      this.fogColor.set(0xd3d9de); this.fog.near = 90; this.fog.far = 750;
+      // desert haze: the horizon colour of the sky, lit warm towards the sun
+      const hz = this.assets.horizon, hm = Math.max(hz.r, hz.g, hz.b) || 1;
+      this.atmos.fogColor.setRGB(hz.r / hm * 0.78, hz.g / hm * 0.78, hz.b / hm * 0.8);
+      this.atmos.sunColor.setRGB(1.0, 0.8, 0.55);
+      this.atmos.fogDensity = 0.00045; this.atmos.fogFalloff = 0.012;
+      this.sun.color.set(0xfff0dc); this.sun.intensity = SUN_INTENSITY;
       this.lightDir.copy(this.sunDir);
       if (this.level.lamps.parent) s.remove(this.level.lamps);
     }
-    s.fog.color.copy(this.fogColor);
+    this._applyWeather(settings.weather === 'rain');
+    this.fog.color.copy(this.fogColor);
+    this.atmos.sunDir.copy(this.lightDir);
     this.effects.setLight(night ? 0.07 : 1);
     this.onResize();
+  }
+
+  /** Storm: overcast sky, flat grey light, soft shadows, rain haze, wet world. */
+  _applyWeather(rain) {
+    this.weather = rain ? 'rain' : 'clear';
+    const s = this.scene, n = this.night;
+    this.sun.shadow.intensity = rain ? 0.35 : 1;
+    if (rain) {
+      s.background = this.rain.overcastSky(); s.backgroundIntensity = n ? 0.035 : 0.9; // storm clouds hide the stars
+      s.environmentIntensity = n ? 0.03 : ENV_INTENSITY * 0.55;
+      this.sun.intensity = n ? 0.25 : SUN_INTENSITY * 0.28;
+      this.sun.color.set(n ? 0x8da0c8 : 0xdde4ee);
+      this.fogColor.set(n ? 0x050608 : 0x8c9196); this.fog.near = n ? 12 : 25; this.fog.far = n ? 160 : 280;
+      if (n) this.atmos.fogColor.setRGB(0.004, 0.005, 0.007); else this.atmos.fogColor.setRGB(0.33, 0.35, 0.37);
+      this.atmos.sunColor.setRGB(n ? 0.005 : 0.06, n ? 0.005 : 0.06, n ? 0.006 : 0.065);
+      this.atmos.fogDensity = n ? 0.008 : 0.0055; this.atmos.fogFalloff = 0.01;
+    }
+    this.baseEnv = s.environmentIntensity;
+    this.rain.set(rain);
   }
 
   toggleNvg() {
@@ -524,6 +570,9 @@ export class Game {
     if (input.consume('thermal')) this.cycleThermal();
     if (input.consume('drone') && p.alive) { if (this.drone.active) this.drone.exit(); else if (!this.drone.deploy()) this.hud.pickup(this.drone.count <= 0 ? 'NO DRONES LEFT' : ''); }
     this.level.grassUniforms.uTime.value = this.time;
+    this.rain.update(dt, this.drone.active ? this.drone.camera : this.camera);
+    this.level.groundUniforms.rainTime.value = this.time;
+    if (this.rain.active) this.scene.environmentIntensity = this.baseEnv * (1 + this.rain.flash * 6);
     if (this.drone.active) { this._updateDroneControl(dt); return; }
     this.drone.update(dt, input, [0, 0]);
 
@@ -591,6 +640,7 @@ export class Game {
     // eye adaptation: indoors (a roof overhead) the exposure slowly opens up
     const roofed = this.level.world.ceilingAt(p.pos.x, p.pos.z, 0.2, p.pos.y + 1.9) < p.pos.y + 8;
     const expTarget = roofed ? 1.55 : 1.0;
+    this.audio.loopMuffle('rain', roofed);
     this.eyeExposure = (this.eyeExposure || 1) + (expTarget - (this.eyeExposure || 1)) * Math.min(1, dt * (roofed ? 0.9 : 1.6));
     this._updateLasers();
 
@@ -748,16 +798,38 @@ export class Game {
     const playing = this.state === 'playing';
     const droneView = playing && (d.active || d.transition > 0);
     const cam = d.active ? d.camera : this.camera;
-    const mode = droneView ? MODE.fpv : playing ? MODE[this.viewMode] : MODE.normal;
+    const digital = playing && !droneView && this.player.alive && this.weapons.isScoped && this.weapons.def.scope === 'digital';
+    const mode = droneView ? MODE.fpv : digital ? MODE.scope : playing ? MODE[this.viewMode] : MODE.normal;
     const thermal = mode === MODE.thermal;
     r.setRenderTarget(P.rt);
     r.autoClear = false;
     r.clear();
     d.model.visible = !d.active; // the FPV camera sits inside the drone
+    r.shadowMap.needsUpdate = r.shadowMap.enabled;
     if (thermal) this._renderThermal(this.scene, cam);
-    else r.render(this.scene, cam);
+    else if (P.ao) {
+      // 1) opaque world  2) AO + atmosphere  3) particles, tracers, decals and glows on top
+      this._splitLayers();
+      cam.layers.set(0);
+      r.render(this.scene, cam);
+      const A = this.atmos, gu = this.level.groundUniforms;
+      A.wet = this.weather === 'rain' ? 1 : 0;
+      A.contact = !this.night && this.weather !== 'rain' ? 1 : 0.35;
+      A.heightMap = gu.heightMap.value; A.macroMap = gu.macroMap.value;
+      P.world(cam, A);
+      cam.layers.set(1);
+      const bg = this.scene.background;
+      this.scene.background = null;
+      r.render(this.scene, cam);
+      this.scene.background = bg;
+      cam.layers.enableAll();
+    } else {
+      cam.layers.enableAll();
+      r.render(this.scene, cam);
+    }
     if (playing && !droneView && this.player.alive && this.weapons.rig.visible) {
       r.clearDepth();
+      r.shadowMap.needsUpdate = r.shadowMap.enabled && !thermal;
       if (thermal) this._renderThermal(this.weapons.scene, this.weapons.camera);
       else r.render(this.weapons.scene, this.weapons.camera);
     }
@@ -781,15 +853,33 @@ export class Game {
     this._sunVis = (this._sunVis || 0) + (sunTarget - (this._sunVis || 0)) * 0.15;
     const sunUV = this._sunUV || (this._sunUV = new THREE.Vector2());
     sunUV.set(sp.x * 0.5 + 0.5, sp.y * 0.5 + 0.5);
+    // light shafts when looking towards the sun
+    let rays = 0;
+    if (!this.night && mode === MODE.normal && this.weather !== 'rain') {
+      const f = this._fwd || (this._fwd = new THREE.Vector3());
+      f.set(0, 0, -1).applyQuaternion(cam.quaternion);
+      rays = 0.55 * THREE.MathUtils.smoothstep(f.dot(this.lightDir), 0.35, 0.92);
+    }
     P.finish({
+      world: !thermal, rays, haze: this.night || this.weather === 'rain' ? 0 : 1, tonemap: 1,
       sunVis: this._sunVis * 0.8, sunUV,
       mode, time: this.time, lowHealth, signal, palette: this.thermalPalette,
-      exposure: n ? (droneView ? 2.4 : 1.3) : (droneView || !playing ? 1.0 : (this.eyeExposure || 1)),
+      exposure: (n ? (droneView ? 2.4 : 1.3) : (droneView || !playing ? 1.0 : (this.eyeExposure || 1))) * (1 + this.rain.flash * 0.9),
       bloomStrength: n ? 0.14 : 0.07, threshold: n ? 0.7 : 1.5,
-      nvgGain: n ? 9 : 1.1, noise: n ? 0.22 : 0.07,
+      nvgGain: mode === MODE.scope ? (n ? 14 : 1) : n ? 9 : 1.1, noise: n ? 0.22 : 0.07,
       vignette: mode === MODE.fpv ? 0.15 : 0.35, grain: n ? 0.032 : 0.018,
     });
     this.hud.captureAfterimage(r.domElement);
+  }
+
+  /** Puts particles, tracers, sprites and other transparent things on layer 1 (drawn after AO/fog); lights on both. */
+  _splitLayers() {
+    this.scene.traverse((o) => {
+      if (o.isLight) { o.layers.enableAll(); return; }
+      if (!o.isMesh && !o.isPoints && !o.isSprite && !o.isLine) return;
+      const m = o.material;
+      o.layers.set(o.isPoints || o.isSprite || (m && !Array.isArray(m) && m.transparent) ? 1 : 0);
+    });
   }
 
   /** Thermal pass: every visible mesh writes its temperature; effects that have no heat are hidden. */

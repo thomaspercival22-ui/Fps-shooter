@@ -11,29 +11,45 @@ import sharp from 'sharp';
 const API = 'https://api.polyhaven.com';
 const OUT = 'assets';
 
+// id: { size: colour + normal map size, arm: AO/roughness/metal map size, disp: height map size }
 const TEXTURES = {
-  // id: max size (px) for each map
-  gravelly_sand: 2048,
-  damaged_plaster: 2048,
-  concrete_wall_008: 2048,
-  concrete_floor_worn_001: 1024,
-  rusty_corrugated_iron: 1024,
-  container_side: 1024,
-  green_rough_planks: 1024,
+  gravelly_sand: { size: 4096, arm: 2048, disp: 2048 },
+  dry_ground_rocks: { size: 2048, arm: 1024, disp: 2048 },
+  damaged_plaster: { size: 2048, arm: 1024 },
+  concrete_wall_008: { size: 2048, arm: 1024 },
+  concrete_floor_worn_001: { size: 2048, arm: 1024 },
+  rusty_corrugated_iron: { size: 2048, arm: 1024 },
+  container_side: { size: 2048, arm: 1024 },
+  green_rough_planks: { size: 1024, arm: 512 },
+  hessian_380: { size: 2048, arm: 1024 },
+  hessian_230: { size: 1024, arm: 512 },
 };
+// Both ground height maps share one texture (R = gravelly sand, G = dry ground).
+const GROUND_HEIGHT = ['gravelly_sand', 'dry_ground_rocks'];
+// id: texture size. Heavy scans are decimated afterwards by tools/simplify-models.mjs.
 const MODELS = {
-  barrel_03: 512,
-  ammo_box: 512,
-  medical_box: 512,
-  old_tyre: 512,
-  exterior_aircon_unit: 512,
-  utility_box_02: 512,
-  propane_tank: 512,
-  trashbag: 512,
-  portable_generator: 512,
-  covered_car: 1024,
-  metal_jerrycan: 512,
-  security_light: 512,
+  barrel_03: 1024,
+  Barrel_02: 1024,
+  ammo_box: 1024,
+  medical_box: 1024,
+  old_tyre: 1024,
+  exterior_aircon_unit: 1024,
+  utility_box_02: 1024,
+  propane_tank: 1024,
+  trashbag: 1024,
+  portable_generator: 1024,
+  covered_car: 2048,
+  metal_jerrycan: 1024,
+  security_light: 1024,
+  concrete_road_barrier_02: 2048,
+  wooden_military_crate: 2048,
+  cement_bag: 1024,
+  rollershutter_door: 1024,
+  wild_rooibos_bush: 1024,
+  dry_branches_medium_01: 1024,
+  namaqualand_stones_01: 1024,
+  rock_09: 2048,
+  quiver_tree_02: 1024,
 };
 const HDRI = 'kloofendal_48d_partly_cloudy_puresky';
 
@@ -60,31 +76,53 @@ async function jpeg(buf, size, out, quality = 80) {
     .jpeg({ quality, mozjpeg: true }).toFile(out);
 }
 
+const pick = (entry, size) => entry[['1k', '2k', '4k', '8k'].find((k) => parseInt(k, 10) * 1024 >= size && entry[k]) || '8k'];
+async function width(file) {
+  return fs.existsSync(file) ? (await sharp(file).metadata()).width : 0;
+}
+
 async function textures() {
-  for (const [id, size] of Object.entries(TEXTURES)) {
-    if (fs.existsSync(`${OUT}/textures/${id}/diff.jpg`)) continue;
+  for (const [id, cfg] of Object.entries(TEXTURES)) {
+    const dir = `${OUT}/textures/${id}`;
+    if (await width(`${dir}/diff.jpg`) === cfg.size && await width(`${dir}/arm.jpg`) === cfg.arm) continue;
     const files = await json(`${API}/files/${id}`);
-    const maps = { diff: files.Diffuse, nor: files.nor_gl, arm: files.arm };
-    for (const [name, entry] of Object.entries(maps)) {
-      const buf = await download(entry[size > 1024 ? '2k' : '1k'].jpg.url);
-      await jpeg(buf, name === 'arm' ? Math.min(1024, size / 2) : size, `${OUT}/textures/${id}/${name}.jpg`, name === 'nor' ? 85 : 78);
+    const maps = { diff: [files.Diffuse, cfg.size, 80], nor: [files.nor_gl, cfg.size, 86], arm: [files.arm, cfg.arm, 80] };
+    for (const [name, [entry, size, q]] of Object.entries(maps)) {
+      await jpeg(await download(pick(entry, size).jpg.url), size, `${dir}/${name}.jpg`, q);
     }
-    console.log('texture', id);
+    console.log('texture', id, cfg.size);
+  }
+  // packed ground height map for parallax occlusion mapping
+  const out = `${OUT}/textures/ground_height.jpg`;
+  const size = TEXTURES[GROUND_HEIGHT[0]].disp;
+  if (await width(out) !== size) {
+    const chans = [];
+    for (const id of GROUND_HEIGHT) {
+      const files = await json(`${API}/files/${id}`);
+      const buf = await download(pick(files.Displacement, size).jpg.url);
+      chans.push(await sharp(buf).resize(size, size).greyscale().normalise().raw().toBuffer());
+    }
+    const rgb = Buffer.alloc(size * size * 3);
+    for (let i = 0; i < size * size; i++) { rgb[i * 3] = chans[0][i]; rgb[i * 3 + 1] = chans[1][i]; rgb[i * 3 + 2] = 128; }
+    await sharp(rgb, { raw: { width: size, height: size, channels: 3 } }).jpeg({ quality: 90, mozjpeg: true }).toFile(out);
+    console.log('ground height', size);
   }
 }
 
 async function models() {
   for (const [id, size] of Object.entries(MODELS)) {
-    if (fs.existsSync(`${OUT}/models/${id}/${id}.gltf`)) continue;
+    const stamp = `${OUT}/models/${id}/.size`;
+    if (fs.existsSync(`${OUT}/models/${id}/${id}.gltf`) && fs.existsSync(stamp) && fs.readFileSync(stamp, 'utf8') === String(size)) continue;
+    fs.rmSync(`${OUT}/models/${id}`, { recursive: true, force: true });
     const files = await json(`${API}/files/${id}`);
-    const g = files.gltf['1k'].gltf;
+    const g = files.gltf[size > 1024 ? '2k' : '1k'].gltf;
     const dir = `${OUT}/models/${id}`;
     fs.mkdirSync(dir, { recursive: true });
     const gltf = JSON.parse((await download(g.url)).toString());
     for (const [rel, inc] of Object.entries(g.include)) {
       const buf = await download(inc.url);
       if (rel.endsWith('.jpg') || rel.endsWith('.png')) {
-        await jpeg(buf, size, path.join(dir, rel.replace(/\.png$/, '.jpg')), rel.includes('nor') ? 85 : 78);
+        await jpeg(buf, rel.includes('_arm') ? Math.max(512, size / 2) : size, path.join(dir, rel.replace(/\.png$/, '.jpg')), rel.includes('nor') ? 86 : 80);
       } else {
         fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
         fs.writeFileSync(path.join(dir, rel), buf);
@@ -95,18 +133,19 @@ async function models() {
       img.mimeType = 'image/jpeg';
     }
     fs.writeFileSync(`${dir}/${id}.gltf`, JSON.stringify(gltf));
-    console.log('model', id);
+    fs.writeFileSync(stamp, String(size));
+    console.log('model', id, size);
   }
 }
 
 async function sky() {
-  if (fs.existsSync(`${OUT}/sky/sky.jpg`)) return;
+  if (await width(`${OUT}/sky/sky.jpg`) === 8192) return;
   const files = await json(`${API}/files/${HDRI}`);
   fs.mkdirSync(`${OUT}/sky`, { recursive: true });
   // Small HDR for image-based lighting + a sharper tonemapped JPG for the visible sky.
   fs.writeFileSync(`${OUT}/sky/sky_1k.hdr`, await download(files.hdri['1k'].hdr.url));
   const tm = await download(files.tonemapped.url);
-  await sharp(tm, { limitInputPixels: false }).resize(4096, 2048).jpeg({ quality: 82, mozjpeg: true })
+  await sharp(tm, { limitInputPixels: false }).resize(8192, 4096).jpeg({ quality: 84, mozjpeg: true })
     .toFile(`${OUT}/sky/sky.jpg`);
   console.log('sky', HDRI);
 }

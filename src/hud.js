@@ -230,6 +230,8 @@ export class HUD {
     // scope
     const scoped = w.isScoped;
     if (this.last.scoped !== scoped) { e.scope.classList.toggle('hidden', !scoped); this.last.scoped = scoped; }
+    const kind = scoped ? `${w.def.scope}|${g.night}` : this.last.scopeKind;
+    if (scoped && this.last.scopeKind !== kind) { this.last.scopeKind = kind; this._drawScope(); }
     // damage direction indicators
     const yaw = p.yaw;
     const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
@@ -372,6 +374,7 @@ export class HUD {
     const c = this.scopeCanvas, ctx = c.getContext('2d');
     const w = c.width, h = c.height, r = Math.min(w, h) * 0.47, cx = w / 2, cy = h / 2;
     ctx.clearRect(0, 0, w, h);
+    if (this.game.weapons?.def.scope === 'digital') { this._drawDigitalScope(ctx, w, h, cx, cy, r); return; }
     ctx.fillStyle = '#000';
     ctx.beginPath(); ctx.rect(0, 0, w, h); ctx.arc(cx, cy, r, 0, Math.PI * 2, true); ctx.fill();
     // lens edge shading
@@ -400,5 +403,47 @@ export class HUD {
     }
     ctx.fillStyle = 'rgba(255,40,30,0.9)';
     ctx.beginPath(); ctx.arc(cx, cy, Math.max(1.5, r * 0.006), 0, Math.PI * 2); ctx.fill();
+  }
+
+  /** Eyepiece of the digital scope: display bezel, electronic reticle and on-screen data. */
+  _drawDigitalScope(ctx, w, h, cx, cy, r) {
+    const night = this.game.night;
+    ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.rect(0, 0, w, h); ctx.arc(cx, cy, r, 0, Math.PI * 2, true); ctx.fill();
+    const g = ctx.createRadialGradient(cx, cy, r * 0.86, cx, cy, r);
+    g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.9)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    const ink = night ? 'rgba(220,255,225,0.92)' : 'rgba(255,70,40,0.95)';
+    ctx.strokeStyle = ink; ctx.fillStyle = ink;
+    const lw = Math.max(1.5, r * 0.006);
+    ctx.lineWidth = lw;
+    // crosshair with centre gap, stadia ticks and a chevron
+    ctx.beginPath();
+    ctx.moveTo(cx - r * 0.7, cy); ctx.lineTo(cx - r * 0.05, cy);
+    ctx.moveTo(cx + r * 0.05, cy); ctx.lineTo(cx + r * 0.7, cy);
+    ctx.moveTo(cx, cy + r * 0.05); ctx.lineTo(cx, cy + r * 0.7);
+    ctx.stroke();
+    for (let i = 1; i <= 5; i++) {
+      const d = i * r * 0.1, t = i % 5 === 0 ? r * 0.05 : r * 0.025;
+      ctx.beginPath();
+      ctx.moveTo(cx - d, cy - t / 2); ctx.lineTo(cx - d, cy + t / 2);
+      ctx.moveTo(cx + d, cy - t / 2); ctx.lineTo(cx + d, cy + t / 2);
+      ctx.moveTo(cx - t / 2, cy + d); ctx.lineTo(cx + t / 2, cy + d);
+      ctx.stroke();
+    }
+    ctx.beginPath(); ctx.moveTo(cx - r * 0.03, cy + r * 0.035); ctx.lineTo(cx, cy); ctx.lineTo(cx + r * 0.03, cy + r * 0.035); ctx.stroke();
+    // on-screen display
+    ctx.font = `600 ${Math.round(r * 0.055)}px ui-monospace, monospace`;
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+    ctx.fillText('3.5x', cx - r * 0.55, cy - r * 0.62);
+    ctx.textAlign = 'right';
+    ctx.fillText(night ? 'NIGHT  IR3' : 'DAY', cx + r * 0.55, cy - r * 0.62);
+    ctx.textAlign = 'center';
+    ctx.fillText('100 m', cx, cy + r * 0.8);
+    // battery
+    const bx = cx + r * 0.4, by = cy + r * 0.62, bw = r * 0.12, bh = r * 0.05;
+    ctx.strokeRect(bx, by, bw, bh); ctx.fillRect(bx + bw, by + bh * 0.3, bw * 0.08, bh * 0.4);
+    ctx.fillRect(bx + 2, by + 2, (bw - 4) * 0.75, bh - 4);
   }
 }

@@ -174,24 +174,65 @@ function footstep() {
   s.chain(s.noise(0.1), s.filter('lowpass', 350), s.env(0, 0.004, 0.45, 0.06));
   return s.render();
 }
+/** Bullet impact on a material: each has its own transient, body and debris. */
 function impact(kind) {
-  const s = new Synth(0.5);
+  const s = new Synth(0.7);
+  const R = (a, b) => a + Math.random() * (b - a);
+  const debris = (n, t0, t1, f, vol, q = 2) => {
+    for (let i = 0; i < n; i++) { const t = R(t0, t1); s.chain(s.noise(0.012, t), s.filter('bandpass', f * R(0.7, 1.4), q), s.env(t, 0.0005, vol * R(0.4, 1), R(0.006, 0.02))); }
+  };
   if (kind === 'metal') {
-    [1900, 2750, 4100].forEach((f, i) => s.chain(s.osc('sine', f * (0.9 + Math.random() * 0.2), f, 0, 0.4), s.env(0, 0.001, 0.25 / (i + 1), 0.3)));
-    s.chain(s.noise(0.03), s.filter('highpass', 2500), s.env(0, 0.0005, 0.6, 0.02));
+    // hard "tank": sharp click, then inharmonic ringing partials of a steel sheet
+    s.chain(s.noise(0.02), s.filter('highpass', 3000), s.env(0, 0.0003, 0.9, 0.012));
+    [870, 1430, 2310, 3170, 4480].forEach((f, i) => s.chain(s.osc('sine', f * R(0.94, 1.06), f * R(0.97, 1.0), 0, 0.6), s.env(0, 0.0008, 0.3 / (i + 1.3), R(0.25, 0.5))));
+    s.chain(s.osc('triangle', R(180, 260), 120, 0, 0.12), s.env(0, 0.001, 0.35, 0.09));
   } else if (kind === 'wood') {
-    s.chain(s.osc('sine', 420, 190, 0, 0.08), s.env(0, 0.001, 0.6, 0.07));
-    s.chain(s.noise(0.06), s.filter('bandpass', 900, 2), s.env(0, 0.001, 0.6, 0.05));
+    // dull knock with splintering
+    s.chain(s.osc('sine', R(360, 460), 170, 0, 0.09), s.env(0, 0.001, 0.7, 0.07));
+    s.chain(s.noise(0.08), s.filter('bandpass', R(700, 1000), 1.8), s.env(0, 0.0008, 0.7, 0.05));
+    debris(6, 0.01, 0.09, 2600, 0.12, 3);
   } else if (kind === 'flesh') {
-    s.chain(s.osc('sine', 130, 70, 0, 0.1), s.env(0, 0.002, 0.8, 0.08));
-    s.chain(s.noise(0.08), s.filter('lowpass', 700), s.env(0, 0.001, 0.7, 0.06));
+    s.chain(s.osc('sine', 130, 60, 0, 0.12), s.env(0, 0.002, 0.9, 0.09));
+    s.chain(s.noise(0.1), s.filter('lowpass', 600), s.env(0, 0.001, 0.8, 0.07));
   } else if (kind === 'sand') {
-    s.chain(s.noise(0.12), s.filter('lowpass', 1400), s.env(0, 0.002, 0.6, 0.08));
-  } else { // concrete / plaster
-    s.chain(s.noise(0.06), s.filter('bandpass', 2200, 1.2), s.env(0, 0.0006, 0.8, 0.035));
-    s.chain(s.osc('sine', 300, 120, 0, 0.05), s.env(0, 0.001, 0.3, 0.04));
-    for (let i = 0; i < 5; i++) { const t = 0.03 + Math.random() * 0.15; s.chain(s.noise(0.01, t), s.filter('bandpass', 3000, 2), s.env(t, 0.0005, 0.05, 0.01)); }
+    // soft thump, sand spray hiss
+    s.chain(s.osc('sine', 110, 55, 0, 0.08), s.env(0, 0.002, 0.5, 0.06));
+    s.chain(s.noise(0.25), s.filter('lowpass', 1600), s.env(0, 0.002, 0.55, 0.09));
+    s.chain(s.noise(0.3, 0.02), s.filter('bandpass', 5000, 0.8), s.env(0.02, 0.01, 0.1, 0.18));
+  } else if (kind === 'glass') {
+    s.chain(s.noise(0.02), s.filter('highpass', 4000), s.env(0, 0.0003, 0.9, 0.01));
+    [3200, 4700, 6100].forEach((f) => s.chain(s.osc('sine', f * R(0.9, 1.1), f, 0, 0.3), s.env(0, 0.0006, 0.15, 0.12)));
+    debris(22, 0.02, 0.45, 6000, 0.2, 5); // shards tinkling down
+  } else if (kind === 'rubber') {
+    s.chain(s.osc('sine', 150, 90, 0, 0.1), s.env(0, 0.002, 0.8, 0.07));
+    s.chain(s.noise(0.05), s.filter('lowpass', 900), s.env(0, 0.001, 0.4, 0.03));
+  } else if (kind === 'plaster') {
+    // softer crack, crumbling plaster
+    s.chain(s.noise(0.05), s.filter('bandpass', 1500, 1), s.env(0, 0.0006, 0.8, 0.04));
+    s.chain(s.osc('sine', 240, 110, 0, 0.06), s.env(0, 0.001, 0.4, 0.05));
+    s.chain(s.noise(0.35, 0.02), s.filter('bandpass', 2400, 1.2), s.env(0.02, 0.02, 0.12, 0.22));
+    debris(8, 0.03, 0.3, 2200, 0.1);
+  } else if (kind === 'water') {
+    s.chain(s.noise(0.2), s.filter('bandpass', 1200, 0.9), s.env(0, 0.001, 0.6, 0.12));
+    s.chain(s.osc('sine', 900, 1700, 0.01, 0.06), s.env(0.01, 0.003, 0.25, 0.05)); // bubble "plip"
+  } else { // concrete / masonry
+    s.chain(s.noise(0.06), s.filter('bandpass', 2200, 1.2), s.env(0, 0.0005, 0.9, 0.03));
+    s.chain(s.osc('sine', 300, 120, 0, 0.05), s.env(0, 0.001, 0.35, 0.04));
+    debris(9, 0.02, 0.25, 3000, 0.1);
   }
+  return s.render();
+}
+
+/** Ricochet: the deformed bullet tumbling away with a falling whine. */
+function ricochet() {
+  const s = new Synth(0.9);
+  const f0 = 2600 + Math.random() * 1600, f1 = 500 + Math.random() * 400, dur = 0.5 + Math.random() * 0.3;
+  s.chain(s.noise(0.02), s.filter('highpass', 2500), s.env(0, 0.0003, 0.8, 0.015)); // strike
+  const o = s.osc('sawtooth', f0, f1, 0.01, dur);
+  const lfo = s.osc('sine', 18 + Math.random() * 10, 18, 0.01, dur); // tumbling wobble
+  const lg = s.ctx.createGain(); lg.gain.value = 120; s.chain(lfo, lg); lg.connect(o.frequency);
+  s.chain(o, s.filter('bandpass', 2000, 1.5), s.env(0.01, 0.02, 0.35, dur));
+  s.chain(s.noise(dur), s.filter('bandpass', 2400, 4), s.env(0.01, 0.03, 0.12, dur));
   return s.render();
 }
 function whiz() {
@@ -250,6 +291,32 @@ async function wind() {
 }
 
 /** One-second seamless loop of FPV motors and prop wash (integer frequencies loop cleanly). */
+/** Steady rain: pink noise hiss plus thousands of tiny droplet ticks (seamless 4 s loop). */
+function rainLoop() {
+  const n = SR * 4;
+  const buf = new AudioBuffer({ length: n, sampleRate: SR, numberOfChannels: 1 });
+  const d = buf.getChannelData(0);
+  let b0 = 0, b1 = 0, b2 = 0;
+  for (let i = 0; i < n; i++) {
+    const w = Math.random() * 2 - 1;
+    b0 = 0.99765 * b0 + w * 0.099; b1 = 0.963 * b1 + w * 0.2965; b2 = 0.57 * b2 + w * 1.0526;
+    d[i] = (b0 + b1 + b2 + w * 0.1848) * 0.05;
+  }
+  for (let k = 0; k < 9000; k++) {
+    const at = (Math.random() * n) | 0, len = 40 + ((Math.random() * 120) | 0), a = 0.05 + Math.random() * 0.25, f = 0.25 + Math.random() * 0.6;
+    for (let j = 0; j < len && at + j < n; j++) d[at + j] += Math.sin(j * f) * a * Math.exp(-j / (len * 0.25));
+  }
+  const f = 4000;
+  for (let i = 0; i < f; i++) { const k = i / f; d[i] = d[i] * k + d[n - f + i] * (1 - k); }
+  return buf;
+}
+/** Thunder: a sharp crack that rolls into a long, low rumble. */
+function thunder() {
+  const s = new Synth(7);
+  s.chain(s.noise(0.3), s.filter('lowpass', 2500), s.env(0, 0.005, 0.5, 0.25));
+  for (let i = 0; i < 6; i++) { const t = 0.1 + Math.random() * 2.5; s.chain(s.noise(3), s.filter('lowpass', 160 + Math.random() * 160), s.env(t, 0.3, 0.6 + Math.random() * 0.6, 2 + Math.random() * 2)); }
+  return s.render();
+}
 function droneLoop() {
   const n = SR;
   const buf = new AudioBuffer({ length: n, sampleRate: SR, numberOfChannels: 1 });
@@ -337,7 +404,8 @@ export class AudioEngine {
     for (let i = 0; i < 3; i++) add(`brass${i}`, brass(1 + i * 0.07));
     add('shellPlastic', clicks([[0, 900, 2, 0.35, 0.04, 300], [0.07, 700, 2, 0.2, 0.03]], 0.2));
     for (let i = 0; i < 4; i++) add(`step${i}`, footstep());
-    for (const k of ['concrete', 'metal', 'wood', 'flesh', 'sand']) { add(`imp_${k}0`, impact(k)); add(`imp_${k}1`, impact(k)); }
+    for (const k of ['concrete', 'metal', 'wood', 'flesh', 'sand', 'glass', 'rubber', 'plaster', 'water']) { add(`imp_${k}0`, impact(k)); add(`imp_${k}1`, impact(k)); }
+    for (let i = 0; i < 3; i++) add(`rico${i}`, ricochet());
     add('hurt0', grunt(118, 0.2, [[650, 5, 1], [1100, 6, 0.6], [2400, 8, 0.2]], 0.5));
     add('hurt1', grunt(105, 0.24, [[560, 5, 1], [950, 6, 0.6], [2300, 8, 0.2]], 0.5));
     add('ehurt0', grunt(128, 0.22, [[700, 5, 1], [1200, 6, 0.5]], 0.6));
@@ -346,6 +414,8 @@ export class AudioEngine {
     add('edeath1', grunt(92, 0.7, [[500, 5, 1], [880, 6, 0.6]], 0.7));
     add('wind', wind());
     add('droneLoop', Promise.resolve(droneLoop()));
+    add('rain', Promise.resolve(rainLoop()));
+    add('thunder', thunder());
     add('nvg', tone([[0, 2400, 0.05, 0.5], [0.05, 4800, 0.03, 0.45], [0, 900, 0.3, 0.03, 'triangle']], 0.6));
     add('thermal', tone([[0, 1250, 0.18, 0.06, 'square'], [0.1, 1650, 0.14, 0.06, 'square']], 0.25));
     let done = 0;
@@ -414,6 +484,28 @@ export class AudioEngine {
     this.ambient = { src, g };
   }
   stopAmbience() { if (this.ambient) { this.ambient.src.stop(); this.ambient = null; } }
+
+  /** Named looping bed (rain); muffle() lowers it when the listener is indoors. */
+  startLoop(name, vol = 0.5) {
+    if (!this.ready || !this.ctx || !this.buffers[name]) { this._pendingLoop = [name, vol]; return; }
+    this.loops = this.loops || {};
+    if (this.loops[name]) return;
+    const c = this.ctx, src = c.createBufferSource();
+    src.buffer = this.buffers[name]; src.loop = true;
+    const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 12000;
+    const g = c.createGain(); g.gain.value = vol;
+    src.connect(f); f.connect(g); g.connect(this.sfx);
+    src.start();
+    this.loops[name] = { src, g, f, vol };
+  }
+  stopLoop(name) { const l = this.loops?.[name]; if (l) { l.src.stop(); delete this.loops[name]; } if (this._pendingLoop?.[0] === name) this._pendingLoop = null; }
+  loopMuffle(name, indoors) {
+    const l = this.loops?.[name];
+    if (!l) { if (this._pendingLoop?.[0] === name && this.ctx?.state === 'running') this.startLoop(...this._pendingLoop); return; }
+    const t = this.ctx.currentTime;
+    l.f.frequency.setTargetAtTime(indoors ? 900 : 12000, t, 0.2);
+    l.g.gain.setTargetAtTime(l.vol * (indoors ? 0.8 : 1), t, 0.2);
+  }
 
   /** Ringing ears + muffled hearing (flashbangs, nearby explosions). */
   tinnitus(strength, dur) {

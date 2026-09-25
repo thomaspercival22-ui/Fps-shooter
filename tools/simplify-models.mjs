@@ -1,4 +1,5 @@
-// Decimates the photo-scanned props to phone-friendly triangle budgets.
+// Decimates the heaviest photo-scans (ones placed dozens of times) to sane
+// triangle budgets.
 // meshoptimizer keeps UV seams, open borders and normals intact, so the
 // scans look identical at gameplay distance. Unused vertices are dropped
 // and the .bin is repacked. Idempotent: simplified files are marked.
@@ -8,10 +9,11 @@ import { MeshoptSimplifier as S } from 'meshoptimizer';
 const DIR = new URL('../assets/models/', import.meta.url).pathname;
 // target triangles per model (whole model)
 const BUDGET = {
-  metal_jerrycan: 2600, portable_generator: 7000, exterior_aircon_unit: 4500, covered_car: 7000,
-  utility_box_02: 2600, propane_tank: 2200, trashbag: 1800, security_light: 1800, old_tyre: 1500,
-  ammo_box: 2000, medical_box: 2000,
+  wooden_military_crate: 1600, concrete_road_barrier_02: 10000, namaqualand_stones_01: 2500, quiver_tree_02: 20000,
+  wild_rooibos_bush: 15000, dry_branches_medium_01: 9000, rock_09: 3000,
 };
+// small closed scans: borders need no locking and a coarser error bound is invisible
+const FREE_BORDERS = new Set(['namaqualand_stones_01', 'rock_09']);
 const SIZE = { 5120: 1, 5121: 1, 5122: 2, 5123: 2, 5125: 4, 5126: 4 };
 const COMPS = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 };
 const TYPED = { 5121: Uint8Array, 5123: Uint16Array, 5125: Uint32Array, 5126: Float32Array, 5120: Int8Array, 5122: Int16Array };
@@ -38,6 +40,8 @@ for (const [id, budget] of Object.entries(BUDGET)) {
   const prims = gltf.meshes.flatMap((m) => m.primitives);
   const total = prims.reduce((s, p) => s + gltf.accessors[p.indices].count / 3, 0);
   const ratio = Math.min(1, budget / total);
+  const flags = FREE_BORDERS.has(id) ? [] : ['LockBorder'];
+  const maxError = FREE_BORDERS.has(id) ? 0.1 : 0.02;
   const out = new Map(); // accessor index -> new typed array
   let after = 0;
   for (const p of prims) {
@@ -46,8 +50,8 @@ for (const [id, budget] of Object.entries(BUDGET)) {
     const nrm = p.attributes.NORMAL !== undefined ? read(p.attributes.NORMAL) : null;
     const target = Math.max(3, Math.floor((idx.length * ratio) / 3) * 3);
     let [simp] = nrm
-      ? S.simplifyWithAttributes(idx, pos, 3, nrm, 3, [0.35, 0.35, 0.35], null, target, 0.02, ['LockBorder'])
-      : S.simplify(idx, pos, 3, target, 0.02, ['LockBorder']);
+      ? S.simplifyWithAttributes(idx, pos, 3, nrm, 3, [0.35, 0.35, 0.35], null, target, maxError, flags)
+      : S.simplify(idx, pos, 3, target, maxError, flags);
     simp = new Uint32Array(simp);
     const [remap, unique] = S.compactMesh(simp);
     // shared vertex accessors would need a joint remap; this set never shares them

@@ -260,3 +260,7 @@ body.desktop .desktop-only { display: block; }
   #btn-ads { bottom: calc(160px + var(--sab)); }
   #btn-flash { bottom: calc(196px + var(--sab)); }
 }
+
+.optic-row { display: flex; gap: 6px; }
+.optic-row .choice { flex: 1; }
+.choice.small b { font-size: 11px; }

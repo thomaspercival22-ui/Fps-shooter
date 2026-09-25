@@ -12,7 +12,7 @@ The game is a static web app that installs itself as a Progressive Web App. It n
 
 1. **Host it with GitHub Pages (one time, free).** On GitHub open this repo, then go to **Settings → Pages**. Under *Build and deployment* choose **Deploy from a branch**, pick the branch with the game (`main` once merged, or `claude/mobile-offline-fps-game-we0og0`) and the **/ (root)** folder, then **Save**. About a minute later the game is live at
    `https://thomaspercival22-ui.github.io/Fps-shooter/`
-2. **Open that link on your phone** while you're online. The first load downloads about 11 MB and caches everything.
+2. **Open that link on your phone** while you're online. The first load downloads about 50 MB and caches everything.
 3. **Install it** (this gives you a home-screen shortcut you can tap to play any time). The menu's **Add to Home Screen** button does this for you on Android, or shows the steps:
    - **Android (Chrome):** menu ⋮ → **Install app** (or **Add to Home screen**).
    - **iPhone (Safari):** Share → **Add to Home Screen**.
@@ -21,6 +21,17 @@ The game is a static web app that installs itself as a Progressive Web App. It n
 > Tip: set **Graphics → Auto** (the default) and the game adjusts its render resolution to keep the frame rate smooth on your phone.
 
 ## What's in it
+
+- **High-end graphics (Graphics → Ultra, the default):**
+  - **Photo-scanned world:** 4K ground scans with parallax occlusion mapping (pebbles and ruts have real depth), blended with rocky patches. Full-detail scans of concrete barriers, ammo crates, a tarped car, generator, fuel cans, gas bottles, cement bags, desert shrubs, quiver trees, boulders and pebbles. HESCO walls with bulging geotextile and welded mesh. Real corrugated containers with rust runs. Buildings with window frames, grilles, sills, rooftop water tanks, drainpipes and power cables.
+  - **Lighting:** soft sun shadows that stay sharp where objects touch the ground (PCSS) and get softer further away. Screen-space ambient occlusion. Screen-space ray-traced contact shadows and reflections. Sunlight bouncing off the sand into shaded areas.
+  - **Atmosphere:** desert haze that glows towards the sun, light shafts, and heat shimmer over the distant ground. Filmic AgX colour.
+  - **Weapon and hands:** the weapon and your hands cast shadows on each other. The EXPS3-style holographic sight has a rounded hood. The handguard is M-LOK. The receiver has roll marks. Gloves have knuckle guards, and the sleeves are MultiCam-style fabric with folds.
+  - **Enemies:** helmets with rails and headsets, balaclavas and glasses, plate carriers with magazine pouches, battle belts, knee pads and boots.
+  - **Weaker phones:** if your phone struggles or reloads, pick High or Medium, which also load smaller textures.
+- **Rain (Mission → Rain):** a storm with an overcast sky, lightning and thunder that arrives after the flash. Rain streaks and splashes stop under roofs. Everything gets darker and glossier when wet, puddles form in low ground with raindrop ripples, and puddles mirror the scene through ray-traced reflections. Rain gets muffled when you go indoors.
+- **Realistic impacts:** metal rings, wood knocks and splinters, concrete cracks and throws chips, plaster crumbles, sand thumps, glass tinkles, rubber thuds, and rounds splash into puddles. Rounds that hit metal or concrete at a glancing angle ricochet off with a tumbling whine and sparks, and a ricochet can still zip past you.
+- **Digital night vision scope for the M4:** choose Optic → Digital NV scope in the loadout. It is a 3.5x day/night riflescope with a colour display in daylight and a high-gain monochrome sensor at night. It has an electronic reticle and on-screen data, and an IR illuminator on the side.
 
 - **Realistic rendering:** 2K photo-scanned ground and wall textures, baked ambient occlusion (soft contact shading where walls, crates and sandbags meet the ground, darker interiors), eye adaptation when you step indoors, and sun glare with lens flare. An HDR post-processing pipeline gives filmic tone mapping, bloom around muzzle flashes, lamps and explosions, a lens vignette, film grain and subtle lens fringing. The desert has wind-swaying dry grass. Enemy soldiers carry the same detailed rifles you do and have fabric-weave and MOLLE surface detail.
 - **Night missions:** choose **Mission → Night** in the menu. You get a moonlit sky full of stars, sodium security lamps, and darkness that makes enemies much slower to spot you. They wear night vision goggles too.
@@ -83,7 +94,7 @@ After changing any game file, regenerate the offline cache list so installed cop
 npm run build-sw
 ```
 
-Other tools: `npm run fetch-assets` re-downloads and recompresses the textures and models (follow it with `npm run simplify-models` to decimate the scans to mobile triangle budgets), `npm run vendor` re-copies three.js into `vendor/`, and `npm run icons` redraws the app icons.
+Other tools: `npm run fetch-assets` re-downloads and recompresses the textures and models (follow it with `npm run simplify-models`, which decimates the few scans that are placed dozens of times), `npm run vendor` re-copies three.js into `vendor/`, and `npm run icons` redraws the app icons.
 
 ## Project layout
 
@@ -94,6 +105,10 @@ src/
   main.js      boot, menus, settings
   game.js      main loop, waves, scoring, explosions, flashbangs
   level.js     the compound map, collision boxes, nav grid, cover points
+  terrain.js   parallax desert ground, wall grime, HESCO mesh shaders
+  containers.js  corrugated shipping containers + weathering
+  weather.js   rain, splashes, wet world, lightning
+  post.js      HDR pipeline: SSAO, ray-traced reflections/contact shadows, fog, bloom, tone mapping, vision modes
   physics.js   collision world, ray casts, character movement
   nav.js       A* pathfinding
   player.js    movement, camera, health
@@ -115,5 +130,5 @@ vendor/three/  three.js (bundled so nothing loads from the internet)
 ## Credits
 
 - 3D engine: [three.js](https://threejs.org) (MIT license, see `vendor/three/LICENSE`).
-- Textures, props (barrels, tyres, ammo box, medical box, covered car, generator, jerry cans, propane tanks, AC units, utility boxes, trash bags, security lights) and the sky: [Poly Haven](https://polyhaven.com), released as CC0 (public domain).
+- Textures, props (barrels, tyres, ammo box, medical box, covered car, generator, jerry cans, propane tanks, AC units, utility boxes, trash bags, security lights, concrete barriers, military crates, cement bags, roller shutters, shrubs, branches, stones, rocks, quiver trees) and the sky: [Poly Haven](https://polyhaven.com), released as CC0 (public domain).
 - Weapons, soldiers, sandbags, HESCO barriers, all effects and all audio are generated in code.
