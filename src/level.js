@@ -188,6 +188,7 @@ export function buildLevel(scene, assets, opts = {}) {
   const win = (from, w = 1.4, bottom = 1.0, top = 2.1) => ({ from, to: from + w, bottom, top });
 
   // ---------------- ground + distant dunes ----------------
+  let groundMatRef = null;
   {
     const size = 1800, seg = 128;
     const g = new THREE.PlaneGeometry(size, size, seg, seg);
@@ -203,7 +204,7 @@ export function buildLevel(scene, assets, opts = {}) {
     g.computeVertexNormals();
     const uv = g.attributes.uv;
     for (let i = 0; i < uv.count; i++) { uv.setXY(i, p.getX(i) / 3, -p.getZ(i) / 3); }
-    const groundMat = pbrMaterial(assets, 'gravelly_sand', { color: 0xf0e0c8, normalScale: 1.2 });
+    const groundMat = groundMatRef = pbrMaterial(assets, 'gravelly_sand', { color: 0xf0e0c8, normalScale: 1.2 });
     const macro = TX.macroNoiseTexture();
     groundMat.onBeforeCompile = (shader) => {
       shader.uniforms.macroMap = { value: macro };
@@ -624,6 +625,17 @@ export function buildLevel(scene, assets, opts = {}) {
 
   const meshes = G.build(scene, mats, shadows);
 
+  // baked ambient occlusion on the level, ground and props
+  const ao = bakeAO(world, BOUND);
+  for (const [k, m] of Object.entries(mats)) applyBakedAO(m, ao, 'ao-' + k);
+  applyBakedAO(groundMatRef, ao, 'ao-ground');
+  const aoDone = new Set();
+  props.traverse((o) => {
+    if (!o.isMesh || aoDone.has(o.material) || o.material.alphaTest > 0) return;
+    aoDone.add(o.material);
+    applyBakedAO(o.material, ao, 'ao-prop-' + o.material.uuid);
+  });
+
   // ---------------- navigation ----------------
   const nav = new NavGrid(world, -BOUND, -BOUND, BOUND, BOUND, 0.5, 0.38);
   nav.build();
@@ -676,6 +688,93 @@ export function buildLevel(scene, assets, opts = {}) {
     resupply: { x: -6.5, z: -26.45, r: 2.0 },
     bounds: BOUND,
   };
+}
+
+/**
+ * Bakes ambient occlusion for the whole map into a small texture, analytically
+ * from the collision boxes: R = contact occlusion near walls and objects,
+ * G = sky occlusion under roofs, B = roof height / 8.
+ */
+function bakeAO(world, bound) {
+  const res = 0.5, min = -(bound + 4), size = (bound + 4) * 2, n = Math.ceil(size / res);
+  const contact = new Float32Array(n * n), over = new Float32Array(n * n), roof = new Float32Array(n * n);
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+    const x = min + (i + 0.5) * res, z = min + (j + 0.5) * res;
+    let occ = 0, ov = 0, rh = 0;
+    for (const b of world.query(x - 2.6, z - 2.6, x + 2.6, z + 2.6)) {
+      if (!b.blocksSight || b.y1 < 0.12) continue;
+      const cx = Math.max(b.x0, Math.min(x, b.x1)), cz = Math.max(b.z0, Math.min(z, b.z1));
+      const d = Math.hypot(x - cx, z - cz);
+      if (b.y0 > 0.3) {
+        // something overhead (roofs): interiors get much less sky light
+        if (d < 0.01) { ov = Math.max(ov, 0.55); rh = Math.max(rh, b.y0); }
+        else if (d < 1.5) ov = Math.max(ov, 0.55 * (1 - d / 1.5) * 0.6);
+        continue;
+      }
+      if (d < 0.01) { occ += 1; continue; }
+      if (d > 2.6) continue;
+      const dx = (cx - x) / d, dz = (cz - z) / d;
+      const halfW = 0.5 * (Math.abs(dz) * (b.x1 - b.x0) + Math.abs(dx) * (b.z1 - b.z0));
+      const w = 2 * Math.atan(halfW / d);
+      const e = Math.atan(b.y1 / d);
+      occ += (w / (2 * Math.PI)) * Math.sin(e) ** 2 * 1.9 * (1 - d / 2.6);
+    }
+    contact[j * n + i] = Math.max(0.3, 1 - occ);
+    over[j * n + i] = 1 - ov;
+    roof[j * n + i] = rh;
+  }
+  // soften
+  const blur = (a) => {
+    const o = new Float32Array(a.length);
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+      let sum = 0, c = 0;
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+        const ii = i + di, jj = j + dj;
+        if (ii < 0 || jj < 0 || ii >= n || jj >= n) continue;
+        sum += a[jj * n + ii]; c++;
+      }
+      o[j * n + i] = sum / c;
+    }
+    return o;
+  };
+  const cA = blur(blur(contact)), oA = blur(over);
+  const data = new Uint8Array(n * n * 4);
+  for (let k = 0; k < n * n; k++) {
+    data[k * 4] = cA[k] * 255; data[k * 4 + 1] = oA[k] * 255; data[k * 4 + 2] = Math.min(255, roof[k] / 8 * 255); data[k * 4 + 3] = 255;
+  }
+  const tex = new THREE.DataTexture(data, n, n, THREE.RGBAFormat);
+  tex.magFilter = THREE.LinearFilter; tex.minFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
+  return { tex, min, size };
+}
+
+/** Adds the baked AO to a standard material (works for instanced meshes too). */
+function applyBakedAO(mat, ao, key) {
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = (shader, renderer) => {
+    prev.call(mat, shader, renderer);
+    shader.uniforms.uAOMap = { value: ao.tex };
+    shader.uniforms.uAOMin = { value: ao.min };
+    shader.uniforms.uAOSize = { value: ao.size };
+    shader.vertexShader = 'varying vec3 vAOWorld;\n' + shader.vertexShader.replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
+      #ifdef USE_INSTANCING
+        vAOWorld = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
+      #else
+        vAOWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;
+      #endif`);
+    shader.fragmentShader = 'uniform sampler2D uAOMap; uniform float uAOMin; uniform float uAOSize; varying vec3 vAOWorld;\n' +
+      shader.fragmentShader.replace('#include <aomap_fragment>', `#include <aomap_fragment>
+      {
+        vec4 bao = texture2D(uAOMap, (vAOWorld.xz - uAOMin) / uAOSize);
+        float contact = mix(bao.r, 1.0, smoothstep(0.05, 1.9, vAOWorld.y));
+        float over = vAOWorld.y < bao.b * 8.0 - 0.05 ? bao.g : 1.0;
+        float k = contact * over;
+        reflectedLight.indirectDiffuse *= k;
+        reflectedLight.indirectSpecular *= k;
+        reflectedLight.directDiffuse *= mix(1.0, contact, 0.3);
+      }`);
+  };
+  mat.customProgramCacheKey = () => key;
 }
 
 /** A filled sandbag: a rounded, slightly lumpy pillow (~170 triangles). */

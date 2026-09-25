@@ -584,6 +584,10 @@ export class Game {
       this.inShadow = !!this.level.world.raycast(c.x, c.y - 0.1, c.z, L.x, L.y, L.z, 60, RAY_ALL);
     }
     w.updateLighting(this.lightDir, this.inShadow, dt, this.night ? 0.1 : 1);
+    // eye adaptation: indoors (a roof overhead) the exposure slowly opens up
+    const roofed = this.level.world.ceilingAt(p.pos.x, p.pos.z, 0.2, p.pos.y + 1.9) < p.pos.y + 8;
+    const expTarget = roofed ? 1.55 : 1.0;
+    this.eyeExposure = (this.eyeExposure || 1) + (expTarget - (this.eyeExposure || 1)) * Math.min(1, dt * (roofed ? 0.9 : 1.6));
     this._updateLasers();
 
     this.hud.update(dt);
@@ -757,9 +761,26 @@ export class Game {
     const n = this.night;
     const lowHealth = playing && this.player.alive ? Math.max(0, 1 - this.player.health / 45) : 0;
     const signal = droneView ? (d.active ? d.signal * (1 - d.transition / 0.6) : 0) : 1;
+    // sun glare: where the sun is on screen, and whether anything blocks it
+    let sunTarget = 0;
+    const sp = this._sunScreen || (this._sunScreen = new THREE.Vector3());
+    if (!this.night && playing && mode !== MODE.nvg && mode !== MODE.thermal) {
+      sp.copy(cam.position).addScaledVector(this.lightDir, 1000).project(cam);
+      if (sp.z < 1 && Math.abs(sp.x) < 1.3 && Math.abs(sp.y) < 1.3) {
+        const edge = 1 - Math.max(0, Math.max(Math.abs(sp.x), Math.abs(sp.y)) - 0.85) / 0.45;
+        const c = cam.position, L = this.lightDir;
+        this._sunCheckT = (this._sunCheckT || 0) - 1;
+        if (this._sunCheckT <= 0) { this._sunCheckT = 4; this._sunBlocked = !!this.level.world.raycast(c.x, c.y, c.z, L.x, L.y, L.z, 120); }
+        sunTarget = this._sunBlocked ? 0 : Math.max(0, edge);
+      }
+    }
+    this._sunVis = (this._sunVis || 0) + (sunTarget - (this._sunVis || 0)) * 0.15;
+    const sunUV = this._sunUV || (this._sunUV = new THREE.Vector2());
+    sunUV.set(sp.x * 0.5 + 0.5, sp.y * 0.5 + 0.5);
     P.finish({
+      sunVis: this._sunVis * 0.8, sunUV,
       mode, time: this.time, lowHealth, signal, palette: this.thermalPalette,
-      exposure: n ? (droneView ? 2.4 : 1.3) : 1.0,
+      exposure: n ? (droneView ? 2.4 : 1.3) : (droneView || !playing ? 1.0 : (this.eyeExposure || 1)),
       bloomStrength: n ? 0.14 : 0.07, threshold: n ? 0.7 : 1.5,
       nvgGain: n ? 9 : 1.1, noise: n ? 0.22 : 0.07,
       vignette: mode === MODE.fpv ? 0.15 : 0.35, grain: n ? 0.032 : 0.018,

@@ -12,7 +12,7 @@ export const DEFAULTS = {
   gyro: 'off',            // off | ads | always
   gyroSens: 1.0,
   volume: 0.9,
-  voices: true,           // enemy radio callouts via speech synthesis
+  voices: false,          // enemy callouts are never spoken aloud
   showFps: false,
   primary: 'm4',
   difficulty: 'regular',

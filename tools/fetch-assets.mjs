@@ -13,9 +13,9 @@ const OUT = 'assets';
 
 const TEXTURES = {
   // id: max size (px) for each map
-  gravelly_sand: 1024,
-  damaged_plaster: 1024,
-  concrete_wall_008: 1024,
+  gravelly_sand: 2048,
+  damaged_plaster: 2048,
+  concrete_wall_008: 2048,
   concrete_floor_worn_001: 1024,
   rusty_corrugated_iron: 1024,
   container_side: 1024,
@@ -58,8 +58,8 @@ async function textures() {
     const files = await json(`${API}/files/${id}`);
     const maps = { diff: files.Diffuse, nor: files.nor_gl, arm: files.arm };
     for (const [name, entry] of Object.entries(maps)) {
-      const buf = await download(entry['1k'].jpg.url);
-      await jpeg(buf, name === 'arm' ? size / 2 : size, `${OUT}/textures/${id}/${name}.jpg`, name === 'nor' ? 85 : 78);
+      const buf = await download(entry[size > 1024 ? '2k' : '1k'].jpg.url);
+      await jpeg(buf, name === 'arm' ? Math.min(1024, size / 2) : size, `${OUT}/textures/${id}/${name}.jpg`, name === 'nor' ? 85 : 78);
     }
     console.log('texture', id);
   }

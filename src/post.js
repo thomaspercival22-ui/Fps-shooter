@@ -51,7 +51,8 @@ uniform sampler2D tScene; uniform sampler2D tBloom;
 uniform float bloomStrength, exposure, mode, time, grain, vignette, saturation, fringe, lowHealth;
 uniform float nvgGain, noiseAmt, signal, thermalPalette, useBloom, contrast;
 uniform vec3 nvgTint, lift, gain;
-uniform vec2 res;
+uniform vec2 res, sunUV;
+uniform float sunVis;
 varying vec2 vUv;
 
 float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
@@ -88,6 +89,23 @@ void main(){
 
   if (m < 0.5 || m > 2.5) {
     col += bloom * bloomStrength;
+    if (sunVis > 0.001) {
+      // sun glare, anamorphic streak and lens ghosts
+      vec2 asp = vec2(res.x / res.y, 1.0);
+      vec2 d = (uv - sunUV) * asp;
+      float r = length(d);
+      col += vec3(1.0, 0.94, 0.82) * (exp(-r * 10.0) * 2.2 + exp(-r * 2.6) * 0.3) * sunVis;
+      col += vec3(1.0, 0.88, 0.72) * exp(-abs(d.y) * 110.0) * exp(-abs(d.x) * 2.4) * 0.45 * sunVis;
+      vec2 axis = vec2(0.5) - sunUV;
+      for (int i = 1; i <= 4; i++) {
+        float fi = float(i);
+        vec2 gp = sunUV + axis * (0.55 + fi * 0.42);
+        float gr = length((uv - gp) * asp);
+        float rad = 0.025 + 0.018 * fi;
+        vec3 tint = i == 2 ? vec3(0.9, 0.6, 0.35) : vec3(0.45, 0.65, 1.0);
+        col += tint * smoothstep(rad, rad * 0.6, gr) * 0.06 * sunVis;
+      }
+    }
     col = aces(col * exposure);
     // grade: lift shadows / tint highlights, saturation, contrast
     float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
@@ -168,7 +186,7 @@ export class PostFX {
       fringe: { value: 0.0025 }, lowHealth: { value: 0 }, nvgGain: { value: 8 }, noiseAmt: { value: 0.25 }, signal: { value: 1 },
       thermalPalette: { value: 0 }, useBloom: { value: 1 }, contrast: { value: 1.04 },
       nvgTint: { value: new THREE.Color(0.52, 1.0, 0.62) }, lift: { value: new THREE.Color(0.012, 0.014, 0.02) }, gain: { value: new THREE.Color(1.02, 1.0, 0.97) },
-      res: { value: new THREE.Vector2(1, 1) },
+      res: { value: new THREE.Vector2(1, 1) }, sunUV: { value: new THREE.Vector2(0.5, 0.5) }, sunVis: { value: 0 },
     });
     this.bloom = true;
   }
@@ -237,6 +255,8 @@ export class PostFX {
     C.vignette.value = u.vignette ?? 0.35;
     C.grain.value = u.grain ?? 0.018;
     if (u.tint) C.nvgTint.value.copy(u.tint);
+    C.sunVis.value = u.sunVis ?? 0;
+    if (u.sunUV) C.sunUV.value.copy(u.sunUV);
     this._pass(this.comp, null);
     r.autoClear = auto;
   }

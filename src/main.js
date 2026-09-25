@@ -30,7 +30,7 @@ async function boot() {
   const audio = new AudioEngine();
   audio.setVolume(settings.volume);
   const voices = new Voices();
-  voices.enabled = settings.voices;
+  voices.enabled = false; // enemy chatter is never spoken aloud
   text.textContent = 'Loading textures and models...';
   const [assets] = await Promise.all([
     loadAssets(renderer, (p) => { pa = p; progress(); }),
@@ -151,7 +151,7 @@ function buildSettings(game) {
   const apply = () => {
     saveSettings();
     game.audio.setVolume(settings.volume);
-    game.voices.enabled = settings.voices;
+    game.voices.enabled = false;
     game.onResize();
   };
   const seg = (label, key, options, after) => {
@@ -193,7 +193,6 @@ function buildSettings(game) {
   range('Gyro sensitivity', 'gyroSens', 0.2, 3, 0.05);
   seg('Invert look', 'invertY', [[false, 'Off'], [true, 'On']]);
   range('Volume', 'volume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`);
-  seg('Enemy voice callouts', 'voices', [[true, 'On'], [false, 'Off']]);
   seg('On-screen joystick & buttons', 'onscreen', [['auto', 'Auto'], ['always', 'Always']], (v) => game.input.setTouchMode(game.input.hasTouch || v === 'always'));
   seg('Show FPS', 'showFps', [[false, 'Off'], [true, 'On']]);
 }
