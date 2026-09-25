@@ -7,7 +7,8 @@ const TEXTURE_SETS = [
   'gravelly_sand', 'damaged_plaster', 'concrete_wall_008', 'concrete_floor_worn_001',
   'rusty_corrugated_iron', 'container_side', 'green_rough_planks',
 ];
-const MODEL_IDS = ['barrel_03', 'ammo_box', 'medical_box', 'old_tyre'];
+const MODEL_IDS = ['barrel_03', 'ammo_box', 'medical_box', 'old_tyre', 'exterior_aircon_unit', 'utility_box_02', 'propane_tank',
+  'trashbag', 'portable_generator', 'covered_car', 'metal_jerrycan', 'security_light'];
 
 export async function loadAssets(renderer, onProgress) {
   const manager = new THREE.LoadingManager();

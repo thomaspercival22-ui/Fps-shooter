@@ -26,6 +26,14 @@ const MODELS = {
   ammo_box: 512,
   medical_box: 512,
   old_tyre: 512,
+  exterior_aircon_unit: 512,
+  utility_box_02: 512,
+  propane_tank: 512,
+  trashbag: 512,
+  portable_generator: 512,
+  covered_car: 1024,
+  metal_jerrycan: 512,
+  security_light: 512,
 };
 const HDRI = 'kloofendal_48d_partly_cloudy_puresky';
 

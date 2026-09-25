@@ -137,6 +137,7 @@ export class Input {
       el.addEventListener('pointerup', off); el.addEventListener('pointercancel', off); el.addEventListener('pointerleave', off);
     }
     tap('btn-nvg', () => this.events.add('nvg'));
+    tap('btn-mode', () => this.events.add('firemode'));
     tap('btn-thermal', () => this.events.add('thermal'));
     tap('btn-drone', () => this.events.add('drone'));
     tap('btn-swap', () => this.events.add('swap'));
@@ -205,6 +206,7 @@ export class Input {
         case 'KeyG': this.events.add('frag'); break;
         case 'KeyF': this.events.add('flash'); break;
         case 'KeyN': this.events.add('nvg'); break;
+        case 'KeyB': this.events.add('firemode'); break;
         case 'KeyT': this.events.add('thermal'); break;
         case 'KeyV': this.events.add('drone'); break;
         case 'Space': this.jump = true; this.upHeld = true; e.preventDefault(); break;

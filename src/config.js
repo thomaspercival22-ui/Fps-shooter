@@ -29,7 +29,7 @@ export const WEAPONS = {
     hipSpread: 2.6, adsSpread: 0.12, moveSpread: 2.2,
     recoilPitch: 0.42, recoilYaw: 0.2, recoilRecover: 7, viewKick: 1,
     adsZoom: 1.35, adsTime: 0.2, reloadTime: 2.2, emptyReloadTime: 2.75, drawTime: 0.45,
-    sound: 'm4', tracerEvery: 3, shell: 'rifle',
+    sound: 'm4', tracerEvery: 3, shell: 'rifle', jam: 1 / 320, heatPerShot: 0.016,
   },
   m1014: {
     name: 'M1014', slot: 'primary', desc: '12ga semi-auto shotgun',
@@ -39,7 +39,7 @@ export const WEAPONS = {
     hipSpread: 1.4, adsSpread: 0.5, moveSpread: 1.0,
     recoilPitch: 3.2, recoilYaw: 0.8, recoilRecover: 9, viewKick: 2.4,
     adsZoom: 1.15, adsTime: 0.22, shellReload: true, reloadStart: 0.45, reloadPerShell: 0.5, reloadEnd: 0.35,
-    drawTime: 0.5, sound: 'shotgun', tracerEvery: 0, shell: 'shotgun',
+    drawTime: 0.5, sound: 'shotgun', tracerEvery: 0, shell: 'shotgun', jam: 1 / 260, heatPerShot: 0.05,
   },
   sniper: {
     name: 'MK13 .300', slot: 'primary', desc: 'Bolt-action sniper · 8x scope',
@@ -49,7 +49,7 @@ export const WEAPONS = {
     hipSpread: 6, adsSpread: 0.0, moveSpread: 5,
     recoilPitch: 4.5, recoilYaw: 0.6, recoilRecover: 6, viewKick: 3,
     adsZoom: 8, scope: true, adsTime: 0.32, reloadTime: 3.0, emptyReloadTime: 3.4, drawTime: 0.6,
-    boltTime: 0.95, sound: 'sniper', tracerEvery: 1, shell: 'rifle',
+    boltTime: 0.95, sound: 'sniper', tracerEvery: 1, shell: 'rifle', jam: 1 / 700, heatPerShot: 0.08,
   },
   glock: {
     name: 'G17', slot: 'secondary', desc: '9mm pistol',
@@ -59,7 +59,7 @@ export const WEAPONS = {
     hipSpread: 2.0, adsSpread: 0.3, moveSpread: 1.4,
     recoilPitch: 1.5, recoilYaw: 0.35, recoilRecover: 10, viewKick: 1.3,
     adsZoom: 1.2, adsTime: 0.14, reloadTime: 1.55, emptyReloadTime: 1.85, drawTime: 0.3,
-    sound: 'pistol', tracerEvery: 0, shell: 'pistol',
+    sound: 'pistol', tracerEvery: 0, shell: 'pistol', jam: 1 / 450, heatPerShot: 0.012,
   },
 };
 

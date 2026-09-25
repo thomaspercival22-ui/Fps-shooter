@@ -9,9 +9,11 @@
     "fetch-assets": "node tools/fetch-assets.mjs",
     "vendor": "node tools/vendor-three.mjs",
     "build-sw": "node tools/build-sw.mjs",
-    "icons": "node tools/make-icons.mjs"
+    "icons": "node tools/make-icons.mjs",
+    "simplify-models": "node tools/simplify-models.mjs"
   },
   "devDependencies": {
+    "meshoptimizer": "^1.2.0",
     "sharp": "^0.33.5",
     "three": "0.180.0"
   }

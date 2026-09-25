@@ -940,6 +940,8 @@ export class EnemyManager {
     const d = e.pos.distanceTo(g.player.pos);
     if (d > 60) return;
     this.lineTimes[key] = now; this.lineTimes._any = now;
+    // enemy chatter stays silent and off-screen; the timing still paces the AI callouts
+    if (!g.voices.enabled) return;
     const line = pick(LINES[key]);
     g.hud.radio(e.type.name, line);
     if (d < 45) g.voices.say(line, e.voicePitch, 1.15, Math.max(0.15, 0.9 - d / 60));

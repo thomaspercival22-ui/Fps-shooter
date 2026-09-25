@@ -86,6 +86,7 @@ export class WeaponSystem {
     this.frags = GRENADES.startFrag;
     this.flashes = GRENADES.startFlash;
     this.pendingSwitch = null;
+    this.fireMode = 'auto';
     this.stats = { shots: 0, hits: 0 };
     this.lightTimer = 0;
     this._t = 0;
@@ -94,7 +95,24 @@ export class WeaponSystem {
   _make(key) {
     const def = WEAPONS[key];
     const model = BUILDERS[key]();
-    return { key, def, model, ammo: def.mag + (def.chamber ? 1 : 0), reserve: def.reserve, boltReady: true };
+    const slot = { key, def, model, ammo: def.mag + (def.chamber ? 1 : 0), reserve: def.reserve, boltReady: true, heat: 0, jammed: false, dustOpen: false };
+    if (!def.shellReload) this._fillMags(slot);
+    slot.meshes = [];
+    model.root.traverse((o) => { if (o.isMesh) slot.meshes.push(o); });
+    return slot;
+  }
+
+  /** Magazine-fed weapons track every magazine and its rounds. */
+  _fillMags(s) {
+    s.mags = new Array(Math.round(s.def.reserve / s.def.mag)).fill(s.def.mag);
+    this._sync(s);
+  }
+  _sync(s) { if (s.mags) s.reserve = s.mags.reduce((a, b) => a + b, 0); }
+
+  toggleFireMode() {
+    if (!this.def.auto) return;
+    this.fireMode = this.fireMode === 'semi' ? 'auto' : 'semi';
+    this.game.audio.play('dry', { vol: 0.5, rate: 1.4 });
   }
 
   get cur() { return this.slots[this.currentSlot]; }
@@ -111,13 +129,19 @@ export class WeaponSystem {
   addLook(dx, dy) { this.lookDX += dx; this.lookDY += dy; }
 
   refill() {
-    for (const s of Object.values(this.slots)) s.reserve = s.def.reserve;
+    for (const s of Object.values(this.slots)) { if (s.mags) this._fillMags(s); else s.reserve = s.def.reserve; }
     this.frags = GRENADES.maxFrag; this.flashes = GRENADES.maxFlash;
   }
   addAmmo(fraction = 0.35) {
     for (const s of Object.values(this.slots)) {
-      const add = Math.ceil(s.def.reserve * fraction);
-      s.reserve = Math.min(s.def.reserve * 1.5, s.reserve + add);
+      if (s.mags) {
+        const maxMags = Math.round(s.def.reserve / s.def.mag * 1.5);
+        const n = Math.max(1, Math.round(s.def.reserve / s.def.mag * fraction));
+        for (let i = 0; i < n && s.mags.length < maxMags; i++) s.mags.push(s.def.mag);
+        this._sync(s);
+      } else {
+        s.reserve = Math.min(s.def.reserve * 1.5, s.reserve + Math.ceil(s.def.reserve * fraction));
+      }
     }
   }
 
@@ -134,7 +158,10 @@ export class WeaponSystem {
 
   requestReload() {
     const c = this.cur, d = c.def;
-    if (this.state !== 'idle' || c.reserve <= 0) return;
+    if (this.state !== 'idle') return;
+    if (c.jammed) { this.state = 'clear'; this.stateT = 0; this._clearEv = new Set(); return; }
+    if (c.reserve <= 0) return;
+    if (c.mags && Math.max(0, ...c.mags) <= Math.max(0, c.ammo - (d.chamber ? 1 : 0))) return; // nothing better in the pouches
     const full = d.mag + (d.chamber ? 1 : 0);
     if (c.ammo >= full) return;
     const empty = c.ammo === 0;
@@ -200,8 +227,10 @@ export class WeaponSystem {
     if (this.triggerHeld || this.triggerPressed) {
       if (this.state === 'reload' && this.reload?.shell && c.ammo > 0) this.reload.stop = true;
       if (this.state === 'idle' && this.sprintT < 0.3 && g.time - this.lastShot >= interval && c.boltReady) {
-        if (d.auto || this.triggerPressed) {
-          if (c.ammo > 0) this._fire();
+        const auto = d.auto && this.fireMode !== 'semi';
+        if (auto || this.triggerPressed) {
+          if (c.jammed) { if (this.triggerPressed) { g.audio.play('dry', { vol: 0.7 }); g.hud.malfunction(); } }
+          else if (c.ammo > 0) this._fire();
           else {
             if (this.triggerPressed) g.audio.play('dry', { vol: 0.6 });
             if (c.reserve > 0) this.requestReload();
@@ -210,6 +239,26 @@ export class WeaponSystem {
       }
     }
     this.triggerPressed = false;
+
+    // clearing a stoppage: tap the magazine, rack the action
+    if (this.state === 'clear') {
+      const t = this.stateT, ev = this._clearEv;
+      if (t > 0.18 && !ev.has('tap')) { ev.add('tap'); g.audio.play('magTap', { vol: 0.7 }); }
+      if (t > 0.5 && !ev.has('rack')) {
+        ev.add('rack');
+        g.audio.play(c.key === 'glock' ? 'slide' : c.key === 'sniper' ? 'boltBack' : 'charge', { vol: 0.8 });
+        if (c.ammo > 0) { c.ammo--; this._ejectShell(); } // the stuck round flies out
+      }
+      if (t > 1.05) { c.jammed = false; this.state = 'idle'; c.boltReady = true; }
+    }
+    // barrel heat: cools slowly, smokes after a long string of fire
+    for (const s of Object.values(this.slots)) s.heat = Math.max(0, s.heat - dt * 0.045);
+    if (c.heat > 0.22 && g.time - this.lastShot > 0.3 && Math.random() < c.heat * dt * 14) {
+      const mp = this.muzzleWorld(new THREE.Vector3());
+      g.effects.dust.emit({ x: mp.x, y: mp.y, z: mp.z, vx: (Math.random() - 0.5) * 0.1, vy: 0.25 + Math.random() * 0.2, vz: (Math.random() - 0.5) * 0.1,
+        size: 0.025, grow: 5, drag: 0.8, grav: -0.05, maxLife: 1.6 + Math.random(), r: 0.8, g: 0.8, b: 0.8, a: 0.22 * c.heat, fade: 1.2, spin: 0.5 });
+    }
+    for (const mesh of c.meshes) if (mesh.userData.heat !== undefined && mesh.userData.heat < 0.85) mesh.userData.heat = 0.34 + c.heat * 0.5;
 
     // bolt cycling (sniper)
     if (this.state === 'bolt') {
@@ -232,6 +281,11 @@ export class WeaponSystem {
   _fire() {
     const g = this.game, p = g.player, c = this.cur, d = c.def;
     c.ammo--;
+    c.heat = Math.min(1, c.heat + d.heatPerShot);
+    c.dustOpen = true;
+    this._bcgKick = 1;
+    // stoppages happen, more often with a hot, dirty gun
+    if (c.ammo > 0 && Math.random() < d.jam * (1 + c.heat * 3)) { c.jammed = true; setTimeout(() => this.game.hud.malfunction(), 120); }
     this.lastShot = g.time;
     this.shotsFired++;
     this.stats.shots++;
@@ -245,6 +299,7 @@ export class WeaponSystem {
     if (p.crouched) spread *= 0.75;
     if (!p.grounded) spread += 3;
     if (d.auto) spread *= 1 + Math.min(this.shotsFired, 10) * 0.03;
+    spread *= 1 + c.heat * 0.35; // a hot barrel walks the group open
     const muzzleWorld = this.muzzleWorld(new THREE.Vector3());
     const pellets = d.pellets || 1;
     for (let i = 0; i < pellets; i++) {
@@ -334,9 +389,20 @@ export class WeaponSystem {
     });
     ev('in', 0.62, () => {
       g.audio.play('magIn', { vol: 0.8 });
-      const full = d.mag + (d.chamber && !r.empty ? 1 : 0);
-      const need = Math.min(full - c.ammo, c.reserve);
-      c.ammo += need; c.reserve -= need;
+      if (c.mags) {
+        // swap magazines: keep the partial one on a tactical reload, drop it when empty
+        const chambered = d.chamber && !r.empty && c.ammo > 0 ? 1 : 0;
+        const left = c.ammo - chambered;
+        c.mags.sort((a, b) => b - a);
+        const fresh = c.mags.shift();
+        if (!r.empty && left > 0) c.mags.push(left);
+        c.ammo = fresh + chambered;
+        this._sync(c);
+      } else {
+        const full = d.mag + (d.chamber && !r.empty ? 1 : 0);
+        const need = Math.min(full - c.ammo, c.reserve);
+        c.ammo += need; c.reserve -= need;
+      }
     });
     ev('tap', 0.7, () => g.audio.play('magTap', { vol: 0.5 }));
     if (r.empty) {
@@ -440,13 +506,36 @@ export class WeaponSystem {
     if (magPart) magPart.position.set(0, 0, 0);
     if (m.parts.charge) m.parts.charge.position.set(0, 0, 0);
     if (m.parts.bolt) { m.parts.bolt.position.set(0, 0, 0); m.parts.bolt.rotation.set(0, 0, 0); }
+    // M4: dust cover springs open on the first shot; the bolt carrier cycles and locks back on empty
+    if (m.parts.dust) m.parts.dust.rotation.z += ((c.dustOpen ? -1.85 : 0) - m.parts.dust.rotation.z) * Math.min(1, dt * 30);
+    if (m.parts.bcg) {
+      this._bcgKick = Math.max(0, (this._bcgKick || 0) - dt * 16);
+      const held = c.ammo === 0 && !(this.reload && this.reload.events?.has('charge'));
+      m.parts.bcg.position.z = Math.max(held ? 0.034 : 0, Math.sin(Math.min(1, this._bcgKick) * Math.PI) * 0.034);
+    }
     if (m.parts.slide) {
       this._slideKick = Math.max(0, (this._slideKick || 0) - dt * 14);
       const locked = c.ammo === 0 && !(this.reload && this.reload.events?.has('slide'));
       m.parts.slide.position.z = Math.max(locked ? 0.03 : 0, Math.sin(Math.min(1, this._slideKick) * Math.PI) * 0.03);
     }
 
-    if (this.state === 'reload' && this.reload && !this.reload.shell) {
+    if (this.state === 'clear') {
+      const t = this.stateT / 1.05;
+      const tilt = seg(t, 0, 0.15) * (1 - seg(t, 0.85, 1));
+      rz += tilt * 0.5; rx += tilt * 0.12; pos.y += tilt * 0.02;
+      const well = m.magWell;
+      const toMag = seg(t, 0.05, 0.17) * (1 - seg(t, 0.24, 0.34));
+      const toRack = seg(t, 0.3, 0.42) * (1 - seg(t, 0.62, 0.78));
+      handL = this._handTarget(m.handL, m.handL.support)
+        .lerp(new THREE.Vector3(-0.02, well.y - 0.12, -well.f), toMag)
+        .lerp(c.key === 'glock' ? new THREE.Vector3(-0.01, 0.02, 0.06) : new THREE.Vector3(-0.01, 0.03, 0.14), toRack);
+      const pull = seg(t, 0.42, 0.5) * (1 - seg(t, 0.5, 0.56));
+      if (m.parts.charge) m.parts.charge.position.z = pull * 0.08;
+      if (m.parts.slide) m.parts.slide.position.z = pull * 0.03;
+      if (m.parts.bcg) m.parts.bcg.position.z = pull * 0.034;
+      if (m.parts.bolt) { m.parts.bolt.rotation.z = pull * 1.1; m.parts.bolt.position.z = pull * 0.09; }
+      if (m.parts.mag) m.parts.mag.position.y = seg(t, 0.17, 0.2) * (1 - seg(t, 0.2, 0.26)) * 0.006;
+    } else if (this.state === 'reload' && this.reload && !this.reload.shell) {
       const t = this.reload.t / this.reload.dur;
       const tilt = seg(t, 0, 0.14) * (1 - seg(t, 0.82, 1));
       rz += tilt * 0.55; rx += tilt * 0.18; ry += tilt * -0.15;

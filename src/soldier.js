@@ -53,7 +53,15 @@ function geometries(kit) {
     part(B(vestW, 0.36, vestD), 'vest', { pos: [0, 0.29, 0.005] }),
     part(B(vestW - 0.06, 0.06, vestD + 0.02), 'black', { pos: [0, 0.14, 0.005] }), // cummerbund band
   ];
-  for (let i = 0; i < 3; i++) chest.push(part(B(0.075, 0.13, 0.05), 'pouch', { pos: [-0.09 + i * 0.09, 0.2, vestD / 2 + 0.03] }));
+  for (let i = 0; i < 3; i++) {
+    chest.push(part(B(0.075, 0.13, 0.05), 'pouch', { pos: [-0.09 + i * 0.09, 0.2, vestD / 2 + 0.03] }));
+    // rifle magazines sticking out of the open-top pouches
+    chest.push(part(B(0.026, 0.05, 0.062), 'black', { pos: [-0.09 + i * 0.09, 0.285, vestD / 2 + 0.03], rot: [0.12, 0, 0] }));
+  }
+  // shoulder deltoids under the vest straps
+  chest.push(part(S(0.075, 10, 8), 'camo', { pos: [-0.2, 0.46, 0], scale: [1, 0.9, 1.05] }));
+  chest.push(part(S(0.075, 10, 8), 'camo', { pos: [0.2, 0.46, 0], scale: [1, 0.9, 1.05] }));
+  chest.push(part(B(0.05, 0.02, 0.24), 'vest', { pos: [-0.14, 0.49, 0] }), part(B(0.05, 0.02, 0.24), 'vest', { pos: [0.14, 0.49, 0] }));
   chest.push(part(B(0.12, 0.08, 0.04), 'pouch', { pos: [0.1, 0.36, vestD / 2 + 0.02] })); // radio / admin pouch
   chest.push(part(B(0.3, 0.34, 0.12), heavy ? 'black' : 'pouch', { pos: [0, 0.3, -vestD / 2 - 0.05] })); // pack
   chest.push(part(B(0.05, 0.14, 0.05), 'black', { pos: [0.12, 0.47, -vestD / 2 - 0.02] })); // antenna base
@@ -69,6 +77,9 @@ function geometries(kit) {
     part(B(0.012, 0.05, 0.1), 'black', { pos: [-0.118, 0.14, -0.005] }),
     part(CY(0.04, 0.04, 0.03, 10), 'black', { pos: [0.108, 0.085, 0.0], rot: [0, 0, Math.PI / 2] }), // headset cups
     part(CY(0.04, 0.04, 0.03, 10), 'black', { pos: [-0.108, 0.085, 0.0], rot: [0, 0, Math.PI / 2] }),
+    part(B(0.006, 0.09, 0.014), 'black', { pos: [0.092, 0.04, 0.045], rot: [0.3, 0, 0.1] }), // chinstrap
+    part(B(0.006, 0.09, 0.014), 'black', { pos: [-0.092, 0.04, 0.045], rot: [0.3, 0, -0.1] }),
+    part(B(0.06, 0.03, 0.09), 'pouch', { pos: [0, 0.2, -0.105], rot: [-0.4, 0, 0] }), // helmet counterweight pouch
   ];
   if (heavy) head.push(part(B(0.17, 0.12, 0.05), 'black', { pos: [0, 0.07, 0.1] })); // ballistic mask
   G.head = mergeGeometries(head);
@@ -114,7 +125,7 @@ function gunGeometry(type) {
     let geo = o.geometry.clone().applyMatrix4(o.matrixWorld);
     if (geo.index) geo = geo.toNonIndexed();
     for (const k of Object.keys(geo.attributes)) if (k !== 'position' && k !== 'normal') geo.deleteAttribute(k);
-    const n = geo.attributes.position.count, c = o.material.color, col = new Float32Array(n * 3);
+    const n = geo.attributes.position.count, c = o.material.userData.baseColor || o.material.color, col = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
     parts.push(geo);

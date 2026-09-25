@@ -471,3 +471,65 @@ export function grassTexture() {
   t.anisotropy = 2;
   return t;
 }
+
+// ---------- weapon finishes ----------
+/**
+ * A worn weapon finish: base colour with grain, fine scratches through to
+ * bare metal, dust in low areas and handling smudges. Returns colour,
+ * roughness and normal maps, tiling at `metresPerTile` in world units.
+ */
+export function weaponFinish({ base, wear, dust = 0.35, scratches = 70, rough = [0.55, 0.3], size = 512, seed = 1 }) {
+  const S = size;
+  const rnd = (() => { let a = seed * 9301 + 49297; return () => ((a = (a * 9301 + 49297) % 233280) / 233280); })();
+  const col = canvas(S), cx = col.getContext('2d');
+  const hc = canvas(S), hx = hc.getContext('2d');
+  const rc = canvas(S), rx = rc.getContext('2d');
+  cx.fillStyle = base; cx.fillRect(0, 0, S, S);
+  hx.fillStyle = '#808080'; hx.fillRect(0, 0, S, S);
+  const r0 = Math.round(rough[0] * 255);
+  rx.fillStyle = `rgb(255,${r0},0)`; rx.fillRect(0, 0, S, S);
+  // handling smudges / oil: slightly glossier blotches
+  for (let i = 0; i < 26; i++) {
+    const x = rnd() * S, y = rnd() * S, r = 20 + rnd() * 70;
+    const g = rx.createRadialGradient(x, y, 0, x, y, r);
+    const v = Math.round((rough[0] - 0.12 * rnd()) * 255);
+    g.addColorStop(0, `rgba(255,${v},0,0.55)`); g.addColorStop(1, 'rgba(255,0,0,0)');
+    rx.fillStyle = g; rx.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  // dust settling
+  const w = hexRgb(wear);
+  for (let i = 0; i < 40; i++) {
+    const x = rnd() * S, y = rnd() * S, r = 15 + rnd() * 60;
+    const g = cx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, `rgba(150,132,105,${dust * (0.2 + rnd() * 0.25)})`); g.addColorStop(1, 'rgba(150,132,105,0)');
+    cx.fillStyle = g; cx.fillRect(x - r, y - r, r * 2, r * 2);
+    const g2 = rx.createRadialGradient(x, y, 0, x, y, r);
+    g2.addColorStop(0, `rgba(255,235,0,${dust * 0.4})`); g2.addColorStop(1, 'rgba(255,235,0,0)');
+    rx.fillStyle = g2; rx.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  // scratches through the finish
+  for (let i = 0; i < scratches; i++) {
+    const x = rnd() * S, y = rnd() * S, a = rnd() * Math.PI * 2, len = 8 + rnd() ** 2 * 90;
+    const x2 = x + Math.cos(a) * len, y2 = y + Math.sin(a) * len;
+    const alpha = 0.25 + rnd() * 0.5;
+    cx.strokeStyle = `rgba(${w[0]},${w[1]},${w[2]},${alpha})`; cx.lineWidth = 0.6 + rnd() * 0.9;
+    cx.beginPath(); cx.moveTo(x, y); cx.lineTo(x2, y2); cx.stroke();
+    hx.strokeStyle = `rgba(40,40,40,${alpha})`; hx.lineWidth = 0.8;
+    hx.beginPath(); hx.moveTo(x, y); hx.lineTo(x2, y2); hx.stroke();
+    rx.strokeStyle = `rgba(255,${Math.round(rough[1] * 255)},0,${alpha})`; rx.lineWidth = 1;
+    rx.beginPath(); rx.moveTo(x, y); rx.lineTo(x2, y2); rx.stroke();
+  }
+  // fine grain (bead blast / cerakote texture)
+  const img = cx.getImageData(0, 0, S, S), him = hx.getImageData(0, 0, S, S);
+  for (let i = 0; i < S * S; i++) {
+    const n = (hash(i % S, (i / S) | 0, seed + 7) - 0.5);
+    img.data[i * 4] += n * 10; img.data[i * 4 + 1] += n * 10; img.data[i * 4 + 2] += n * 10;
+    him.data[i * 4] += n * 40;
+  }
+  cx.putImageData(img, 0, 0);
+  const hgt = new Float32Array(S * S);
+  for (let i = 0; i < S * S; i++) hgt[i] = him.data[i * 4] / 255;
+  const map = tex(col, { repeat: true });
+  const roughness = tex(rc, { srgb: false, repeat: true });
+  return { map, roughness, normal: normalFromHeight(hgt, S, S, 1.2) };
+}

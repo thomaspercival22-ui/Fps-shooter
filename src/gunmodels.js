@@ -10,15 +10,32 @@ export function gunMaterials() {
   if (M) return M;
   const wear = TX.wearRoughness();
   const stipple = TX.stippleNormal();
-  stipple.repeat.set(40, 40);
+  stipple.repeat.set(25, 25);
   const mlok = TX.mlokAlphaTexture();
+  // Worn finishes, mapped with real-world UVs (one tile = 25 cm).
+  const finish = (opts) => {
+    const f = TX.weaponFinish(opts);
+    for (const t of [f.map, f.roughness, f.normal]) t.repeat.set(4, 4);
+    return f;
+  };
+  const fAnod = finish({ base: '#2b2c2f', wear: '#8f9195', rough: [0.62, 0.3], dust: 0.35, scratches: 80, seed: 1 });
+  const fSteel = finish({ base: '#27282b', wear: '#a9acb0', rough: [0.42, 0.18], dust: 0.2, scratches: 60, seed: 2 });
+  const fPoly = finish({ base: '#242427', wear: '#3d3d40', rough: [0.86, 0.62], dust: 0.45, scratches: 40, seed: 3 });
+  const fFde = finish({ base: '#7e6b4d', wear: '#a08e70', rough: [0.84, 0.66], dust: 0.3, scratches: 45, seed: 4 });
+  const fOd = finish({ base: '#4b4f3b', wear: '#6e725d', rough: [0.8, 0.6], dust: 0.35, scratches: 45, seed: 5 });
+  const std = (f, metal, normal, ns) => new THREE.MeshStandardMaterial({
+    map: f.map, roughnessMap: f.roughness, roughness: 1, metalness: metal,
+    normalMap: normal || f.normal, normalScale: new THREE.Vector2(ns, ns),
+  });
   M = {
-    anod: new THREE.MeshStandardMaterial({ color: 0x2b2c2f, roughness: 0.46, metalness: 0.62, roughnessMap: wear }),
-    rail: new THREE.MeshStandardMaterial({ color: 0x2b2c2f, roughness: 0.46, metalness: 0.62, roughnessMap: wear, alphaMap: mlok, alphaTest: 0.5, side: THREE.DoubleSide }),
-    polymer: new THREE.MeshStandardMaterial({ color: 0x222225, roughness: 0.82, metalness: 0.05, normalMap: stipple, normalScale: new THREE.Vector2(0.35, 0.35) }),
-    fde: new THREE.MeshStandardMaterial({ color: 0x7d6a4c, roughness: 0.78, metalness: 0.03, normalMap: stipple, normalScale: new THREE.Vector2(0.25, 0.25) }),
-    od: new THREE.MeshStandardMaterial({ color: 0x4a4e3a, roughness: 0.7, metalness: 0.1, normalMap: stipple, normalScale: new THREE.Vector2(0.2, 0.2) }),
-    steel: new THREE.MeshStandardMaterial({ color: 0x2c2d30, roughness: 0.32, metalness: 0.95, roughnessMap: wear }),
+    anod: std(fAnod, 0.55, null, 0.35),
+    rail: new THREE.MeshStandardMaterial({ map: fAnod.map, roughnessMap: fAnod.roughness, roughness: 1, metalness: 0.55, alphaMap: mlok, alphaTest: 0.5, side: THREE.DoubleSide }),
+    polymer: std(fPoly, 0.04, stipple, 0.35),
+    fde: std(fFde, 0.03, stipple, 0.25),
+    od: std(fOd, 0.08, stipple, 0.2),
+    steel: std(fSteel, 0.9, null, 0.3),
+    bcg: new THREE.MeshStandardMaterial({ color: 0x8a8d92, roughness: 0.28, metalness: 1, roughnessMap: wear }),
+    sling: new THREE.MeshStandardMaterial({ map: fFde.map, color: 0xb9a37e, roughness: 0.95, metalness: 0, normalMap: stipple, normalScale: new THREE.Vector2(0.5, 0.5) }),
     dark: new THREE.MeshStandardMaterial({ color: 0x0b0b0c, roughness: 0.6, metalness: 0.3 }),
     brass: new THREE.MeshStandardMaterial({ color: 0xb5904f, roughness: 0.28, metalness: 1 }),
     shell: new THREE.MeshStandardMaterial({ color: 0x8e1d18, roughness: 0.45, metalness: 0.05 }),
@@ -31,6 +48,9 @@ export function gunMaterials() {
     reticle: new THREE.MeshBasicMaterial({ map: TX.holoReticleTexture(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
     tritium: new THREE.MeshBasicMaterial({ map: TX.dotTexture(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
   };
+  // representative colours (enemy guns are vertex-coloured copies of these models)
+  const base = { anod: 0x2b2c2f, rail: 0x2b2c2f, polymer: 0x242427, fde: 0x7e6b4d, od: 0x4b4f3b, steel: 0x27282b, sling: 0x6b5a42 };
+  for (const [k, c] of Object.entries(base)) M[k].userData.baseColor = new THREE.Color(c);
   // player sleeve camo (multicam-ish)
   const atlas = document.createElement('canvas');
   atlas.width = atlas.height = 256;
@@ -92,8 +112,21 @@ function rail(f0, len, y, w = 0.021) {
   for (let f = f0 + 0.004; f < f0 + len - 0.004; f += 0.01) parts.push(box(w, 0.0045, 0.0052, 0, y + 0.0058, f));
   return mergeGeometries(parts.map(norm));
 }
-function norm(g) {
+/** Box-projected UVs in metres: every part gets the same texel density. */
+function metreUV(g) {
+  const p = g.attributes.position, n = g.attributes.normal;
+  const uv = new Float32Array(p.count * 2);
+  for (let i = 0; i < p.count; i++) {
+    const ax = Math.abs(n.getX(i)), ay = Math.abs(n.getY(i)), az = Math.abs(n.getZ(i));
+    if (ay >= ax && ay >= az) { uv[i * 2] = p.getX(i); uv[i * 2 + 1] = p.getZ(i); }
+    else if (ax >= az) { uv[i * 2] = p.getZ(i); uv[i * 2 + 1] = p.getY(i); }
+    else { uv[i * 2] = p.getX(i); uv[i * 2 + 1] = p.getY(i); }
+  }
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+}
+function norm(g, keepUV = false) {
   let n = g.index ? g.toNonIndexed() : g;
+  if (!keepUV) metreUV(n);
   if (!n.attributes.uv) n.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(n.attributes.position.count * 2), 2));
   for (const k of Object.keys(n.attributes)) if (!['position', 'normal', 'uv'].includes(k)) n.deleteAttribute(k);
   return n;
@@ -105,7 +138,7 @@ class Builder {
     if (!this.parts.has(part)) this.parts.set(part, new Map());
     const m = this.parts.get(part);
     if (!m.has(mat)) m.set(mat, []);
-    m.get(mat).push(norm(geo));
+    m.get(mat).push(norm(geo, mat === M.rail));
     return this;
   }
   build() {
@@ -143,23 +176,34 @@ export function buildM4() {
   b.add(prof([[-0.105, 0.0], [0.085, 0.0], [0.085, 0.029], [-0.1, 0.029], [-0.105, 0.024]], 0.027), m.anod);
   b.add(box(0.012, 0.012, 0.02, 0, 0.022, 0.08), m.anod); // barrel nut shoulder
   b.add(rail(-0.1, 0.18, 0.029), m.anod);
-  // ejection port cover + forward assist + brass deflector
-  b.add(box(0.002, 0.014, 0.055, 0.0142, 0.012, 0.025), m.dark);
+  // ejection port: dark recess, bolt carrier inside, spring-loaded dust cover
+  b.add(box(0.0015, 0.013, 0.052, 0.0131, 0.012, 0.025), m.dark);
+  b.add(box(0.004, 0.011, 0.05, 0.0112, 0.012, 0.025), m.bcg, 'bcg');
+  b.add(box(0.0016, 0.002, 0.03, 0.0134, 0.014, 0.02), m.dark, 'bcg');
+  b.add(box(0.0016, 0.015, 0.056, 0.0008, 0.0075, 0.025), m.anod, 'dust');
+  b.add(box(0.0022, 0.003, 0.012, 0.0014, 0.012, 0.03), m.anod, 'dust');
   b.add(cyl(0.0065, 0.0065, 0.028, -0.075, 0.017, 0.016, 12), m.anod);
   b.add(box(0.008, 0.012, 0.018, 0.0155, 0.02, -0.03), m.anod);
   // lower receiver with flared magwell
   b.add(prof([[-0.105, 0.0], [0.075, 0.0], [0.078, -0.02], [0.074, -0.06], [0.0, -0.062], [-0.004, -0.04], [-0.07, -0.038], [-0.098, -0.028], [-0.105, -0.018]], 0.025), m.anod);
   b.add(box(0.029, 0.006, 0.075, 0, -0.058, 0.037), m.anod); // magwell flare
   // trigger guard + trigger
-  b.add(box(0.006, 0.004, 0.058, 0, -0.06, -0.028), m.anod);
+  b.add(prof([[0.002, -0.038], [0.002, -0.052], [-0.007, -0.062], [-0.058, -0.063], [-0.063, -0.056], [-0.063, -0.038]], 0.012, 0, 0.0012,
+    [[[-0.003, -0.041], [-0.003, -0.05], [-0.01, -0.058], [-0.056, -0.059], [-0.059, -0.055], [-0.059, -0.041]]]), m.anod);
   b.add(prof([[-0.012, -0.036], [-0.006, -0.036], [-0.01, -0.05], [-0.016, -0.054], [-0.017, -0.048]], 0.005), m.steel);
   // pistol grip (raked)
-  b.add(prof([[-0.035, -0.03], [-0.062, -0.028], [-0.09, -0.07], [-0.103, -0.125], [-0.095, -0.132], [-0.065, -0.128], [-0.052, -0.085], [-0.03, -0.042]], 0.03, 0, 0.004), m.polymer);
+  b.add(prof([[-0.035, -0.03], [-0.062, -0.028], [-0.079, -0.05], [-0.09, -0.07], [-0.103, -0.125], [-0.098, -0.133], [-0.066, -0.129],
+    [-0.061, -0.117], [-0.064, -0.107], [-0.056, -0.098], [-0.056, -0.088], [-0.049, -0.078], [-0.043, -0.058], [-0.03, -0.042]], 0.03, 0, 0.004), m.polymer);
   // buffer tube + CTR style stock
   b.add(cyl(0.0148, 0.0148, 0.19, -0.295, 0, 0.004, 18), m.anod);
   b.add(prof([[-0.19, 0.026], [-0.33, 0.03], [-0.346, 0.024], [-0.346, -0.086], [-0.332, -0.097], [-0.3, -0.094], [-0.245, -0.042], [-0.205, -0.03], [-0.19, -0.018]], 0.038, 0, 0.004,
     [[[-0.25, 0.012], [-0.318, 0.015], [-0.318, -0.055], [-0.296, -0.066], [-0.256, -0.028]]]), m.fde);
   b.add(box(0.04, 0.125, 0.012, 0, -0.03, -0.352), m.rubber);
+  b.add(cyl(0.0178, 0.0178, 0.011, -0.118, 0, 0.004, 16), m.steel);
+  for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; b.add(box(0.004, 0.004, 0.012, Math.cos(a) * 0.017, 0.004 + Math.sin(a) * 0.017, -0.112), m.dark); }
+  b.add(prof([[-0.1055, 0.012], [-0.1085, 0.012], [-0.1085, -0.03], [-0.1055, -0.03]], 0.03), m.steel);
+  b.add(cyl(0.006, 0.006, 0.01, -0.113, -0.019, -0.012, 10), m.steel);
+  b.add(box(0.01, 0.007, 0.05, 0, -0.037, -0.245), m.polymer);
   // selector, takedown pins, bolt catch, mag release
   b.add(box(0.004, 0.006, 0.018, -0.0145, -0.016, -0.045), m.steel);
   for (const f of [-0.095, 0.062]) {
@@ -188,6 +232,7 @@ export function buildM4() {
   b.add(prof([[0.007, -0.03], [0.068, -0.03], [0.074, -0.08], [0.087, -0.14], [0.104, -0.2], [0.1, -0.214], [0.04, -0.214], [0.034, -0.2], [0.019, -0.14], [0.011, -0.08]], 0.024, 0, 0.0025), m.fde, 'mag');
   b.add(prof([[0.036, -0.212], [0.106, -0.212], [0.108, -0.222], [0.034, -0.222]], 0.028), m.polymer, 'mag');
   b.add(box(0.003, 0.08, 0.004, 0.0125, -0.1, 0.02), m.polymer, 'mag');
+  for (let k = 0; k < 3; k++) b.add(box(0.0262, 0.0035, 0.046, 0, -0.105 - k * 0.028, 0.049 + k * 0.012), m.fde, 'mag');
   // EOTech-style holographic sight
   b.add(box(0.034, 0.016, 0.1, 0, 0.044, -0.01), m.anod);
   b.add(box(0.0032, 0.044, 0.05, -0.0205, 0.074, -0.01), m.anod);
@@ -205,8 +250,19 @@ export function buildM4() {
   // folded backup irons
   b.add(box(0.02, 0.01, 0.03, 0, 0.037, -0.085), m.anod);
   b.add(box(0.02, 0.01, 0.03, 0, 0.037, 0.37), m.anod);
+  // front QD sling mount + two-point sling hanging under the gun
+  b.add(cyl(0.006, 0.006, 0.012, 0.365, -0.029, -0.008, 10), m.steel);
+  const slingCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(-0.03, -0.012, -0.365), new THREE.Vector3(-0.034, -0.1, -0.26), new THREE.Vector3(-0.036, -0.16, -0.1),
+    new THREE.Vector3(-0.034, -0.14, 0.02), new THREE.Vector3(-0.03, -0.06, 0.1), new THREE.Vector3(-0.022, -0.019, 0.113),
+  ]);
+  const sling = new THREE.TubeGeometry(slingCurve, 40, 0.0125, 6, false);
+  sling.scale(0.28, 1, 1);
+  sling.translate(-0.022, 0, 0);
+  b.add(sling, m.sling);
 
   const { root, parts } = b.build();
+  parts.dust.position.set(0.0137, 0.0045, 0);
   const sightY = 0.074;
   root.add(reticlePlane(0.013, sightY, -0.005));
   const muzzle = marker(0, 0, 0.54); root.add(muzzle);

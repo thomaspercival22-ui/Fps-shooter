@@ -545,6 +545,37 @@ export function buildLevel(scene, assets, opts = {}) {
   instanced(assets.models.ammo_box, [place(-7.0, 0.85, -26.45, Math.PI / 2), place(-6.6, 0.85, -26.45, Math.PI / 2 + 0.1), place(-6.1, 0.85, -26.4, Math.PI / 2 - 0.1)]);
   instanced(assets.models.medical_box, [place(3.2, 0.9, -24.35, 0.3)]);
 
+  // ---------------- photo-scanned clutter ----------------
+  const M = assets.models;
+  // wall-mounted AC condensers (the model is a pair of units, back at -z)
+  instanced(M.exterior_aircon_unit, [
+    place(8 + 0.22, 1.62, -24.5, Math.PI / 2), place(-34 - 0.22, 1.7, 17.2, -Math.PI / 2), place(-18.5, 1.7, 30 + 0.22, 0),
+  ], { heat: 0.36 });
+  world.add(8, 1.3, -25.4, 8.6, 2.25, -23.6, { mat: 'metal', pen: 0.6 });
+  world.add(-34.6, 1.38, 16.3, -34, 2.33, 18.1, { mat: 'metal', pen: 0.6 });
+  world.add(-19.4, 1.38, 30, -17.6, 2.33, 30.6, { mat: 'metal', pen: 0.6 });
+  // electrical cabinets on the perimeter wall and the warehouse
+  instanced(M.utility_box_02, [place(-15, 0, -WALL + 0.51, 0), place(WALL - 0.51, 0, 20, -Math.PI / 2), place(22, 0, -18 + 0.22, 0)], { heat: 0.33 });
+  for (const [x0, z0, x1, z1] of [[-15.46, -41.7, -14.54, -41.27], [41.27, 19.54, 41.7, 20.46], [21.54, -18, 22.46, -17.57]]) {
+    const b = world.add(x0, 0, z0, x1, 1.12, z1, { mat: 'metal', pen: 0.5 }); coverBoxes.push(b);
+  }
+  // generator + fuel cans by the HQ, cans by the truck
+  instanced(M.portable_generator, [place(10.2, 0, -22.6, 0.4)], { heat: 0.38 });
+  world.add(9.75, 0, -23.05, 10.65, 0.58, -22.15, { mat: 'metal', pen: 0.4 });
+  instanced(M.metal_jerrycan, [place(10.9, 0, -21.7, 1.2), place(11.2, 0, -21.9, 1.5), place(-7.1, 0, -1.3, 0.2), place(-6.72, 0, -1.25, 0.05), place(-24.4, 0, -12.7, 2.8)], { heat: 0.32 });
+  // covered cars (usable as cover)
+  instanced(M.covered_car, [place(-21, 0, -9, 0), place(30, 0, 38, Math.PI / 2)], { heat: 0.33 });
+  for (const [x0, z0, x1, z1] of [[-21.85, -11.17, -20.06, -6.79], [27.79, 37.08, 32.21, 38.94]]) {
+    const b = world.add(x0, 0, z0, x1, 1.38, z1, { mat: 'metal', pen: 0.55 }); coverBoxes.push(b); minimap.push(b);
+  }
+  // gas bottles and rubbish around the houses and yards
+  instanced(M.propane_tank, [place(-26.6, 0, 15.2, 0.3), place(-26.2, 0, 15.62, 1.1), place(-15.4, 0, 31.2, 2.2), place(-28.6, 0, 27.4, 0.7)], { heat: 0.33 });
+  for (const [x, z] of [[-26.6, 15.2], [-26.2, 15.62], [-15.4, 31.2], [-28.6, 27.4]]) world.add(x - 0.17, 0, z - 0.17, x + 0.17, 0.55, z + 0.17, { mat: 'metal', tag: null });
+  instanced(M.trashbag, [
+    place(13.5, 0, 9.4, 0.4), place(13.9, 0, 8.9, 2.1), place(13.2, 0, 8.7, 3.9), place(-28.3, 0, 20.7, 1.0), place(-27.8, 0, 21.0, 2.6),
+    place(-14.4, 0, 23.4, 0.2), place(35.4, 0, 26.2, 5.2), place(-9.6, 0, -15.3, 0.9), place(24.4, 0, -17.4, 1.7), place(-36.5, 0, 26.8, 4.4),
+  ], { castShadow: true, heat: 0.3 });
+
   world.build();
   // scattered rocks
   {
@@ -597,30 +628,35 @@ export function buildLevel(scene, assets, opts = {}) {
     for (const m of grass) { m.userData.noThermal = true; }
   }
 
-  // security lamps (switched on for night missions)
-  const lamps = new THREE.Group();
+  // security lamps: the fixtures are always there; bulbs and lights switch on at night
+  const lamps = new THREE.Group();      // lights + glowing bulbs (added to the scene at night)
   const lampLights = [];
   {
     const poleMat = new THREE.MeshStandardMaterial({ color: 0x3a3a38, roughness: 0.6, metalness: 0.6 });
-    const headMat = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0xffb65c, emissiveIntensity: 7, roughness: 0.4 });
-    const add = (x, y, z, pole, lx, ly, lz) => {
+    const bulbMat = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0xffb65c, emissiveIntensity: 9, roughness: 0.4 });
+    const fixtures = [];
+    const add = (x, y, z, ry, pole) => {
       if (pole) {
-        const p = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, y, 8), poleMat);
-        p.position.set(x, y / 2, z); p.castShadow = true; p.userData.heat = 0.3; p.userData.env = true;
-        lamps.add(p);
+        const p = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, y + 0.4, 8), poleMat);
+        const bx = x + Math.sin(ry) * 0.386, bz = z + Math.cos(ry) * 0.386;
+        p.position.set(bx, (y + 0.4) / 2, bz); p.castShadow = true; p.userData.heat = 0.3; p.userData.env = true;
+        props.add(p);
+        world.addDynamic(bx - 0.1, 0, bz - 0.1, bx + 0.1, y, bz + 0.1, { mat: 'metal', blocksSight: false });
       }
-      const h = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.12, 0.26), headMat);
-      h.position.set(x, y, z); h.userData.heat = 0.75;
-      lamps.add(h);
-      const l = new THREE.PointLight(0xffb866, 26, 24, 2);
-      l.position.set(lx, ly, lz);
+      fixtures.push(place(x, y, z, ry));
+      const bulb = new THREE.Mesh(new THREE.CircleGeometry(0.11, 16), bulbMat);
+      bulb.rotation.x = Math.PI / 2; bulb.position.set(x, y - 0.35, z); bulb.userData.heat = 0.8;
+      lamps.add(bulb);
+      const l = new THREE.PointLight(0xffb866, 30, 26, 2);
+      l.position.set(x, y - 0.5, z);
       lamps.add(l);
       lampLights.push(l);
     };
-    add(-3.5, 2.75, -15.72, false, -3.5, 2.5, -15.2);
-    add(15.72, 4.9, -26.2, false, 15.2, 4.6, -26.2);
-    add(-3.95, 3.72, 42, false, -3.95, 3.5, 41.2);
-    add(21, 6.2, 18.2, true, 21, 5.9, 18.2);
+    add(-3.5, 2.8, -15.614, Math.PI, false);
+    add(15.614, 4.9, -26.2, Math.PI / 2, false);
+    add(-3.95, 3.3, 41.164, 0, false);
+    add(21, 6.0, 17.814, 0, true);
+    instanced(M.security_light, fixtures, { heat: 0.3 });
   }
 
   const meshes = G.build(scene, mats, shadows);
@@ -759,15 +795,17 @@ function applyBakedAO(mat, ao, key) {
     shader.vertexShader = 'varying vec3 vAOWorld;\n' + shader.vertexShader.replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
       #ifdef USE_INSTANCING
         vAOWorld = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
+        vAOWorld += normalize(mat3(modelMatrix) * mat3(instanceMatrix) * objectNormal) * 0.3;
       #else
         vAOWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;
+        vAOWorld += normalize(mat3(modelMatrix) * objectNormal) * 0.3; // sample just off the surface
       #endif`);
     shader.fragmentShader = 'uniform sampler2D uAOMap; uniform float uAOMin; uniform float uAOSize; varying vec3 vAOWorld;\n' +
       shader.fragmentShader.replace('#include <aomap_fragment>', `#include <aomap_fragment>
       {
         vec4 bao = texture2D(uAOMap, (vAOWorld.xz - uAOMin) / uAOSize);
-        float contact = mix(bao.r, 1.0, smoothstep(0.05, 1.9, vAOWorld.y));
-        float over = vAOWorld.y < bao.b * 8.0 - 0.05 ? bao.g : 1.0;
+        float contact = mix(bao.r, 1.0, smoothstep(0.3, 2.1, vAOWorld.y));
+        float over = vAOWorld.y < bao.b * 8.0 - 0.1 ? bao.g : 1.0;
         float k = contact * over;
         reflectedLight.indirectDiffuse *= k;
         reflectedLight.indirectSpecular *= k;

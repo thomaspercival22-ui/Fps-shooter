@@ -154,7 +154,10 @@ export class Game {
       this.weapons.scene.environment = this.assets.envMap;
       this.onResize();
     } else {
-      for (const s of Object.values(this.weapons.slots)) { s.ammo = s.def.mag + (s.def.chamber ? 1 : 0); s.reserve = s.def.reserve; s.boltReady = true; }
+      for (const s of Object.values(this.weapons.slots)) {
+        s.ammo = s.def.mag + (s.def.chamber ? 1 : 0); s.boltReady = true; s.heat = 0; s.jammed = false; s.dustOpen = false;
+        if (s.mags) this.weapons._fillMags(s); else s.reserve = s.def.reserve;
+      }
       this.weapons.frags = GRENADES.startFrag; this.weapons.flashes = GRENADES.startFlash;
       if (this.weapons.currentSlot !== 'primary') { this.weapons.cur.model.root.visible = false; this.weapons.currentSlot = 'primary'; this.weapons.cur.model.root.visible = true; }
       this.weapons.state = 'draw'; this.weapons.stateT = 0; this.weapons.reload = null; this.weapons.throwing = null; this.weapons.adsT = 0;
@@ -538,6 +541,7 @@ export class Game {
     // actions
     if (p.alive) {
       if (input.consume('reload')) w.requestReload();
+      if (input.consume('firemode')) w.toggleFireMode();
       if (input.consume('swap')) w.switchWeapon();
       if (input.consume('slot1')) w.switchWeapon('primary');
       if (input.consume('slot2')) w.switchWeapon('secondary');
@@ -613,7 +617,7 @@ export class Game {
     if (input.fire && !this._droneFirePrev) d.detonate();
     this._droneFirePrev = input.fire;
     if (input.consume('swap')) d.exit();
-    for (const k of ['reload', 'crouch', 'frag', 'flash', 'slot1', 'slot2']) input.consume(k);
+    for (const k of ['reload', 'crouch', 'frag', 'flash', 'slot1', 'slot2', 'firemode']) input.consume(k);
     input.jump = false;
     d.update(dt, input, look);
     this.weapons.setTrigger(false);

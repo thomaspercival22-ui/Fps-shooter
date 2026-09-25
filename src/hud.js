@@ -102,6 +102,7 @@ export class HUD {
 
   // ---------------- events ----------------
   onFire() { this.spreadKick = 1; }
+  malfunction() { this.pickup('MALFUNCTION'); this.game.audio.play('dry', { vol: 0.8 }); }
 
   hitMarker(kind) {
     const h = this.el.hit;
@@ -177,14 +178,21 @@ export class HUD {
     const g = this.game, w = g.weapons, p = g.player, c = w.cur, d = c.def, e = this.el;
     this.frame++;
     // ammo
-    const mag = String(c.ammo), res = `/ ${c.reserve}`;
+    const mag = String(c.ammo);
+    let res;
+    if (c.mags) {
+      // one pip per magazine in the pouches: full, partial
+      const full = c.mags.filter((n) => n >= d.mag).length, part = c.mags.length - full;
+      res = c.mags.length ? `${'▮'.repeat(full)}${'▯'.repeat(part)}` : 'NO MAGS';
+    } else res = `/ ${c.reserve}`;
     if (this.last.mag !== mag) { e.ammoMag.textContent = mag; this.last.mag = mag; }
     if (this.last.res !== res) { e.ammoRes.textContent = res; this.last.res = res; }
-    if (this.last.wn !== d.name) { e.weapon.textContent = d.name; this.last.wn = d.name; }
+    const wn = d.auto ? `${d.name} · ${w.fireMode === 'semi' ? 'SEMI' : 'AUTO'}` : d.name;
+    if (this.last.wn !== wn) { e.weapon.textContent = wn; this.last.wn = wn; }
     const low = c.ammo <= Math.ceil(d.mag * 0.25);
     if (this.last.low !== low) { e.ammo.classList.toggle('low', low); this.last.low = low; }
-    const needReload = c.ammo === 0 && c.reserve > 0;
-    if (this.last.nr !== needReload) { e.reload.classList.toggle('hidden', !needReload); this.last.nr = needReload; }
+    const hint = c.jammed ? 'MALFUNCTION · TAP RELOAD' : c.ammo === 0 && c.reserve > 0 ? 'RELOAD' : '';
+    if (this.last.nr !== hint) { e.reload.textContent = hint; e.reload.classList.toggle('hidden', !hint); this.last.nr = hint; }
     if (this.last.frag !== w.frags) { e.frag.textContent = w.frags; e.btnFrag.classList.toggle('empty', w.frags <= 0); this.last.frag = w.frags; }
     if (this.last.flashN !== w.flashes) { e.flash.textContent = w.flashes; e.btnFlash.classList.toggle('empty', w.flashes <= 0); this.last.flashN = w.flashes; }
     // health

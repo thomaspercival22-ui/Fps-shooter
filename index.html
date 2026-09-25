@@ -85,6 +85,7 @@
       <button class="tbtn" id="btn-reload" aria-label="Reload"><svg viewBox="0 0 24 24"><path d="M12 4a8 8 0 1 0 8 8h-2.5A5.5 5.5 0 1 1 12 6.5V9l4-3.5L12 2z"/></svg></button>
       <button class="tbtn" id="btn-jump" aria-label="Jump"><svg viewBox="0 0 24 24"><path d="M12 4l7 8h-4v8H9v-8H5z"/></svg></button>
       <button class="tbtn" id="btn-crouch" aria-label="Crouch"><svg viewBox="0 0 24 24"><path d="M12 20l-7-8h4V4h6v8h4z"/></svg></button>
+      <button class="tbtn" id="btn-mode" aria-label="Fire selector">SEMI<br>AUTO</button>
       <button class="tbtn" id="btn-swap" aria-label="Switch weapon"><svg viewBox="0 0 24 24"><path d="M4 8h12l-3-3 1.4-1.4L20 9l-5.6 5.4L13 13l3-3H4zM20 16H8l3 3-1.4 1.4L4 15l5.6-5.4L11 11l-3 3h12z"/></svg></button>
       <button class="tbtn" id="btn-frag" aria-label="Frag grenade"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="14" rx="6" ry="7"/><rect x="10" y="3" width="4" height="4" rx="1"/><path d="M14 5h4v2h-4z"/></svg><b id="frag-count">2</b></button>
       <button class="tbtn" id="btn-flash" aria-label="Flashbang"><svg viewBox="0 0 24 24"><rect x="8" y="6" width="8" height="15" rx="2"/><rect x="10" y="2" width="4" height="4"/><path d="M3 9l3 1M3 15l3-1M21 9l-3 1M21 15l-3-1" stroke="currentColor" stroke-width="1.6"/></svg><b id="flash-count">2</b></button>
@@ -155,7 +156,7 @@
           <ul>
             <li>WASD move, Shift sprint, Space jump, C crouch</li>
             <li>Mouse look, left click fire, right click aim</li>
-            <li>R reload, Q / 1 / 2 switch, G frag, F flashbang, Esc pause</li>
+            <li>R reload (also clears stoppages), B fire selector, Q / 1 / 2 switch, G frag, F flashbang, Esc pause</li>
             <li>N night vision, T thermal, V drone (Space / C for up / down, click to detonate, Q to exit)</li>
           </ul>
         </div>
@@ -167,6 +168,8 @@
             <li><b>Flashbangs</b> blind every enemy looking toward the blast for a few seconds. Push while they're stunned. Look away from your own flashbang.</li>
             <li>Red dots on the minimap are enemies who just fired.</li>
             <li>Bullets travel and drop. Wood and thin metal can be shot through. Concrete stops rounds.</li>
+            <li>Magazines are tracked individually: a reload with rounds left keeps the partial mag, an empty reload drops it. The pips next to your ammo show full and partial mags.</li>
+            <li>Guns can jam (more often when the barrel is hot). Hit reload to tap-rack and clear it. Sustained fire heats the barrel: it smokes and the shots spread.</li>
             <li>Health regenerates after a few seconds out of fire. Dead enemies may drop ammo or medkits.</li>
             <li>The ammo crate in the headquarters building refills ammo, grenades and drones.</li>
             <li>At night enemies struggle to see you, but their infrared lasers give them away under night vision. Thermal shows body heat through the dark.</li>
