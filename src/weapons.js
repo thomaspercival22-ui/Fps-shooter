@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { WEAPONS, GRENADES } from './config.js';
 import { settings } from './settings.js';
-import { buildM4, buildGlock, buildM1014, buildSniper, buildFragMesh, buildFlashMesh, Arms, gunMaterials as gunMaterialsRef } from './gunmodels.js';
+import { buildM4, buildGlock, buildM1014, buildSniper, buildFragMesh, buildFlashMesh, createArms, gunMaterials as gunMaterialsRef } from './gunmodels.js';
 import * as TX from './textures.js';
 
 const BUILDERS = { m4: buildM4, glock: buildGlock, m1014: buildM1014, sniper: buildSniper };
@@ -48,7 +48,7 @@ export class WeaponSystem {
     this.scene.add(this.muzzleLight);
     this.rig = new THREE.Group();
     this.scene.add(this.rig);
-    this.arms = new Arms();
+    this.arms = createArms();
     this.scene.add(this.arms.group);
     this.arms.group.traverse((o) => { if (o.isMesh) o.castShadow = o.receiveShadow = true; });
 
@@ -741,7 +741,7 @@ export class WeaponSystem {
     this.arms.solve('R', rWorld, qR.clone(), true);
     if (heldPos) {
       const ql = new THREE.Quaternion().setFromEuler(_e.set(-0.6, 0.3, 0.2));
-      this.arms.solve('L', heldPos, ql, handLVisible);
+      this.arms.solve('L', heldPos, ql, handLVisible, false, 'ball');
       const held = this.throwing?.type === 'frag' ? this.heldFrag : this.heldFlash;
       held.position.copy(heldPos).add(new THREE.Vector3(0.0, 0.03, -0.03));
     } else {

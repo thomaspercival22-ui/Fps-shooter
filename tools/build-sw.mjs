@@ -12,7 +12,7 @@ const walk = (p) => {
   const st = fs.statSync(p);
   if (st.isDirectory()) for (const f of fs.readdirSync(p).sort()) walk(path.join(p, f));
   // (the Cinematic *_hq.js sculpts are only fetched by gaming PCs, then cached on first use)
-  else if (!p.endsWith('LICENSE') && !path.basename(p).startsWith('.') && !/_hq\.js$/.test(p) && !buildOnly.has(p.split(path.sep).join('/'))) files.push(p.split(path.sep).join('/'));
+  else if (!p.endsWith('LICENSE') && !path.basename(p).startsWith('.') && !/_hq\.(js|glb)$/.test(p) && !buildOnly.has(p.split(path.sep).join('/'))) files.push(p.split(path.sep).join('/'));
 };
 for (const r of roots) walk(r);
 const hash = crypto.createHash('sha256');

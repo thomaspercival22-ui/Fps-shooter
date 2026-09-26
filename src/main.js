@@ -5,6 +5,7 @@ import { AudioEngine, Voices } from './audio.js';
 import { Game } from './game.js';
 import { gunsReady, useGunData } from './guns.js';
 import { useMeshData } from './meshes.js';
+import { loadRealGuns } from './realguns.js';
 import { settings, saveSettings, getBest, textureCap, isCinematic, MOBILE } from './settings.js';
 import { WEAPONS, DIFFICULTY } from './config.js';
 import { MISSIONS } from './missions.js';
@@ -69,6 +70,8 @@ async function boot() {
       import('./gundata_hq.js').then(useGunData).catch(() => {}),
     ]);
   }
+  text.textContent = 'Loading weapons...';
+  await loadRealGuns(renderer, isCinematic());
   text.textContent = 'Building the compound...';
   await new Promise((r) => setTimeout(r, 30));
   const game = new Game(renderer, assets, audio, voices);

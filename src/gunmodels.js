@@ -8,6 +8,7 @@ import { meshes } from './meshes.js';
 import { fabricMaterial, R } from './fabric.js';
 import { gunGeo, gunPartNames } from './guns.js';
 import { gunMaterial } from './gunmaterial.js';
+import { RealArms } from './arms.js';
 
 let M = null;
 export function gunMaterials() {
@@ -97,8 +98,48 @@ function lensDisc(r, x, y, f, mat, back = false) {
   return m;
 }
 
+// ---------- real guns (tools/build-realguns.mjs) ----------
+// Artist-made models of real weapons, split into the same animated parts as
+// the sculpted ones. Loaded at boot (setRealGun); without them the sculpted
+// guns are used.
+const REAL = {};
+export function setRealGun(key, gltf, meta) { REAL[key] = { gltf, meta }; }
+export function hasRealGun(key) { return !!REAL[key]; }
+function realGun(key) {
+  const r = REAL[key];
+  if (!r) return null;
+  const src = r.gltf.scene.clone(true); // geometry and materials are shared between copies
+  const root = new THREE.Group(), parts = {};
+  for (const node of [...src.children]) {
+    const group = new THREE.Group();
+    group.name = node.name;
+    const pv = r.meta.pivots?.[node.name];
+    if (pv) { group.position.set(pv[0], pv[1], pv[2]); node.position.set(-pv[0], -pv[1], -pv[2]); }
+    group.add(node);
+    root.add(group);
+    parts[node.name] = group;
+  }
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    o.castShadow = o.receiveShadow = true;
+    o.frustumCulled = false;
+    // sight and lens glass: the game's thin coated glass (the models' solid glass blocks read as grey slabs)
+    if (/glass/i.test(o.material.name) || o.material.transparent) { o.material = gunMaterials().glass; o.castShadow = false; o.renderOrder = 5; }
+  });
+  return { root, parts, meta: r.meta };
+}
+const V3 = (a) => new THREE.Vector3(a[0], a[1], a[2]);
+/** The anchors every gun model provides, from the real model's measured points. */
+function realAnchors({ meta }, extra) {
+  const muzzle = new THREE.Object3D(); muzzle.position.copy(V3(meta.muzzle));
+  const eject = new THREE.Object3D(); eject.position.copy(V3(meta.eject));
+  return { muzzle, eject, ...extra };
+}
+
 // ---------- M4A1 carbine ----------
 export function buildM4(opts = {}) {
+  const real = realGun('m4');
+  if (real) return buildRealM4(real, opts);
   const m = gunMaterials();
   const nv = opts.optic === 'nv';
   const { root, parts } = sculptedGun('m4', nv ? 'nv' : 'holo');
@@ -139,8 +180,52 @@ export function buildM4(opts = {}) {
   };
 }
 
+/** MK18 with an EXPS3 (or the night-vision scope in its place) and a SOCOM suppressor. */
+function buildRealM4(real, opts) {
+  const m = gunMaterials();
+  const { root, parts, meta } = real;
+  const nv = opts.optic === 'nv';
+  let sightY = meta.window[1];
+  if (nv) {
+    // the sculpted clip-on NV scope on the real rail (its base sits 5.6 mm lower than on the sculpted upper)
+    parts.optic.visible = false;
+    const dy = meta.bounds.optic.min[1] - 0.028;
+    const scope = new THREE.Group();
+    scope.position.y = dy;
+    for (const name of gunPartNames('m4')) {
+      const g = gunGeo('m4', name);
+      if (g.userData.anim !== 'opt:nv') continue;
+      const mesh = new THREE.Mesh(g, viewmodelGunMaterial());
+      mesh.castShadow = mesh.receiveShadow = true; mesh.frustumCulled = false;
+      scope.add(mesh);
+    }
+    const ax = 0.078;
+    scope.add(lensDisc(0.0262, 0, ax, 0.1115, m.lens), lensDisc(0.0106, 0.037, ax - 0.006, 0.0433, m.lens));
+    parts.body.add(scope);
+    sightY = ax + dy;
+  } else {
+    root.add(reticlePlane(0.013, sightY, -meta.window[2]));
+  }
+  // the can glows when hot (weapons.js drives emissiveIntensity)
+  const hot = new Map();
+  parts.supp?.traverse((o) => {
+    if (!o.isMesh) return;
+    if (!hot.has(o.material)) { const c = o.material.clone(); c.emissive = new THREE.Color(0xff3a0a); c.emissiveIntensity = 0; hot.set(o.material, c); }
+    o.material = hot.get(o.material);
+  });
+  const g = meta.grip, hg = meta.handguard, mw = meta.magwell;
+  return {
+    root, parts, sightY, sightF: -0.07, real: true, ...realAnchors(real),
+    handR: { f: -g[2], y: g[1], rot: -0.42 }, handL: { f: -hg[2], y: hg[1], rot: 0 },
+    magWell: { f: -mw[2], y: mw[1] }, chargeF: -meta.chargeHandle[2],
+    hip: new THREE.Vector3(0.12, -0.15, -0.3), ads: new THREE.Vector3(0, 0, -0.25),
+  };
+}
+
 // ---------- Glock 17 ----------
 export function buildGlock() {
+  const real = realGun('glock');
+  if (real) return buildRealGlock(real);
   const m = gunMaterials();
   const { root, parts } = sculptedGun('glock');
   // tritium insert glowing in the front sight's white dot
@@ -159,6 +244,8 @@ export function buildGlock() {
 
 // ---------- M1014 semi-auto shotgun ----------
 export function buildM1014() {
+  const real = realGun('m1014');
+  if (real) return buildRealM1014(real);
   const { root, parts } = sculptedGun('m1014');
   const muzzle = marker(0, 0.008, 0.6); root.add(muzzle);
   const eject = marker(0.02, 0.006, 0.03); root.add(eject);
@@ -175,6 +262,8 @@ export function buildM1014() {
 
 // ---------- Bolt-action precision rifle in a chassis ----------
 export function buildSniper() {
+  const real = realGun('sniper');
+  if (real) return buildRealSniper(real);
   const m = gunMaterials();
   const { root, parts } = sculptedGun('sniper');
   const sy = 0.058;
@@ -186,6 +275,62 @@ export function buildSniper() {
     handR: { f: -0.1, y: -0.09, rot: -0.13 }, handL: { f: 0.2, y: -0.038, rot: 0 },
     magWell: { f: 0.025, y: -0.07 }, boltHandle: { f: -0.143, x: 0.055, y: -0.004 },
     hip: new THREE.Vector3(0.13, -0.172, -0.33), ads: new THREE.Vector3(0, 0, -0.27),
+  };
+}
+
+/** Glock 17: slide, frame, magazine. The model only has the magazine's baseplate: the sculpted body sits above it, in the grip. */
+function buildRealGlock(real) {
+  const m = gunMaterials();
+  const { root, parts, meta } = real;
+  const mb = meta.bounds.mag, g = gunGeo('glock', 'mag');
+  g.computeBoundingBox();
+  const sb = g.boundingBox;
+  const body = new THREE.Mesh(g, viewmodelGunMaterial());
+  body.position.set((mb.min[0] + mb.max[0]) / 2 - (sb.min.x + sb.max.x) / 2, mb.max[1] - sb.min.y - 0.002, (mb.min[2] + mb.max[2]) / 2 - (sb.min.z + sb.max.z) / 2);
+  body.frustumCulled = false;
+  parts.mag.children[0].add(body);
+  // tritium insert in the front sight's white dot, and the muzzle, ride on the slide
+  const fs = new THREE.Mesh(new THREE.PlaneGeometry(0.0022, 0.0022), m.tritium);
+  fs.position.set(0, meta.window[1], meta.muzzle[2] + 0.012);
+  parts.slide.add(fs);
+  const a = realAnchors(real);
+  parts.slide.add(a.muzzle);
+  const gr = meta.grip, mw = meta.magwell;
+  return {
+    root, parts, sightY: meta.window[1], sightF: -0.065, real: true, ...a,
+    handR: { f: -gr[2], y: gr[1], rot: -0.21 }, handL: { f: -gr[2], y: gr[1], rot: -0.21, support: true },
+    magWell: { f: -mw[2], y: mw[1] },
+    // held out at arm's length (isosceles stance), not under the nose
+    hip: new THREE.Vector3(0.1, -0.12, -0.44), ads: new THREE.Vector3(0, 0, -0.52),
+  };
+}
+
+/** Benelli M4: the rearmost saddle shell doubles as the loose shell carried to the loading port. */
+function buildRealM1014(real) {
+  const { root, parts, meta } = real;
+  // the saddle keeps its shell while a copy of it travels with the hand
+  const stay = parts.loose.clone(true);
+  parts.body.add(stay);
+  parts.loose.rotation.x = Math.PI / 2;
+  parts.loose.visible = false;
+  const gr = meta.grip, hg = meta.handguard, mw = meta.magwell;
+  return {
+    root, parts, sightY: meta.window[1], sightF: -0.1, real: true, ...realAnchors(real),
+    handR: { f: -gr[2], y: gr[1], rot: -0.31 }, handL: { f: -hg[2], y: hg[1], rot: 0 },
+    magWell: { f: -mw[2], y: mw[1] },
+    hip: new THREE.Vector3(0.105, -0.125, -0.34), ads: new THREE.Vector3(0, 0, -0.32),
+  };
+}
+
+/** M40A5: bolt (handle and shroud) and magazine move; the scope's image is drawn by the HUD when zoomed in. */
+function buildRealSniper(real) {
+  const { root, parts, meta } = real;
+  const gr = meta.grip, hg = meta.handguard, mw = meta.magwell, bh = meta.boltHandle;
+  return {
+    root, parts, sightY: meta.window[1], sightF: -0.24, real: true, ...realAnchors(real),
+    handR: { f: -gr[2], y: gr[1], rot: -0.13 }, handL: { f: -hg[2], y: hg[1], rot: 0 },
+    magWell: { f: -mw[2], y: mw[1] }, boltHandle: { f: -bh[2], x: bh[0], y: bh[1] },
+    hip: new THREE.Vector3(0.115, -0.14, -0.3), ads: new THREE.Vector3(0, 0, -0.27),
   };
 }
 
@@ -291,6 +436,12 @@ function segment(r0, r1, mat, seed = 1) {
   mesh.frustumCulled = false;
   return mesh;
 }
+
+let ARMS_GLTF = null;
+/** The rigged first-person arms (src/arms.js), once loaded. */
+export function setRealArms(gltf) { ARMS_GLTF = gltf; }
+/** The real rigged arms when loaded, else the sculpted ones. */
+export function createArms() { return ARMS_GLTF ? new RealArms(ARMS_GLTF) : new Arms(); }
 
 export class Arms {
   constructor() {
