@@ -36,6 +36,12 @@ This is a debug-signed build for your own phones. Publishing on the Play Store n
 
 ## What's in it
 
+- **Real 3D models instead of sculpted blocks:**
+  - **Your guns and sights** are detailed models of the real things, built to their published dimensions: a Daniel Defense MK18 with an EOTech EXPS3 holographic sight and a SureFire SOCOM suppressor (the M4 slot), a Glock 17, a Benelli M4 Super 90 (M1014) with a side saddle, and a USMC M40A5 with its Schmidt & Bender scope (the MK13 slot). They are cut into their moving parts, so the magazine drops, the charging handle and bolt carrier cycle, the dust cover opens, the Glock's slide locks back, the bolt works and shells go into the loading port. Phones get a simplified copy (1K textures); Cinematic gets full detail with 2K textures (the MK18 alone is 2 million triangles).
+  - **Your arms** are a rigged, textured model with fingerless gloves and sleeves, posed every frame: two-bone IK puts each hand on the grip or handguard, and every finger joint closes around what the hand holds.
+  - **Enemy soldiers** are rigged, textured characters: Russian and Ukrainian soldiers, a S.W.A.T. operator and an FSB operator, with real helmets, night-vision goggles, plate carriers, pouches and magazines. The game's procedural animation drives their skeletons (walking, strafing, crouching, kneeling, aiming with the cheek on the stock, reloading, throwing, flinching and falling), their arms reach the rifle with IK and their hands close round the grip. They carry light copies of the real MK18, Benelli and M40A5.
+  - **Civilians and hostages** are seven realistic office workers (shirts, suits, blouses, cardigans) posed the same way: hands up, cowering, kneeling bound with a hessian hood, walking out once rescued.
+  - **Furniture and fixtures** are photo-scans and real models: office chairs, computers, potted plants, chesterfield sofas, leather armchairs, fire extinguishers and call points, wall clocks, framed pictures, water coolers, a coffee cart, security cameras, shelving and boxes on floor 47, and plastic chairs, a picnic table, bins, a barrel stove, a hand truck and a ladder in the compound.
 - **Tower Hostage Rescue (Mission → Tower Hostage Rescue):**
   - **The floor:** you breach from stairwell A into a full office floor, 48 × 36 m. It has a concrete core with lifts, restrooms and an IT closet, a glass curtain wall with the city 183 m below, glass-fronted private offices, a boardroom, the CEO's office, open-plan desks, a kitchen, a server room, reception with the company wall, a lounge and meeting rooms. Walls are plasterboard (rounds go through), the core is concrete, and the glass partitions let you see (and be seen) through rooms.
   - **Hostiles** stand guard or walk patrol routes. They only react to what they see and hear, and gunshots carry less through walls. There are no waves and no reinforcements.
@@ -63,14 +69,15 @@ This is a debug-signed build for your own phones. Publishing on the Play Store n
   - **High-detail sculpts:** the guns keep 6× the triangles of the regular set at a tighter error bound (the first-person M4 is about 1.4 million triangles). The first-person gloves and every soldier and civilian are re-sculpted with voxels 2.2× finer and 8× the triangles (about 300,000 per soldier). People keep full detail 2.5× farther away.
   - **Rendering:** supersampled (at least 1.5× even on a 1080p screen, up to a 4K frame), up to 8× MSAA, an 8192 px contact-hardening shadow map, twice the ambient-occlusion and bounce-light samples, and bounce light at half resolution.
   - **What it needs:** a recent gaming GPU with about 6 GB of video memory or more, and a fast connection for the first load. If a download fails (or you're offline) each asset falls back to the bundled copy.
-  - **What it isn't:** it doesn't look identical to real life. No real-time game does, and the people in particular are sculpted, not scanned. Photoreal humans would need scanned people, skin and hair shading and motion capture.
+  - **Real models at full detail:** the guns load their full-detail copies with 2K textures, and the soldiers, civilians and furniture 1K textures.
+  - **What it isn't:** it doesn't look identical to real life. No real-time game does: the people are game-quality character models moved by procedural animation, not scans driven by motion capture.
 - **High-end graphics (Graphics → Ultra, the default on computers; phones start on High):**
   - **Photo-scanned world:** 4K ground scans with parallax occlusion mapping (pebbles and ruts have real depth), blended with rocky patches. Full-detail scans of concrete barriers, ammo crates, a tarped car, generator, fuel cans, gas bottles, cement bags, desert shrubs, quiver trees, boulders and pebbles. HESCO walls with bulging geotextile and welded mesh. Real corrugated containers with rust runs. Buildings with window frames, grilles, sills, rooftop water tanks, drainpipes and power cables.
   - **Lighting:** soft sun shadows that stay sharp where objects touch the ground (PCSS) and get softer further away. Screen-space ambient occlusion. Screen-space ray-traced contact shadows and reflections. Sunlight bouncing off the sand into shaded areas.
   - **Atmosphere:** desert haze that glows towards the sun, light shafts, and heat shimmer over the distant ground. Filmic AgX colour.
-  - **Weapon and hands:** every gun is built from sculpted parts at real dimensions (see *Modern weapons* below). The weapon and your hands cast shadows on each other. Your gloves are sculpted hands with real finger joints that close around the grip, so the right index finger sits on the trigger and the left hand clamps the handguard with its thumb over the rail. They have a synthetic-leather palm, moulded knuckle armour and a hook-and-loop cuff. The sleeves are MultiCam-style fabric with folds.
-  - **Enemies:** sculpted bodies instead of boxes, with gloved fists, camouflage fabric with a ripstop weave, helmets with rails, headsets and counterweights, balaclavas and glasses, plate carriers with MOLLE webbing and magazine pouches, battle belts, knee pads and boots.
-  - **Light on triangles:** everything is realistic but kept lean. The sculpted guns are simplified to within a fraction of a millimetre (M4 about 115k triangles, MK13 80k, M1014 72k, G17 35k, gloves 9k each). Soldiers and civilians swap to light meshes (about a quarter of the triangles) beyond about 12 m, or beyond 12 m of *apparent* distance through a scope, so targets you are zoomed in on keep their detail. Enemy guns switch to a 2.6–5k-triangle copy far away. The photo-scanned props are decimated to 1–5k triangles each, which halves the compound's scene (from 3.5 M to 1.8 M triangles).
+  - **Weapon and hands:** real gun models and a rigged arms model (see *Real 3D models* above). The weapon and your hands cast shadows on each other. The right index finger lies along the frame by the trigger and the left hand wraps the handguard.
+  - **Enemies:** real rigged soldiers (see above). If a model can't load, the sculpted soldier takes its place.
+  - **Light on triangles:** everything is realistic but kept lean. On phones the real guns are simplified to within about a millimetre (MK18 218k triangles, Glock 82k, Benelli 10k, M40A5 9k). Soldiers are 15–27k triangles up close and switch to 2.5–5k-triangle copies beyond about 12 m, or 12 m of *apparent* distance through a scope, so targets you are zoomed in on keep their detail; civilians are 14–20k. Enemy guns are one-piece 4–8k-triangle copies. The photo-scanned props are decimated to 1–8k triangles each and drawn instanced.
   - **Phones:** phones use a separate memory budget: smaller textures, a lower render resolution and a smaller sky map. On the default High setting the game uses about 0.7 GB, where the old Ultra setting used about 3.4 GB. Ultra is still available on phones, but it needs a lot of memory. If a launch dies while loading (the browser killed the page for using too much memory), the next launch automatically drops one graphics level and tells you on the menu. Medium uses about 0.4 GB.
 - **Rain (Mission → Rain):** a storm with an overcast sky, lightning and thunder that arrives after the flash. Rain streaks and splashes stop under roofs. Everything gets darker and glossier when wet, puddles form in low ground with raindrop ripples, and puddles mirror the scene through ray-traced reflections. Rain gets muffled when you go indoors.
 - **Realistic impacts:** metal rings, wood knocks and splinters, concrete cracks and throws chips, plaster crumbles, sand thumps, glass tinkles, rubber thuds, and rounds splash into puddles. Rounds that hit metal or concrete at a glancing angle ricochet off with a tumbling whine and sparks, and a ricochet can still zip past you.
@@ -82,7 +89,7 @@ This is a debug-signed build for your own phones. Publishing on the Play Store n
 - **Thermal (THRM button / T key):** a white-hot sensor image. Tap again for black-hot, then ironbow, then off. Soldiers glow, gun barrels heat up as they fire, and dead bodies slowly cool. Every shot shows as a bright bloom of hot gas at the muzzle, even through a suppressor, and enemy muzzle flashes stand out on both thermal and night vision.
 - **FPV kamikaze drone (FPV button / V key):** you fly a 7-inch quad with a shaped-charge warhead through its analog video link. It has barrel distortion and static that gets worse with range and walls, and an on-screen display with battery voltage, signal strength (RSSI), altitude, speed and home distance. It arms after launch, then detonates on impact, near an enemy, or when you press fire. Enemies hear it buzzing, try to shoot it down, and scatter when it dives at them. You carry two, and the HQ ammo crate restocks them. You kneel while flying, and the drone camera can see your own body.
 
-- **Modern weapons, sculpted part by part:** each gun is modelled from real dimensions out of machined, extruded and turned parts, the way the real thing is made. Every edge has a small radius, so it catches the light.
+- **The sculpted fallback guns** (used only if the real models can't load): each gun is modelled from real dimensions out of machined, extruded and turned parts, the way the real thing is made. Every edge has a small radius, so it catches the light.
   - **M4A1:** flat-top upper with Picatinny slots, forward assist, brass deflector, ejection port with a sprung dust cover and a nickel-boron bolt carrier inside. Billet lower with an integral trigger guard, bolt catch, fenced mag release, selector with SAFE/FIRE marks and pins. 13" M-LOK handguard with through-slots. QD suppressor with a knurled collar. SOPMOD-style stock, curved PMAG, EXPS3 sight, PEQ, weapon light, flip-up sights and a sling.
   - **Glock 17 (Gen 5 style):** slide with front and rear serrations, extractor, barrel hood and crown, and white-dot sights with a tritium front. Frame with an accessory rail, textured grip panels, slide stop and takedown lever.
   - **M1014:** receiver with side flutes, ghost-ring sights with protective ears, and a bolt in the port. Twin gas pistons under the forend, barrel clamp and mag-tube cap. Telescoping stock, and a side saddle of 12-gauge shells.
@@ -206,7 +213,11 @@ src/
   fabric.js    clothing/gear shader: camo, weave, MOLLE, per-region materials
   ballistics.js  bullets, penetration, hit detection, tracers
   ai.js        enemy perception, decisions, squad director
-  soldier.js   soldier model (enemies and your own body) and animation
+  soldier.js   soldier rig (enemies and your own body) and its procedural animation
+  people.js    real rigged soldiers and civilians, posed every frame from the rig (IK arms, hands on the gun)
+  realguns.js  loads the real gun models (assets/guns), their part anchors and the enemies' copies
+  arms.js      the rigged first-person arms: IK, grips, finger curls
+  props.js     loads the real furniture and fixtures (assets/props) and places them as instanced meshes
   effects.js   particles, decals, brass, lights
   grenades.js  grenade physics
   audio.js     sound engine: recorded clips (assets/audio), synthesised fallbacks, reverb, positional audio
@@ -214,6 +225,7 @@ src/
   hud.js       HUD, minimap, scope, flash effects
   textures.js  procedural textures
 assets/        CC0 textures, props and sky (from Poly Haven)
+assets/guns, arms, people, props   the real models (built by tools/build-realguns.mjs, build-arms.mjs, build-people.mjs, build-props.mjs)
 vendor/three/  three.js (bundled so nothing loads from the internet)
 vendor/meshopt/  meshoptimizer decoder for the compressed gun meshes
 ```
@@ -224,4 +236,9 @@ vendor/meshopt/  meshoptimizer decoder for the compressed gun meshes
 - Mesh compression: [meshoptimizer](https://github.com/zeux/meshoptimizer) decoder (MIT license, see `vendor/meshopt/LICENSE`); the simplifier and encoder are used by the build tools.
 - Sounds: real recordings released into the public domain (CC0) on [freesound.org](https://freesound.org); the recordists are listed in [assets/audio/CREDITS.md](assets/audio/CREDITS.md).
 - Textures, props (barrels, tyres, ammo box, medical box, covered car, generator, jerry cans, propane tanks, AC units, utility boxes, trash bags, security lights, concrete barriers, military crates, cement bags, roller shutters, shrubs, branches, stones, rocks, quiver trees) and the sky: [Poly Haven](https://polyhaven.com), released as CC0 (public domain).
-- Weapons, soldiers, civilians, the office tower and the city, sandbags, HESCO barriers, all effects and all audio are generated in code.
+- Real 3D models from Sketchfab under Creative Commons Attribution 4.0 (CC BY 4.0); they were resized, cut into parts, simplified and re-encoded for the game. Titles, authors and links:
+  - guns, sights and suppressor: [assets/guns/CREDITS.md](assets/guns/CREDITS.md) (nixo_design, drcrazzie, Urpo, TheWarVet)
+  - first-person arms: [assets/arms/CREDITS.md](assets/arms/CREDITS.md) (bumstrum)
+  - soldiers and civilians: [assets/people/CREDITS.md](assets/people/CREDITS.md) (doctortex, jeandiz, egunoff)
+  - furniture: [assets/props/CREDITS.md](assets/props/CREDITS.md) (nokillnando, tylerhalterman, tboiston; the rest are Poly Haven scans, CC0)
+- The office tower and the city, sandbags, HESCO barriers, the sculpted fallback guns and people, all effects and all synthesised audio are generated in code.
