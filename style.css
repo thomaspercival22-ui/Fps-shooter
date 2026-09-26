@@ -301,3 +301,6 @@ body.sniper-mission #btn-frag, body.sniper-mission #btn-flash, body.sniper-missi
 .optic-row { display: flex; gap: 6px; }
 .optic-row .choice { flex: 1; }
 .choice.small b { font-size: 11px; }
+.credits { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 6px; }
+.credits ul { font-size: 12px; }
+.credits a { color: var(--accent-2); }
