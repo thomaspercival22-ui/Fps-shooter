@@ -10,6 +10,7 @@ import { CollisionWorld } from './physics.js';
 import { NavGrid } from './nav.js';
 import { pbrMaterial } from './assets.js';
 import { GeoBatch, bakeAO, applyBakedAO, makeCovers } from './level.js';
+import { PropSet } from './props.js';
 import * as OT from './officetex.js';
 
 export const TOWER = { x0: -24, x1: 24, z0: -18, z1: 18, ceil: 2.8, storey: 3.9, street: -183, floor: 47 };
@@ -141,13 +142,31 @@ export function buildTower(scene, assets, opts = {}) {
   const screens = [0, 1, 2, 3].map((i) => std({ map: OT.screenTexture(i + 1), emissive: 0xffffff, emissiveMap: null, emissiveIntensity: 0.9, roughness: 0.25 }));
   screens.forEach((m, i) => { m.emissiveMap = m.map; mats['screen' + i] = m; });
   let screenN = 0;
-  const monitor = (cx, cz, rot, lx, lz) => {
+  // real furniture and fixtures (props.js) where loaded; the sculpted pieces otherwise
+  const P = new PropSet();
+  const loc = (cx, cz, rot, lx, lz) => { const c = Math.cos(rot), s = Math.sin(rot); return [cx + lx * c + lz * s, cz - lx * s + lz * c]; };
+  const jitter = (x, z, a) => (Math.sin(x * 12.9898 + z * 78.233) * 43758.5453 % 1) * a;
+  /** A prop on the floor with a box collider around its footprint (skipped where something already stands). */
+  const standing = (name, x, z, ry = 0, props = {}) => {
+    if (!P.has(name)) return false;
+    const f = P.footprint(name, x, z, ry);
+    P.put(name, x, 0, z, ry);
+    solid('none', f.x0, 0, f.z0, f.x1, f.h, f.z1, 1, { mat: 'metal', pen: PEN.metal, noMap: true, noCover: f.h < 0.9, ...props });
+    return true;
+  };
+  const monitor = (cx, cz, rot, lx, lz, y = 0.75) => {
+    // monitor, keyboard and mouse: the screen faces the user (local +z)
+    const [x, z] = loc(cx, cz, rot, lx, lz + 0.1);
+    if (P.put('computer', x, y, z, rot + Math.PI)) return true;
     rb(cx, cz, rot, 'plastic', lx - 0.1, 0.745, lz - 0.08, lx + 0.1, 0.76, lz + 0.08);
     rb(cx, cz, rot, 'plastic', lx - 0.02, 0.76, lz - 0.02, lx + 0.02, 0.98, lz + 0.02);
     rb(cx, cz, rot, 'plastic', lx - 0.29, 0.92, lz - 0.025, lx + 0.29, 1.27, lz + 0.01);
     rb(cx, cz, rot, 'screen' + (screenN++ % 4), lx - 0.275, 0.935, lz + 0.01, lx + 0.275, 1.255, lz + 0.016);
+    return false;
   };
   const chair = (cx, cz, rot, lx, lz) => {
+    const [x, z] = loc(cx, cz, rot, lx, lz);
+    if (P.put('officeChair', x, 0, z, rot + jitter(x, z, 0.5) - 0.25)) return;
     rb(cx, cz, rot, 'plastic', lx - 0.03, 0.06, lz - 0.03, lx + 0.03, 0.42, lz + 0.03);
     for (const [dx, dz] of [[-0.3, 0], [0.3, 0], [0, -0.3], [0, 0.3]]) rb(cx, cz, rot, 'plastic', lx + Math.min(0, dx) - 0.02, 0.0, lz + Math.min(0, dz) - 0.02, lx + Math.max(0, dx) + 0.02, 0.06, lz + Math.max(0, dz) + 0.02);
     rb(cx, cz, rot, 'fabricDark', lx - 0.25, 0.42, lz - 0.24, lx + 0.25, 0.5, lz + 0.24);
@@ -160,8 +179,7 @@ export function buildTower(scene, assets, opts = {}) {
     for (const sx of [-0.76, 0.72]) rb(cx, cz, rot, 'steel', sx, 0, -0.38, sx + 0.04, 0.72, 0.38);
     rb(cx, cz, rot, 'steel', -0.76, 0.3, -0.36, 0.76, 0.5, -0.34);            // modesty panel
     rb(cx, cz, rot, 'whiteMetal', 0.2, 0, -0.35, 0.62, 0.6, 0.2, true, { mat: 'metal', pen: PEN.metal, noMap: true, noCover: true }); // pedestal
-    monitor(cx, cz, rot, -0.1, -0.2);
-    rb(cx, cz, rot, 'plastic', -0.35, 0.75, 0.02, 0.1, 0.77, 0.17);            // keyboard
+    if (!monitor(cx, cz, rot, -0.1, -0.2)) rb(cx, cz, rot, 'plastic', -0.35, 0.75, 0.02, 0.1, 0.77, 0.17); // keyboard
     if (withChair) chair(cx, cz, rot, -0.15, 0.75);
   };
   /** Benching cluster: 2 x n desks back to back with a fabric screen between. */
@@ -178,7 +196,9 @@ export function buildTower(scene, assets, opts = {}) {
     else solid('fabric', cx - 0.03, 0.75, cz - L / 2, cx + 0.03, 1.22, cz + L / 2, 1.2, { mat: 'wood', pen: PEN.dry, noMap: true, noCover: true });
   };
   const plant = (x, z, h = 1.3) => {
-    solid('pot', x - 0.22, 0, z - 0.22, x + 0.22, 0.5, z + 0.22, 1, { mat: 'plaster', noMap: true, noCover: true });
+    const real = h >= 1.2 ? 'plantBush' : 'plantTall';
+    solid(P.has(real) ? 'none' : 'pot', x - 0.22, 0, z - 0.22, x + 0.22, 0.5, z + 0.22, 1, { mat: 'plaster', noMap: true, noCover: true });
+    if (P.put(real, x, 0, z, jitter(x, z, 6.28))) return;
     for (let i = 0; i < 9; i++) {
       const a = (i / 9) * Math.PI * 2 + Math.random() * 0.4, r = 0.12 + Math.random() * 0.2, y = 0.5 + Math.random() * (h - 0.6);
       const g = new THREE.PlaneGeometry(0.34, 0.7);
@@ -187,7 +207,9 @@ export function buildTower(scene, assets, opts = {}) {
     }
   };
   const sofa = (cx, cz, rot, w = 2.0) => {
-    rb(cx, cz, rot, 'fabric', -w / 2, 0.1, -0.45, w / 2, 0.45, 0.45, true, { mat: 'wood', pen: 0.8, noMap: true });
+    const real = P.has('sofa');
+    rb(cx, cz, rot, real ? 'none' : 'fabric', -w / 2, 0.1, -0.45, w / 2, 0.45, 0.45, true, { mat: 'wood', pen: 0.8, noMap: true });
+    if (real) { P.put('sofa', cx, 0, cz, rot, w / 1.81); return; }
     rb(cx, cz, rot, 'fabric', -w / 2, 0.45, 0.25, w / 2, 0.85, 0.45);
     for (const s of [-1, 1]) rb(cx, cz, rot, 'fabric', s > 0 ? w / 2 - 0.18 : -w / 2, 0.45, -0.45, s > 0 ? w / 2 : -w / 2 + 0.18, 0.65, 0.45);
     rb(cx, cz, rot, 'steel', -w / 2 + 0.05, 0, -0.4, w / 2 - 0.05, 0.1, 0.4);
@@ -309,7 +331,7 @@ export function buildTower(scene, assets, opts = {}) {
   solid('wood', -21.4, 0, -15.75, -21.3, 0.72, -14.85, 1, { mat: 'wood', noMap: true, noCover: true });
   solid('wood', -19.1, 0, -15.75, -19.0, 0.72, -14.85, 1, { mat: 'wood', noMap: true, noCover: true });
   solid('wood', -21.4, 0, -15.1, -19.0, 0.72, -15.0, 1, { mat: 'wood', pen: PEN.wood, noMap: true });
-  monitor(-20.2, -15.3, Math.PI, 0, 0);
+  monitor(-20.2, -15.3, Math.PI, 0, 0, 0.76);
   chair(-20.2, -16.4, Math.PI, 0, 0);
   cabinet(-23.4, -17.6, -19, -17.1, 0.75, 'wood');
   cabinet(-15.6, -17.3, -15.15, -12, 2.1, 'wood');
@@ -423,6 +445,40 @@ export function buildTower(scene, assets, opts = {}) {
   hang(1, -14.93, 1.6, 5.5, Math.PI / 2, 1.5, 1.0); hang(2, 4.07, 1.6, 15.0, Math.PI / 2); hang(0, 17.94, 1.6, 0, -Math.PI / 2, 1.0, 0.7);
 
   // ---------------- open door leaves ----------------
+  // ---------------- fixtures ----------------
+  {
+    const wallProp = (name, x, y, z, ry) => P.put(name, x, y, z, ry);
+    const W = Math.PI / 2, E = -Math.PI / 2, S = Math.PI; // facing -x, +x, +z (default: -z)
+    // fire points by the stair doors and the lifts
+    for (const z of [-2.6, 2.6]) { standing('extinguisher', -8.34, z, W); wallProp('fireAlarm', -8.166, 1.35, z + 0.45, W); }
+    standing('extinguisher', 8.34, -4.2, E); wallProp('fireAlarm', 8.166, 1.35, -3.7, E);
+    standing('extinguisher', 3.9, 11.3, 0); wallProp('fireAlarm', 3.4, 1.35, 11.434, 0);
+    // clocks
+    wallProp('wallClock', 4.085, 2.0, 12.6, E);        // kitchen
+    wallProp('wallClock', -19.5, 2.1, -5.915, S);      // training room
+    wallProp('wallClock', -4.085, 2.1, -14.5, W);      // boardroom
+    // pictures in the private offices
+    [-4, 1.6, 7.2, 12.8, 18.4].forEach((a, i) => { if (i > 0) wallProp(i % 2 ? 'picture1' : 'picture2', a + 0.075, 1.55, -16.0, E); });
+    wallProp('picture2', -15.075, 1.55, -8.8, E);
+    // water coolers, kitchen coffee cart
+    standing('waterCooler', -3.0, 6.32, S);
+    standing('waterCooler', 13.78, 12.2, W);
+    standing('coffeeCart', 4.42, 13.0, E);
+    // lounge and executive armchairs
+    standing('armchair', -19.9, -12.8, W);
+    standing('armchair', -20.3, 3.6, S);
+    // wet floor by the restrooms
+    P.put('wetFloor', -2.0, 0, -1.4, 0.4);
+    // storage: shelving and boxes in the server room, boxes by the printers
+    standing('shelves', 16.0, 17.7, 0); standing('shelves', 17.1, 17.7, 0);
+    for (const [x, z] of [[23.72, 12.1], [23.72, 12.65], [13.7, 9.1], [14.2, 8.8]]) standing('cardboard', x, z, 0);
+    P.put('cardboard', 23.72, 0.34, 12.35, 0.15);
+    // cameras watching the lobby and the corridors
+    wallProp('secCam', 15.72, 2.45, 2.9, W);
+    wallProp('secCam', -8.43, 2.45, 5.6, W);
+    wallProp('secCam', 7.9, 2.45, 5.72, S + 0.001);
+  }
+
   for (const d of doorLeaves) {
     const s0 = d.end ? d.at - 0.02 : d.at + 0.02, dir = d.end ? -1 : 1;
     const key = d.glass ? 'glass' : d.steel ? 'steel' : 'wood';
@@ -439,6 +495,9 @@ export function buildTower(scene, assets, opts = {}) {
   // ---------------- build ----------------
   world.build();
   const meshes = G.build(scene, mats, shadows);
+  const propGroup = new THREE.Group();
+  scene.add(propGroup);
+  P.build(propGroup, { heat: 0.31, shadows });
   for (const m of meshes) {
     const k = m.material;
     if (k === mats.glass || k === mats.facadeGlass || k === mats.frost) { m.castShadow = false; m.receiveShadow = false; m.userData.heat = 0.2; }
@@ -494,7 +553,7 @@ export function buildTower(scene, assets, opts = {}) {
 
   const groundUniforms = { heightMap: { value: outside.groundTex }, macroMap: { value: outside.groundTex }, wet: { value: 0 }, rainTime: { value: 0 } };
   return {
-    kind: 'tower', indoor: true, wallDamp: 0.45, world, nav, covers, spawnPoints: [], waypoints: [], explosiveBarrels: [], minimap, meshes, props: new THREE.Group(),
+    kind: 'tower', indoor: true, wallDamp: 0.45, world, nav, covers, spawnPoints: [], waypoints: [], explosiveBarrels: [], minimap, meshes, props: propGroup,
     grassUniforms: { uTime: { value: 0 } }, lamps, lights: interior, ao, groundUniforms,
     playerSpawn: { x: -6.9, z: -4.2, yaw: Math.PI / 2 },
     resupply: { x: -7.3, z: -5.4, r: 0.8 },

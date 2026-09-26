@@ -8,6 +8,7 @@ import { pbrMaterial } from './assets.js';
 import * as TX from './textures.js';
 import { groundMaterial, addWallGrime, addWireMesh, GROUND_TILE } from './terrain.js';
 import { CONTAINER, containerGeometry, containerGrimeTexture, applyContainerGrime } from './containers.js';
+import { PropSet } from './props.js';
 
 const BOUND = 70;        // inner face of the HESCO ring
 const WALL = 42;         // compound wall half-size
@@ -759,6 +760,37 @@ export function buildLevel(scene, assets, opts = {}) {
     place(13.5, 0, 9.4, 0.4), place(13.9, 0, 8.9, 2.1), place(13.2, 0, 8.7, 3.9), place(-28.3, 0, 20.7, 1.0), place(-27.8, 0, 21.0, 2.6),
     place(-14.4, 0, 23.4, 0.2), place(35.4, 0, 26.2, 5.2), place(-9.6, 0, -15.3, 0.9), place(24.4, 0, -17.4, 1.7), place(-36.5, 0, 26.8, 4.4),
   ], { castShadow: true, heat: 0.3 });
+
+  // ---------------- real furniture and fixtures (props.js) ----------------
+  {
+    const P = new PropSet();
+    const clear = (x0, z0, x1, z1, y) => !world.boxes.some((b) => b.x0 < x1 && b.x1 > x0 && b.z0 < z1 && b.z1 > z0 && b.y1 > y + 0.05 && b.y0 < y + 1.5 && b.blocksBullets !== false);
+    /** A prop on the ground (or a floor at y) with a collider, where nothing else stands. */
+    const stand = (name, x, y, z, ry = 0) => {
+      if (!P.has(name)) return;
+      const f = P.footprint(name, x, z, ry);
+      if (!clear(f.x0, f.z0, f.x1, f.z1, y)) return;
+      P.put(name, x, y, z, ry);
+      const b = world.add(f.x0, y, f.z0, f.x1, y + f.h, f.z1, { mat: name === 'picnic' || name === 'drawers' ? 'wood' : 'metal', pen: 0.6 });
+      if (f.h > 0.7) coverBoxes.push(b);
+    };
+    // the houses: plastic chairs and a stove by one door, a picnic table outside another
+    stand('monoChair', -25.9, 0, 17.9, -Math.PI / 2 + 0.3); stand('monoChair', -25.7, 0, 19.0, -Math.PI / 2 - 0.25);
+    stand('barrelStove', -24.9, 0, 18.4, 0.7);
+    stand('picnic', -17.2, 0, 21.3, Math.PI / 2);
+    stand('monoChair', -15.0, 0, 20.3, 2.4); stand('trashCan', -26.4, 0, 13.3, 0.4);
+    // the HQ: a bin by the door, shelving and a drawer cabinet inside, chairs by the crates, a breaker box outside
+    stand('trashCan', -1.8, 0, -15.3, 0.3);
+    stand('shelves', 6.8, 0.08, -27.4, Math.PI); stand('drawers', -3.9, 0.08, -27.35, Math.PI);
+    stand('monoChair', 0.1, 0.08, -21.4, 0.5); stand('monoChair', 1.2, 0.08, -21.9, -0.4);
+    stand('cardboard', -2.9, 0.08, -24.2, 0); stand('cardboard', -2.4, 0.08, -24.3, 0);
+    if (P.has('powerBox')) { P.put('powerBox', 8.2, 1.05, -20.6, -Math.PI / 2); world.add(8, 1.05, -20.83, 8.4, 1.55, -20.37, { mat: 'metal', pen: 0.5 }); }
+    // the warehouse: a hand truck, a ladder against the wall, boxes by the crates
+    stand('handTruck', 18.2, 0.06, -32.6, 0.6);
+    stand('ladder', 16.3, 0.06, -20.2, -Math.PI / 2);
+    stand('cardboard', 27.8, 0.06, -33.2, 0); stand('cardboard', 28.3, 0.06, -33.3, 0);
+    P.build(props, { heat: 0.32, shadows });
+  }
 
   world.build();
   // Scatters the separate parts of a scan (stones, bushes, branches) as individual instances.
