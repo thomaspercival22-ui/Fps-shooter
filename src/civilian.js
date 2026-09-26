@@ -7,6 +7,16 @@ import { meshes } from './meshes.js';
 import { fabricMaterial, R } from './fabric.js';
 import { raySphere, rayCapsule } from './physics.js';
 import { soldierOptions, lodOf, LOD_NEAR, LOD_FAR } from './soldier.js';
+import { bodyTemplate, Body } from './people.js';
+
+// the sculpted civilian's proportions (a real body brings its own: people.js)
+const CIV_RIG = {
+  hipY: 0.95, spine: new THREE.Vector3(0, 0.08, 0), neck: new THREE.Vector3(0, 0.52, 0), head: new THREE.Vector3(0, 0.04, 0),
+  shoulder: { R: new THREE.Vector3(-0.19, 0.45, 0), L: new THREE.Vector3(0.19, 0.45, 0) },
+  upper: 0.3, fore: 0.3, thigh: { R: new THREE.Vector3(-0.095, -0.04, 0), L: new THREE.Vector3(0.095, -0.04, 0) },
+  thighLen: 0.44, shinLen: 0.4, headTop: 0.2,
+};
+const HAIR = /hair|lash/i;
 
 // clothing and skin palettes
 const LOOKS = [
@@ -90,6 +100,10 @@ export class Civilian {
   _build(lookIndex) {
     const M = meshes(), L = LOOKS[lookIndex % LOOKS.length], mat = lookMaterial(lookIndex % LOOKS.length);
     this.meshes = [];
+    // a real rigged person when loaded (people.js), posed from this rig; else the sculpted body parts
+    const tpl = bodyTemplate(`civ${lookIndex % LOOKS.length}`);
+    const P = this.rig = tpl ? tpl.rig : CIV_RIG;
+    this.legScale = P.hipY / CIV_RIG.hipY;
     const mk = (geo, heat = 0.9) => {
       const m = new THREE.Mesh(geo, mat);
       m.castShadow = true; m.receiveShadow = true;
@@ -98,30 +112,42 @@ export class Civilian {
       this.meshes.push(m);
       return m;
     };
+    const part = (group, geo, heat) => { if (!tpl) group.add(mk(geo, heat)); };
     this.far = false;
     this.root = new THREE.Group();
     this.faller = new THREE.Group(); this.root.add(this.faller);
-    this.hips = new THREE.Group(); this.hips.position.y = 0.95; this.faller.add(this.hips);
-    this.hips.add(mk(M.civPelvis, 0.8));
-    this.spine = new THREE.Group(); this.spine.position.y = 0.08; this.hips.add(this.spine);
-    this.spine.add(mk(M[L.chest], 0.85));
-    this.neck = new THREE.Group(); this.neck.position.set(0, 0.52, 0); this.spine.add(this.neck);
-    this.head = new THREE.Group(); this.head.position.y = 0.04; this.neck.add(this.head);
+    this.hips = new THREE.Group(); this.hips.position.y = P.hipY; this.faller.add(this.hips);
+    part(this.hips, M.civPelvis, 0.8);
+    this.spine = new THREE.Group(); this.spine.position.copy(P.spine); this.hips.add(this.spine);
+    part(this.spine, M[L.chest], 0.85);
+    this.neck = new THREE.Group(); this.neck.position.copy(P.neck); this.spine.add(this.neck);
+    this.head = new THREE.Group(); this.head.position.copy(P.head); this.neck.add(this.head);
     this.lookHead = M[L.head];
-    this.head.add(mk(this.hooded ? M.civHood : M[L.head], this.hooded ? 0.72 : 1.0));
+    if (!tpl) this.head.add(mk(this.hooded ? M.civHood : M[L.head], this.hooded ? 0.72 : 1.0));
+    else if (this.hooded) { this.hood = mk(M.civHood, 0.72); this.hood.scale.setScalar(1.06); this.head.add(this.hood); }
     this.arm = {};
-    for (const [side, x] of [['R', -0.19], ['L', 0.19]]) {
-      const up = new THREE.Group(); up.position.set(x, 0.45, 0.0); this.spine.add(up); up.add(mk(L.jacket ? M.civUpperArmJ : M.civUpperArm, 0.85));
-      const fo = new THREE.Group(); fo.position.y = -0.3; up.add(fo); fo.add(mk(L.jacket ? M.civForeArmJ : M.civForeArm, 0.9));
-      const ha = new THREE.Group(); ha.position.y = -0.275; ha.rotation.y = side === 'R' ? -Math.PI / 2 : Math.PI / 2; fo.add(ha);
-      ha.add(mk(side === 'R' ? M.civHandR : M.civHandL, 0.97));
-      this.arm[side] = { up, fo, ha, shoulder: V(x, 0.45, 0) };
+    for (const side of ['R', 'L']) {
+      const up = new THREE.Group(); up.position.copy(P.shoulder[side]); this.spine.add(up); part(up, L.jacket ? M.civUpperArmJ : M.civUpperArm, 0.85);
+      const fo = new THREE.Group(); fo.position.y = -P.upper; up.add(fo); part(fo, L.jacket ? M.civForeArmJ : M.civForeArm, 0.9);
+      const ha = new THREE.Group(); ha.position.y = tpl ? -P.fore : -0.275; ha.rotation.y = side === 'R' ? -Math.PI / 2 : Math.PI / 2; fo.add(ha);
+      part(ha, side === 'R' ? M.civHandR : M.civHandL, 0.97);
+      this.arm[side] = { up, fo, ha, shoulder: P.shoulder[side].clone() };
     }
     this.leg = {};
-    for (const [side, x] of [['R', -0.095], ['L', 0.095]]) {
-      const th = new THREE.Group(); th.position.set(x, -0.04, 0); this.hips.add(th); th.add(mk(M.civThigh, 0.82));
-      const sh = new THREE.Group(); sh.position.y = -0.44; th.add(sh); sh.add(mk(M.civShin, 0.78));
+    for (const side of ['R', 'L']) {
+      const th = new THREE.Group(); th.position.copy(P.thigh[side]); this.hips.add(th); part(th, M.civThigh, 0.82);
+      const sh = new THREE.Group(); sh.position.y = -P.thighLen; th.add(sh); part(sh, M.civShin, 0.78);
       this.leg[side] = { th, sh };
+    }
+    if (tpl) {
+      this.body = new Body(tpl);
+      this.root.add(this.body.root);
+      for (const m of this.body.meshes) {
+        m.userData.heat = m.userData.baseHeat = /body|skin|face|head/i.test(m.material.name) ? 1.0 : 0.86;
+        m.userData.geoHi = m.userData.geoLo = m.geometry;
+        this.meshes.push(m);
+      }
+      if (this.hooded) this.body.showParts(HAIR, false);
     }
     this.root.position.copy(this.pos);
     this.root.rotation.y = this.yaw;
@@ -177,7 +203,12 @@ export class Civilian {
   rescue(exit) {
     if (!this.alive || this.rescued) return false;
     this.rescued = true;
-    if (this.hooded) {
+    if (this.hooded && this.body) {
+      this.head.remove(this.hood);
+      this.meshes.splice(this.meshes.indexOf(this.hood), 1);
+      this.body.showParts(HAIR, true);
+      this.hooded = false;
+    } else if (this.hooded) {
       // pull the hood off
       const M = meshes();
       const headMesh = this.head.children[0];
@@ -231,9 +262,9 @@ export class Civilian {
     const g = this.game, W = g.level.world;
     const d = this.root.position.distanceTo((g.drone?.active ? g.drone.camera : g.camera).position) * soldierOptions.lodScale;
     const far = this.far ? d > LOD_NEAR : d > LOD_FAR;
-    if (far !== this.far) { this.far = far; for (const m of this.meshes) m.geometry = far ? m.userData.geoLo : m.userData.geoHi; }
+    if (far !== this.far) { this.far = far; for (const m of this.meshes) m.geometry = far ? m.userData.geoLo : m.userData.geoHi; if (this.body) this.body.setFar(far); }
     this.stateT += dt;
-    if (!this.alive) { this._updateDead(dt); this._updateHitboxes(); return; }
+    if (!this.alive) { this._updateDead(dt); if (this.body) this.body.pose(this); this._updateHitboxes(); return; }
     if (this.flashed > 0) this.flashed -= dt;
     this.panic = Math.max(0, this.panic - dt * 0.02);
     let speed = 0;
@@ -287,6 +318,7 @@ export class Civilian {
     this.root.position.copy(this.pos);
     this.root.rotation.y = this.yaw;
     this._animate(dt, Math.hypot(this.vel.x, this.vel.z));
+    if (this.body) this.body.pose(this);
     this._updateHitboxes();
   }
 
@@ -340,7 +372,7 @@ export class Civilian {
     }
     L.th.rotation.set(lx, 0, c.L[2]); L.sh.rotation.set(ls, 0, 0);
     Rg.th.rotation.set(rx, 0, c.R[2]); Rg.sh.rotation.set(rs, 0, 0);
-    this.hips.position.y = hip;
+    this.hips.position.y = hip * this.legScale;
     this.spine.rotation.set(c.spine + (speed > 2.4 ? 0.15 : 0), 0, 0);
     this.head.rotation.set(c.head, 0, 0);
     this._solveArm('L', hL, c.pL);
@@ -349,7 +381,7 @@ export class Civilian {
 
   _solveArm(side, target, poleDir) {
     const arm = this.arm[side], S = arm.shoulder;
-    const a = 0.3, b = 0.3;
+    const a = this.rig.upper, b = this.rig.fore;
     const dir = new THREE.Vector3().subVectors(target, S);
     const d = Math.min(a + b - 0.002, Math.max(0.1, dir.length()));
     dir.normalize();
@@ -388,13 +420,13 @@ export class Civilian {
   _updateHitboxes() {
     const hb = this.hb;
     this.root.updateMatrixWorld(true);
-    hb.head.set(0, 0.1, 0.01).applyMatrix4(this.head.matrixWorld);
+    hb.head.set(0, this.rig.headTop * 0.5, 0.01).applyMatrix4(this.head.matrixWorld);
     hb.neck.setFromMatrixPosition(this.neck.matrixWorld);
     hb.hips.setFromMatrixPosition(this.hips.matrixWorld);
     for (const s of ['L', 'R']) {
       const sh = this.leg[s].sh;
       (s === 'L' ? hb.kL : hb.kR).setFromMatrixPosition(sh.matrixWorld);
-      (s === 'L' ? hb.fL : hb.fR).set(0, -0.4, 0.04).applyMatrix4(sh.matrixWorld);
+      (s === 'L' ? hb.fL : hb.fR).set(0, -this.rig.shinLen, 0.04).applyMatrix4(sh.matrixWorld);
     }
   }
 }

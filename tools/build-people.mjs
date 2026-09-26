@@ -29,6 +29,14 @@ export const PEOPLE = {
   // `drop`: the carried weapon (matched against the node path)
   black: { title: 'S.W.A.T. Operator', author: 'jeandiz', uid: '9e82fabf26194896b5ad4a364d864eab', near: 0.3, far: 0.07, drop: /part_2_low/ },
   heavy: { title: 'FSB Operator', author: 'jeandiz', uid: '43a561e941704eefb1ab0614be4f0049', near: 0.3, far: 0.07, drop: /Gun_99/ },
+  // civilians: office workers and hostages (Adobe Fuse characters, Mixamo rig); sizes in triangles
+  civ0: { title: 'Andrew - LOD Man character', author: 'egunoff', uid: '3aaaf5c42dae43a1bd1ca447964f65b8', nearTris: 14000, farTris: 2500, civilian: true, height: 1.8 },
+  civ1: { title: 'Gordon - LOD Man character', author: 'egunoff', uid: '38d97e79ef674f55834c7ceef70812a9', nearTris: 14000, farTris: 2500, civilian: true, height: 1.77 },
+  civ2: { title: 'Maria - LOD Lady character', author: 'egunoff', uid: '6210c4688a8048858a8655e5f9ab0b98', nearTris: 14000, farTris: 2500, civilian: true, height: 1.66 },
+  civ3: { title: 'Antony - LOD Man character', author: 'egunoff', uid: '5d85c11507974daea2b9410c58ee23aa', nearTris: 14000, farTris: 2500, civilian: true, height: 1.82 },
+  civ4: { title: 'MrsFirst - LOD Lady character', author: 'egunoff', uid: '625592f5ffc9470391ce30bbc24c70db', nearTris: 14000, farTris: 2500, civilian: true, height: 1.63 },
+  civ5: { title: 'Nasier - LOD Man character', author: 'egunoff', uid: 'fa435c444771472d97a8bdbd3db6f545', nearTris: 14000, farTris: 2500, civilian: true, height: 1.75 },
+  civ6: { title: 'Veronica - LOD Lady character', author: 'egunoff', uid: '93375bff36fe43958668f2d2333818a2', nearTris: 14000, farTris: 2500, civilian: true, height: 1.68 },
 };
 
 function source(uid) {
@@ -150,7 +158,7 @@ async function buildPerson(kit, cfg) {
   // Re-bind in the modelling pose (T or A pose, from the inverse bind matrices),
   // cleaned up for the game's retargeting: metres, Y up, facing +Z, feet on the
   // ground, unscaled joints named like Mixamo's (Hips, LeftArm, ...), no wrapper nodes.
-  const clean = (n) => n.replace(/^mixamorig:?/, '').replace(/_\d+$/, '');
+  const clean = (n) => n.replace(/^mixamorig[:_]?/, '').replace(/_\d+$/, '');
   const Bw = joints.map((j, i) => { const e = []; ibm.getElement(i, e); return invert(e); });
   const at = (name) => { const i = joints.findIndex((j) => clean(j.getName()) === name); if (i < 0) throw new Error(`${kit}: no ${name} joint`); return i; };
   const bpos = (i) => Bw[i].slice(12, 15), npos = (i) => joints[i].getWorldMatrix().slice(12, 15);
@@ -166,7 +174,14 @@ async function buildPerson(kit, cfg) {
     const a = at(chain[c + k]), b = at(chain[c + k + 1]);
     ln += Math.hypot(...sub(npos(b), npos(a))); lb += Math.hypot(...sub(bpos(b), bpos(a)));
   }
-  const sc = ln / lb;
+  let sc = ln / lb;
+  {
+    // the node pose may not be in metres either (FBX exports in centimetres): then scale to a real height
+    let lo = Infinity, hi = -Infinity;
+    for (const b of buckets.values()) for (let i = 1; i < b.pos.length; i += 3) { const y = dot(Y, [b.pos[i - 1], b.pos[i], b.pos[i + 1]]); lo = Math.min(lo, y); hi = Math.max(hi, y); }
+    const h = (hi - lo) * sc;
+    if (h < 1.45 || h > 2.05 || cfg.height) sc *= (cfg.height || 1.76) / h;
+  }
   const toM = (v) => [dot(X, v) * sc, dot(Y, v) * sc, dot(Z, v) * sc]; // skin space -> metres (rotation + scale)
   let floor = Infinity;
   for (const b of buckets.values()) for (let i = 1; i < b.pos.length; i += 3) floor = Math.min(floor, toM([b.pos[i - 1], b.pos[i], b.pos[i + 1]])[1]);
@@ -237,9 +252,13 @@ async function buildPerson(kit, cfg) {
       if (ratio >= 1) return new Uint32Array(b.idx);
       const target = Math.max(3, Math.floor(b.idx.length * ratio / 3) * 3);
       if (ratio < 0.2) return MeshoptSimplifier.simplify(new Uint32Array(b.idx), new Float32Array(b.pos), 3, target, 0.05, ['Permissive', 'Prune'])[0];
-      return MeshoptSimplifier.simplifyWithAttributes(new Uint32Array(b.idx), new Float32Array(b.pos), 3, new Float32Array(b.nor), 3, [0.3, 0.3, 0.3], lock, target, 0.01, ['LockBorder'])[0];
+      // (clothes and hair made of many open panels: their edges can only be kept by budget)
+      const w = cfg.nearTris ? [0, 0, 0] : [0.3, 0.3, 0.3];
+      return MeshoptSimplifier.simplifyWithAttributes(new Uint32Array(b.idx), new Float32Array(b.pos), 3, new Float32Array(b.nor), 3, w, lock, target, cfg.nearTris ? 0.02 : 0.01, cfg.nearTris ? ['Permissive'] : ['LockBorder'])[0];
     };
-    for (const [suffix, ratio] of [['', cfg.near], ['_far', cfg.far]]) {
+    const total = [...buckets.values()].reduce((n, x) => n + x.idx.length / 3, 0);
+    const near = cfg.nearTris ? Math.min(1, cfg.nearTris / total) : cfg.near, far = cfg.farTris ? Math.min(0.19, cfg.farTris / total) : cfg.far;
+    for (const [suffix, ratio] of [['', near], ['_far', far]]) {
       const ix = lod(ratio);
       const prim = doc.createPrimitive().setIndices(acc(ix, 'SCALAR', IT)).setMaterial(mat);
       for (const [k, a] of Object.entries(attrs)) prim.setAttribute(k, a);
@@ -267,5 +286,6 @@ async function buildPerson(kit, cfg) {
 
 const only = process.argv.slice(2);
 for (const [kit, cfg] of Object.entries(PEOPLE)) if (!only.length || only.includes(kit)) await buildPerson(kit, cfg);
-fs.writeFileSync(path.join(OUT, 'CREDITS.md'), '# Soldiers\n\nRigged characters licensed under Creative Commons Attribution 4.0 (CC BY 4.0); weapons removed, parts merged, simplified and re-encoded for the game.\n\n' +
-  Object.values(PEOPLE).map((c) => `- **${c.title}** by ${c.author}: https://sketchfab.com/3d-models/${c.uid} (CC BY 4.0)`).join('\n') + '\n');
+const list = (civ) => Object.values(PEOPLE).filter((c) => !!c.civilian === civ).map((c) => `- **${c.title}** by ${c.author}: https://sketchfab.com/3d-models/${c.uid} (CC BY 4.0)`).join('\n');
+fs.writeFileSync(path.join(OUT, 'CREDITS.md'), '# People\n\nRigged characters licensed under Creative Commons Attribution 4.0 (CC BY 4.0); weapons removed, parts merged, simplified and re-encoded for the game.\n\n## Soldiers\n\n' +
+  list(false) + '\n\n## Civilians\n\n' + list(true) + '\n');

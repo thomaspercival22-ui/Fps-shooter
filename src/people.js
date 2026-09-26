@@ -9,7 +9,9 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { MeshoptDecoder } from '../vendor/meshopt/meshopt_decoder.js';
 
-export const PEOPLE_KITS = ['olive', 'tan', 'black', 'heavy'];
+export const SOLDIER_KITS = ['olive', 'tan', 'black', 'heavy'];
+export const CIVILIAN_BODIES = ['civ0', 'civ1', 'civ2', 'civ3', 'civ4', 'civ5', 'civ6'];
+const PEOPLE_KITS = [...SOLDIER_KITS, ...CIVILIAN_BODIES];
 const TEMPLATES = {};
 
 export async function loadPeople(renderer, hq = false) {
@@ -22,7 +24,7 @@ export async function loadPeople(renderer, hq = false) {
       if (!gltf) gltf = await loader.loadAsync(`assets/people/${kit}.glb`);
       TEMPLATES[kit] = new BodyTemplate(gltf, aniso);
     } catch (e) {
-      console.warn(`${kit}: real soldier unavailable, using the sculpted one`, e);
+      console.warn(`${kit}: real body unavailable, using the sculpted one`, e);
     }
   }));
 }
@@ -90,6 +92,7 @@ class BodyTemplate {
     };
     // Bones that follow one rig segment. `C` is the bone's rotation when that segment is at rest (identity):
     // the torso keeps its modelled posture; limbs are turned to hang straight down, facing forward.
+    // (limbs: palms toward the thighs, as a hanging arm's are)
     const straightDown = (n, child) => frameRotation(wp(child).sub(wp(n)), Z, DOWN, Z, new THREE.Quaternion()).multiply(wq(n));
     const role = this.role = new Array(this.order.length).fill(null);
     const set = (n, seg, C, k = 1) => { if (has(n)) role[this.index[n]] = { seg, C, k }; };
@@ -191,12 +194,14 @@ export class Body {
   }
 
   get meshes() { return [...this.near, ...this.far]; }
+  /** Shows or hides the parts made of materials matching `re` (e.g. hair under a hood). */
+  showParts(re, on) { for (const m of this.meshes) if (re.test(m.material.name)) m.userData.hidden = !on; this._vis(); }
+  _vis() { for (const m of this.near) m.visible = !this.isFar && !m.userData.hidden; for (const m of this.far) m.visible = this.isFar && !m.userData.hidden; }
 
   setFar(far) {
     if (far === this.isFar) return;
     this.isFar = far;
-    for (const m of this.near) m.visible = !far;
-    for (const m of this.far) m.visible = far;
+    this._vis();
   }
 
   _fingers(hold) {
@@ -249,8 +254,9 @@ export class Body {
         wp[i].copy(bones[i].position).applyQuaternion(Qp).add(p < 0 ? _v2.set(0, 0, 0) : wp[p]);
       }
     }
-    if (s.dead) {
-      for (const side of ['R', 'L']) this._limpArm(side);
+    if (s.dead || !s.handTarget) {
+      // dead, or empty-handed (civilians): the arms take the rig's arm segments
+      for (const side of ['R', 'L']) this._copyArm(side);
       this._fingers({ R: 'limp', L: 'limp' });
     } else {
       for (const side of ['R', 'L']) this._reach(s, side);
@@ -265,7 +271,7 @@ export class Body {
     this.wp[i].copy(this.bones[i].position).applyQuaternion(this.wq[p]).add(this.wp[p]);
   }
 
-  _limpArm(side) {
+  _copyArm(side) {
     const A = this.tpl.arm[side];
     this.wp[A.arm].copy(this.bones[A.arm].position).applyQuaternion(this.wq[this.tpl.parent[A.arm]]).add(this.wp[this.tpl.parent[A.arm]]);
     this._setWorld(A.arm, _q2.copy(this.seg['up' + side]).multiply(A.limp.up));

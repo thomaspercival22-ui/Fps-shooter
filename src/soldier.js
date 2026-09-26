@@ -126,7 +126,7 @@ function gunGeometry(type, far = false) {
 let flashTex = null;
 
 // the sculpted soldier's proportions (a real body brings its own: people.js)
-const DEFAULT_RIG = {
+export const DEFAULT_RIG = {
   hipY: 0.97, spine: new THREE.Vector3(0, 0.08, 0), neck: new THREE.Vector3(0, 0.52, 0), head: new THREE.Vector3(0, 0.04, 0),
   shoulder: { R: new THREE.Vector3(-0.2, 0.46, 0.02), L: new THREE.Vector3(0.2, 0.46, 0.06) },
   upper: 0.31, fore: 0.32, thigh: { R: new THREE.Vector3(-0.1, -0.04, 0), L: new THREE.Vector3(0.1, -0.04, 0) },
