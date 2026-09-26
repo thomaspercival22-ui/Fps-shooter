@@ -4,15 +4,13 @@
 // were generated from its own geometry, so doors, stairs, floors and windows
 // work where they are drawn. Placement turns are quarter turns so the boxes
 // stay axis-aligned. A building that fails to load is simply left out.
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { MeshoptDecoder } from '../vendor/meshopt/meshopt_decoder.js';
+import { modelLoader } from './gltf.js';
 
 const MODELS = {};
 let META = null;
 
 export async function loadBuildings(renderer, hq = false) {
-  await MeshoptDecoder.ready;
-  const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+  const loader = await modelLoader();
   const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   try { META = await (await fetch('assets/buildings/buildings.json')).json(); } catch (e) { console.warn('buildings unavailable', e); return; }
   await Promise.all(Object.keys(META).filter((k) => k !== 'classes').map(async (name) => {

@@ -5,9 +5,8 @@
 // takes the rotation of the rig segment it belongs to, the arms reach the
 // rifle with their own two-bone IK, and the hands close around it.
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { modelLoader } from './gltf.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
-import { MeshoptDecoder } from '../vendor/meshopt/meshopt_decoder.js';
 
 export const SOLDIER_KITS = ['olive', 'tan', 'black', 'heavy'];
 export const CIVILIAN_BODIES = ['civ0', 'civ1', 'civ2', 'civ3', 'civ4', 'civ5', 'civ6'];
@@ -15,8 +14,7 @@ const PEOPLE_KITS = [...SOLDIER_KITS, ...CIVILIAN_BODIES];
 const TEMPLATES = {};
 
 export async function loadPeople(renderer, hq = false) {
-  await MeshoptDecoder.ready;
-  const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+  const loader = await modelLoader();
   const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   await Promise.all(PEOPLE_KITS.map(async (kit) => {
     try {

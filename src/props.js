@@ -3,15 +3,13 @@
 // as instanced meshes. Every prop stands on y = 0 at its footprint centre and
 // faces -Z. A prop that fails to load leaves the sculpted stand-in in place.
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { MeshoptDecoder } from '../vendor/meshopt/meshopt_decoder.js';
+import { modelLoader } from './gltf.js';
 
 const MODELS = {};
 let META = {};
 
 export async function loadProps(renderer, hq = false) {
-  await MeshoptDecoder.ready;
-  const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+  const loader = await modelLoader();
   const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   try { META = await (await fetch('assets/props/props.json')).json(); } catch (e) { console.warn('props unavailable', e); return; }
   await Promise.all(Object.keys(META).map(async (name) => {

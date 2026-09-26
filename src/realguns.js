@@ -1,7 +1,6 @@
 // Loads the real first-person gun models (tools/build-realguns.mjs) at boot.
 // A gun that fails to load keeps its sculpted version.
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { MeshoptDecoder } from '../vendor/meshopt/meshopt_decoder.js';
+import { modelLoader } from './gltf.js';
 import { setRealGun, setRealArms } from './gunmodels.js';
 import { setEnemyGun } from './soldier.js';
 
@@ -41,8 +40,7 @@ export const REAL_GUNS = ['m4', 'glock', 'm1014', 'sniper'];
 const ENEMY_GUNS = ['m4', 'm1014', 'sniper'];
 
 export async function loadRealGuns(renderer, hq = false) {
-  await MeshoptDecoder.ready;
-  const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+  const loader = await modelLoader();
   const aniso = Math.min(16, renderer.capabilities.getMaxAnisotropy());
   const arms = loader.loadAsync('assets/arms/arms.glb').then((gltf) => {
     gltf.scene.traverse((o) => { if (o.isMesh) for (const k of ['map', 'normalMap', 'roughnessMap']) if (o.material[k]) o.material[k].anisotropy = aniso; });
