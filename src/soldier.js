@@ -10,6 +10,7 @@ import { fabricMaterial, camoTexture, R } from './fabric.js';
 import { gunGeo } from './guns.js';
 import { gunMaterial } from './gunmaterial.js';
 import { G } from './gunregions.js';
+import { bodyTemplate, Body } from './people.js';
 
 const materials = {};
 // Soldiers can show flipped-down night vision goggles (set by the game at night).
@@ -96,6 +97,15 @@ function gunGeometry(type, far = false) {
 
 let flashTex = null;
 
+// the sculpted soldier's proportions (a real body brings its own: people.js)
+const DEFAULT_RIG = {
+  hipY: 0.97, spine: new THREE.Vector3(0, 0.08, 0), neck: new THREE.Vector3(0, 0.52, 0), head: new THREE.Vector3(0, 0.04, 0),
+  shoulder: { R: new THREE.Vector3(-0.2, 0.46, 0.02), L: new THREE.Vector3(0.2, 0.46, 0.06) },
+  upper: 0.31, fore: 0.32, thigh: { R: new THREE.Vector3(-0.1, -0.04, 0), L: new THREE.Vector3(0.1, -0.04, 0) },
+  thighLen: 0.44, shinLen: 0.4, headTop: 0.22,
+};
+const GUN_FROM_SHOULDER = new THREE.Vector3(0.08, -0.04, 0.14);
+
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
 const DOWN = new THREE.Vector3(0, -1, 0);
 
@@ -104,6 +114,11 @@ export class Soldier {
     const mat = material(kit);
     const G = geometries(kit);
     this.meshes = [];
+    // a real rigged character when loaded (people.js), posed from this rig; else the sculpted body parts
+    const tpl = bodyTemplate(kit);
+    const P = tpl ? tpl.rig : DEFAULT_RIG;
+    this.rig = P;
+    this.legScale = P.hipY / DEFAULT_RIG.hipY;
     const mk = (geo, heat = 0.85, m2 = mat) => {
       const m = new THREE.Mesh(geo, m2);
       m.castShadow = true; m.receiveShadow = true;
@@ -112,37 +127,43 @@ export class Soldier {
       this.meshes.push(m);
       return m;
     };
+    const part = (group, geo, heat) => { if (!tpl) group.add(mk(geo, heat)); };
     this.root = new THREE.Group();
     this.faller = new THREE.Group();
     this.root.add(this.faller);
-    this.hips = new THREE.Group(); this.hips.position.y = 0.97; this.faller.add(this.hips);
-    this.hips.add(mk(G.pelvis));
-    this.spine = new THREE.Group(); this.spine.position.y = 0.08; this.hips.add(this.spine);
-    this.spine.add(mk(G.chest, 0.78));
-    this.neck = new THREE.Group(); this.neck.position.set(0, 0.52, 0.0); this.spine.add(this.neck);
-    this.head = new THREE.Group(); this.head.position.y = 0.04; this.neck.add(this.head);
-    this.head.add(mk(G.head, 1.0));
-    this.nvg = mk(G.nvg, 0.4);
-    this.nvg.visible = soldierOptions.night;
-    this.head.add(this.nvg);
+    this.hips = new THREE.Group(); this.hips.position.y = P.hipY; this.faller.add(this.hips);
+    part(this.hips, G.pelvis);
+    this.spine = new THREE.Group(); this.spine.position.copy(P.spine); this.hips.add(this.spine);
+    part(this.spine, G.chest, 0.78);
+    this.neck = new THREE.Group(); this.neck.position.copy(P.neck); this.spine.add(this.neck);
+    this.head = new THREE.Group(); this.head.position.copy(P.head); this.neck.add(this.head);
+    part(this.head, G.head, 1.0);
+    this.nvg = tpl ? null : mk(G.nvg, 0.4);
+    if (this.nvg) { this.nvg.visible = soldierOptions.night; this.head.add(this.nvg); }
     this.arm = {};
-    for (const [side, x, z] of [['R', -0.2, 0.02], ['L', 0.2, 0.06]]) {
-      const up = new THREE.Group(); up.position.set(x, 0.46, z); this.spine.add(up); up.add(mk(G.upperArm, 0.84));
-      const fo = new THREE.Group(); fo.position.y = -0.31; up.add(fo); fo.add(mk(G.foreArm, 0.88));
-      const ha = new THREE.Group(); ha.position.y = -0.28; fo.add(ha); ha.add(mk(side === 'R' ? G.handR : G.handL, 0.95));
-      this.arm[side] = { up, fo, ha, shoulder: new THREE.Vector3(x, 0.46, z) };
+    for (const side of ['R', 'L']) {
+      const up = new THREE.Group(); up.position.copy(P.shoulder[side]); this.spine.add(up); part(up, G.upperArm, 0.84);
+      const fo = new THREE.Group(); fo.position.y = -P.upper; up.add(fo); part(fo, G.foreArm, 0.88);
+      const ha = new THREE.Group(); ha.position.y = tpl ? -P.fore : -0.28; fo.add(ha); part(ha, side === 'R' ? G.handR : G.handL, 0.95);
+      this.arm[side] = { up, fo, ha, shoulder: P.shoulder[side].clone() };
     }
     this.leg = {};
-    for (const [side, x] of [['R', -0.1], ['L', 0.1]]) {
-      const th = new THREE.Group(); th.position.set(x, -0.04, 0); this.hips.add(th); th.add(mk(G.thigh));
-      const sh = new THREE.Group(); sh.position.y = -0.44; th.add(sh); sh.add(mk(G.shin, 0.8));
+    for (const side of ['R', 'L']) {
+      const th = new THREE.Group(); th.position.copy(P.thigh[side]); this.hips.add(th); part(th, G.thigh);
+      const sh = new THREE.Group(); sh.position.y = -P.thighLen; th.add(sh); part(sh, G.shin, 0.8);
       this.leg[side] = { th, sh };
     }
-    // weapon
+    // where each hand is going (rig spine space) and the gun's rotation there, for the real body's arms
+    this.handTarget = { R: { pos: new THREE.Vector3(), q: new THREE.Quaternion() }, L: { pos: new THREE.Vector3(), q: new THREE.Quaternion() } };
+    // weapon: the butt in the pocket of the right shoulder
     const gg = gunGeometry(weaponType);
     this.gunInfo = gg;
     this.gunPivot = new THREE.Group();
-    this.gunPivot.position.set(-0.12, 0.42, 0.16);
+    // (a real body's shoulder joint sits lower in its shoulder than the sculpted one's: the stock goes in the pocket above it)
+    this.gunBase = P.shoulder.R.clone().add(GUN_FROM_SHOULDER);
+    if (tpl) this.gunBase.y += 0.12;
+    this.headDown = tpl ? 0.22 : 0; // cheek on the stock when aiming
+    this.gunPivot.position.copy(this.gunBase);
     this.spine.add(this.gunPivot);
     this.gun = mk(gg.geo, 0.3, gg.mat);
     this.gun.userData.geoLo = gunGeometry(weaponType, true).geo;
@@ -159,6 +180,15 @@ export class Soldier {
     this.muzzle.add(this.flashSprite);
     this.glint = null;
 
+    if (tpl) {
+      this.body = new Body(tpl);
+      this.root.add(this.body.root);
+      for (const m of this.body.meshes) {
+        m.userData.heat = m.userData.baseHeat = /face|head|skin|eye/i.test(m.material.name) ? 1.0 : 0.82;
+        m.userData.geoHi = m.userData.geoLo = m.geometry;
+        this.meshes.push(m);
+      }
+    }
     scene.add(this.root);
     this.scene = scene;
     // animation state
@@ -184,10 +214,10 @@ export class Soldier {
     this.gunHeat = Math.min(0.6, this.gunHeat + 0.02);
   }
   muzzleWorld(out) { this.muzzle.updateWorldMatrix(true, false); return out.setFromMatrixPosition(this.muzzle.matrixWorld); }
-  headWorld(out) { this.head.updateWorldMatrix(true, false); return out.set(0, 0.11, 0.01).applyMatrix4(this.head.matrixWorld); }
+  headWorld(out) { this.head.updateWorldMatrix(true, false); return out.set(0, this.rig.headTop * 0.5, 0.01).applyMatrix4(this.head.matrixWorld); }
   chestWorld(out) { this.spine.updateWorldMatrix(true, false); return out.set(0, 0.28, 0).applyMatrix4(this.spine.matrixWorld); }
   hipsWorld(out) { this.hips.updateWorldMatrix(true, false); return out.setFromMatrixPosition(this.hips.matrixWorld); }
-  footWorld(side, out) { const s = this.leg[side].sh; s.updateWorldMatrix(true, false); return out.set(0, -0.4, 0.04).applyMatrix4(s.matrixWorld); }
+  footWorld(side, out) { const s = this.leg[side].sh; s.updateWorldMatrix(true, false); return out.set(0, -this.rig.shinLen, 0.04).applyMatrix4(s.matrixWorld); }
   kneeWorld(side, out) { const s = this.leg[side].sh; s.updateWorldMatrix(true, false); return out.setFromMatrixPosition(s.matrixWorld); }
 
   flinch(dirX, dirZ, strength = 1) {
@@ -236,6 +266,7 @@ export class Soldier {
     if (far === this.far) return;
     this.far = far;
     for (const m of this.meshes) m.geometry = far ? m.userData.geoLo : m.userData.geoHi;
+    if (this.body) this.body.setFar(far);
   }
 
   update(dt, world, camPos) {
@@ -243,8 +274,8 @@ export class Soldier {
     if (this.flashT > 0) { this.flashT -= dt; if (this.flashT <= 0) this.flashSprite.visible = false; }
     this.gunHeat = Math.max(0, this.gunHeat - dt * 0.012);
     this.gun.userData.heat = 0.3 + this.gunHeat;
-    this.nvg.visible = soldierOptions.night;
-    if (this.dead) { this._updateDead(dt, world); return; }
+    if (this.nvg) this.nvg.visible = soldierOptions.night;
+    if (this.dead) { this._updateDead(dt, world); if (this.body) this.body.pose(this); return; }
     const P = this.pose, mv = this.move;
     // hit reaction springs
     for (const s of [this.hit.x, this.hit.z]) { s.v += (-s.x * 90 - s.v * 11) * dt; s.x += s.v * dt; }
@@ -263,7 +294,8 @@ export class Soldier {
     let tlx = -sP * A * fwd, trx = sP * A * fwd;
     let slx = Math.max(0, -cP) * A * 1.4 + 0.08, srx = Math.max(0, cP) * A * 1.4 + 0.08;
     let tlz = sP * A * side * 0.5, trz = -sP * A * side * 0.5;
-    let hipY = 0.97 - Math.abs(sP) * 0.03 * moveAmt;
+    const ls = this.legScale;
+    let hipY = (0.97 - Math.abs(sP) * 0.03 * moveAmt) * ls;
     if (crouch > 0) {
       const moving = moveAmt > 0.2;
       // crouch walk when moving, kneel when still
@@ -271,7 +303,7 @@ export class Soldier {
       const ktr = moving ? -0.9 + trx * 0.6 : 0.3, ksr = moving ? 1.3 + srx * 0.5 : 1.3;
       tlx = lerp(tlx, ktl, crouch); slx = lerp(slx, ksl, crouch);
       trx = lerp(trx, ktr, crouch); srx = lerp(srx, ksr, crouch);
-      hipY = lerp(hipY, moving ? 0.72 : 0.56, crouch);
+      hipY = lerp(hipY, (moving ? 0.72 : 0.56) * ls, crouch);
     }
     L.th.rotation.set(tlx, 0, tlz); L.sh.rotation.set(slx, 0, 0);
     R.th.rotation.set(trx, 0, trz); R.sh.rotation.set(srx, 0, 0);
@@ -281,14 +313,14 @@ export class Soldier {
     const lean = (running ? 0.18 : 0.04) * moveAmt * fwd + crouch * 0.18;
     this.spine.rotation.set(lean + this.hit.x.x * 0.1, THREE.MathUtils.clamp(P.yawOff, -0.7, 0.7) * 0.8, this.hit.z.x * 0.1);
     this.hips.rotation.y = THREE.MathUtils.clamp(P.yawOff, -0.7, 0.7) * 0.2 - side * 0.3 * moveAmt;
-    this.head.rotation.set(-P.pitch * 0.5 + P.flashed * 0.5, THREE.MathUtils.clamp(P.yawOff, -0.7, 0.7) * 0.3, 0);
+    this.head.rotation.set(-P.pitch * 0.5 + P.flashed * 0.5 + this.headDown * this._aimSmooth, THREE.MathUtils.clamp(P.yawOff, -0.7, 0.7) * 0.3, 0);
 
     // ---- weapon ----
     this._aimSmooth += (P.aim - this._aimSmooth) * Math.min(1, dt * 8);
     const aim = this._aimSmooth * (1 - P.flashed) * (P.throw >= 0 ? 0.2 : 1);
     const gp = this.gunPivot;
     const lowX = 0.65, lowY = 0.45;
-    gp.position.set(-0.12 + (1 - aim) * 0.08, 0.42 - (1 - aim) * 0.1, 0.16 + (1 - aim) * 0.02);
+    gp.position.set(this.gunBase.x + (1 - aim) * 0.08, this.gunBase.y - (1 - aim) * 0.1, this.gunBase.z + (1 - aim) * 0.02);
     gp.rotation.set(lerp(lowX, -P.pitch - lean, aim) + P.flashed * 0.5, lerp(lowY, 0, aim), lerp(0.2, 0, aim));
     if (P.reload >= 0) {
       const t = P.reload, tilt = Math.sin(Math.min(1, t) * Math.PI);
@@ -325,12 +357,16 @@ export class Soldier {
 
     // marksman scope glint faces the player
     if (this.glint && camPos) this.glint.visible = P.aim > 0.8;
+    if (this.body) this.body.pose(this);
   }
 
   _solveArm(side, target) {
     const arm = this.arm[side];
     const S = arm.shoulder;
-    const a = 0.31, b = 0.32;
+    const a = this.rig.upper, b = this.rig.fore;
+    const ht = this.handTarget[side];
+    ht.pos.copy(target);
+    ht.q.copy(this.gunPivot.quaternion).multiply(this.gun.quaternion);
     const dir = new THREE.Vector3().subVectors(target, S);
     const d = Math.min(a + b - 0.002, Math.max(0.1, dir.length()));
     dir.normalize();
@@ -360,7 +396,7 @@ export class Soldier {
       this.leg[s].th.rotation.x = lerp(this.leg[s].th.rotation.x, -0.5, buckle * 0.2);
       this.leg[s].sh.rotation.x = lerp(this.leg[s].sh.rotation.x, 0.9, buckle * 0.2);
     }
-    this.hips.position.y = lerp(this.hips.position.y, 0.75, buckle * 0.15);
+    this.hips.position.y = lerp(this.hips.position.y, 0.75 * this.legScale, buckle * 0.15);
     if (this.fallAngle < Math.PI / 2 || this.fallVel > 0.01) {
       this.fallVel += (t > 0.12 ? 9 : 2) * dt * (0.3 + Math.sin(this.fallAngle) * 1.6);
       this.fallAngle += this.fallVel * dt;

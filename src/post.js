@@ -722,11 +722,15 @@ export const thermalMaterial = new THREE.ShaderMaterial({
   uniforms: { heat: { value: 0.3 } },
   vertexShader: `
     #include <common>
+    #include <skinning_pars_vertex>
     varying vec3 vN; varying vec3 vView;
     void main(){
+      #include <skinbase_vertex>
       #include <beginnormal_vertex>
+      #include <skinnormal_vertex>
       #include <defaultnormal_vertex>
       #include <begin_vertex>
+      #include <skinning_vertex>
       #include <project_vertex>
       vN = normalize(transformedNormal);
       vView = normalize(-mvPosition.xyz);
