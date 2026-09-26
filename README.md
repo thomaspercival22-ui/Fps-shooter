@@ -47,6 +47,7 @@ This is a debug-signed build for your own phones. Publishing on the Play Store n
 - **Tower Hostage Rescue (Mission → Tower Hostage Rescue):**
   - **The floor:** you breach from stairwell A into a full office floor, 48 × 36 m. It has a concrete core with lifts, restrooms and an IT closet, a glass curtain wall with the city 183 m below, glass-fronted private offices, a boardroom, the CEO's office, open-plan desks, a kitchen, a server room, reception with the company wall, a lounge and meeting rooms. Walls are plasterboard (rounds go through), the core is concrete, and the glass partitions let you see (and be seen) through rooms.
   - **Hostiles** stand guard or walk patrol routes. They only react to what they see and hear, and gunshots carry less through walls. There are no waves and no reinforcements.
+  - **Suspects can surrender.** Press SHOUT (E) to order them to drop their weapons: a suspect who is flashed, wounded, caught at close range with your muzzle on him, or left without his team is likely to throw his rifle away and kneel with his hands on his head. A flashed or badly hurt one may give up without being told. Refusing means he knows where you are, and a hostage taker who refuses may kill a hostage. Walk up to a suspect who has surrendered to cuff him (points for each arrest). Shooting a suspect who has surrendered breaks the rules of engagement and costs points and grade.
   - **Hostages** kneel, some hooded, with a hostage taker next to them. A hostage taker executes a hostage almost immediately if you **miss** (a round cracking past or landing near him or his hostages), if you **wound him without dropping him**, or if you **get too close** where he can see you. If he only hears the assault elsewhere on the floor he waits 30–45 s (less on harder difficulties) before he does it anyway. A flashbang stuns him and buys time. Walk up to a hostage once the room is clear to cut them loose; they get up and walk out through stairwell B.
   - **Civilians** put their hands up when you burst in, cower under desks, or run from gunfire. Hitting one costs points, and killing one or a hostage is a rules-of-engagement violation.
   - **Debrief** with time, hostages rescued, hostiles down, civilians harmed, accuracy and a grade from S to F.
@@ -132,11 +133,12 @@ This is a debug-signed build for your own phones. Publishing on the Play Store n
 | Aim (ADS / scope) | The ◎ button (toggle). |
 | Reload, jump, crouch, switch weapon | The matching buttons. You can also tap the ammo counter to switch. |
 | Frag / flashbang | The grenade buttons (they throw where you're looking). |
+| Shout (Tower) | SHOUT: orders the suspects who can hear you to drop their weapons. |
 | Sniper tools | With the MK13: the magnification button (8x/14x/24x), LASE (rangefinder + spotter call), and ZERO ▲▼ (elevation turret, 50 m steps). |
 
 In settings you can adjust sensitivity, FOV, aim assist, and gyro aiming (off, while aiming, or always). **On-screen joystick & buttons → Always** also shows the touch controls on tablets and computers that don't report a touch screen.
 
-**Keyboard & mouse:** WASD, Shift sprint, Space jump, C crouch, mouse aim, LMB fire, RMB aim, R reload, Q/1/2 switch, B fire selector, G frag, F flashbang, N night vision, T thermal, V drone, Esc pause. Sniper: mouse wheel or Z magnification, X lase, ] / [ (or PageUp / PageDown) zero up / down.
+**Keyboard & mouse:** WASD, Shift sprint, Space jump, C crouch, mouse aim, LMB fire, RMB aim, R reload, Q/1/2 switch, B fire selector, G frag, F flashbang, E shout (Tower), N night vision, T thermal, V drone, Esc pause. Sniper: mouse wheel or Z magnification, X lase, ] / [ (or PageUp / PageDown) zero up / down.
 
 ## Running it locally (development)
 

@@ -72,6 +72,7 @@ export class TowerMission extends Mission {
       else if (yaw === 'hostages') { const [cx, cz] = centre(h.exec.map((i) => sc.hostages[i])); yaw = Math.atan2(cx - h.x, cz - h.z); }
       const e = g.enemies.spawnPlaced(h.type, h.x, h.z, { yaw, kit: h.type === 'heavy' ? 'heavy' : 'black', patrol: h.patrol, hold: !!h.exec });
       if (h.exec) e.exec = { list: h.exec.map((i) => this.hostages[i]), t: null };
+      e.group = h.group || null;
       return e;
     });
     // conversation groups
@@ -82,19 +83,21 @@ export class TowerMission extends Mission {
       return c;
     });
     this.exit = sc.exit;
-    this.st = { rescued: 0, evacuated: 0, hostagesLost: 0, byPlayer: 0, civHurt: 0, civKilled: 0, executed: 0 };
+    this.st = { rescued: 0, evacuated: 0, hostagesLost: 0, byPlayer: 0, civHurt: 0, civKilled: 0, executed: 0, arrested: 0, surrendered: 0, roe: 0 };
     this.hintT = 0;
+    this.shoutCd = 0; this.pressT = 0;
     this.dangerWas = false;
     g.hud.banner('MERIDIAN TOWER · FLOOR 47', `Rescue ${this.hostages.length} hostages · ${this.hostiles.length} hostiles · watch your fire`, 5);
     g.hud.setObjective('FLOOR 47', this._line());
     g.hud.radio('TOC', 'Breach from stairwell A. Hostages in the boardroom, the CEO\'s office and the server room.');
     setTimeout(() => { if (this.game.mission === this && !this.over) g.hud.radio('TOC', 'Hostage takers will execute if they see you coming or if you miss. Flash the room, then one clean shot.'); }, 5000);
+    setTimeout(() => { if (this.game.mission === this && !this.over) g.hud.radio('TOC', 'Suspects may give up. Get the drop on them and SHOUT (E): flashed, hurt or alone, most will drop it. Cuff anyone who surrenders.'); }, 14000);
   }
 
   _line() {
-    const h = this.hostiles.filter((e) => e.alive).length;
+    const h = this.hostiles.filter((e) => e.alive && !e.surrendered).length;
     const b = this.hostages.filter((c) => c.alive && !c.rescued).length;
-    return `HOSTILES ${h} · HOSTAGES ${b} · ${fmtTime(this.t)}`;
+    return `HOSTILES ${h} · HOSTAGES ${b}${this.st.surrendered ? ` · ARRESTS ${this.st.arrested}/${this.st.surrendered}` : ''} · ${fmtTime(this.t)}`;
   }
 
   update(dt) {
@@ -104,7 +107,7 @@ export class TowerMission extends Mission {
     // shot, a wound that doesn't drop them, or an operator getting too close makes them do it at once
     let danger = false;
     for (const e of this.hostiles) {
-      if (!e.alive || !e.exec) continue;
+      if (!e.alive || !e.exec || e.surrendered) continue;
       const X = e.exec;
       const targets = X.list.filter((h) => h.alive && !h.rescued);
       if (!targets.length) continue;
@@ -125,6 +128,18 @@ export class TowerMission extends Mission {
       if (X.t <= 0) { this._execute(e, targets[0]); X.t = 1.3; }
     }
     this._talk(dt);
+    this._pressure(dt);
+    this.shoutCd = Math.max(0, this.shoutCd - dt);
+    // cuffing: walk up to a suspect who gave up
+    for (const e of this.hostiles) {
+      if (!e.alive || !e.surrendered || e.cuffed || !p.alive) continue;
+      if (Math.hypot(e.pos.x - p.pos.x, e.pos.z - p.pos.z) > 1.5) continue;
+      e.cuff();
+      this.st.arrested++;
+      this.award(300, 'SUSPECT ARRESTED');
+      g.hud.pickup('SUSPECT ARRESTED');
+      g.audio.play('magIn', { vol: 0.7, rate: 1.4 });
+    }
     if (danger && !this.dangerWas) g.audio.play('ui', { vol: 0.8, rate: 0.7 });
     this.dangerWas = danger;
     // cutting hostages loose: the room has to be clear
@@ -132,7 +147,7 @@ export class TowerMission extends Mission {
     for (const h of this.hostages) {
       if (!h.alive || h.rescued || !p.alive) continue;
       if (Math.hypot(h.pos.x - p.pos.x, h.pos.z - p.pos.z) > 1.8) continue;
-      const threat = this.hostiles.some((e) => e.alive && e.pos.distanceTo(h.pos) < 10
+      const threat = this.hostiles.some((e) => e.alive && !e.surrendered && e.pos.distanceTo(h.pos) < 10
         && W.los(e.pos.x, e.pos.y + 1.5, e.pos.z, h.pos.x, h.pos.y + 1.0, h.pos.z));
       if (threat) { if (this.hintT <= 0) { g.hud.pickup('ROOM NOT CLEAR'); this.hintT = 2.5; } continue; }
       h.rescue(this.exit);
@@ -142,7 +157,7 @@ export class TowerMission extends Mission {
       g.audio.play('pickup', { vol: 0.9 });
     }
     // end conditions
-    const hostilesLeft = this.hostiles.filter((e) => e.alive).length;
+    const hostilesLeft = this.hostiles.filter((e) => e.alive && !e.surrendered).length;
     const bound = this.hostages.filter((c) => c.alive && !c.rescued).length;
     const living = this.hostages.filter((c) => c.alive).length;
     if (!this.over && p.alive) {
@@ -160,7 +175,7 @@ export class TowerMission extends Mission {
   /** Groups that don't know the assault is on keep talking; each exchange is a line and a reply. */
   _talk(dt) {
     for (const c of this.convos) {
-      const m = c.members.filter((e) => e.alive);
+      const m = c.members.filter((e) => e.alive && !e.surrendered);
       if (m.length < 2 || m.some((e) => e.alert >= 2 || e.suspicious)) { c.speaker = null; continue; }
       c.t -= dt;
       if (c.t > 0) continue;
@@ -183,6 +198,72 @@ export class TowerMission extends Mission {
     const clear = W.los(e.pos.x, e.pos.y + 1.6, e.pos.z, p.eye.x, p.eye.y, p.eye.z);
     const range = (shout ? 30 : 13) * (clear ? 1 : 0.45);
     if (p.alive && d < range) g.hud.overheard(text, shout);
+  }
+
+  /** How likely a suspect is to give up right now (0-1): flashed, hurt, alone, caught at close range. */
+  _giveUpChance(e, shouted) {
+    const g = this.game, p = g.player;
+    const d = Math.hypot(p.pos.x - e.pos.x, p.pos.z - e.pos.z);
+    let c = shouted ? 0.2 : 0;
+    if (e.flashed > 0) c += 0.5;
+    if (e.hp < e.type.hp * 0.6) c += 0.25;
+    if (d < 5) c += 0.15;
+    if (!e.seeing) c += 0.15;                                   // caught unawares
+    // the player's muzzle is on him
+    const f = _v.set(0, 0, -1).applyQuaternion(g.camera.quaternion), to = _w.set(e.pos.x, e.pos.y + 1.2, e.pos.z).sub(g.camera.position);
+    if (f.dot(to.normalize()) > Math.cos(0.14)) c += 0.2;
+    const mates = this.hostiles.filter((o) => o !== e && o.alive && !o.surrendered && ((e.group && o.group === e.group) || o.pos.distanceTo(e.pos) < 8)).length;
+    if (!mates) c += 0.15; else c -= 0.1 * Math.min(2, mates);
+    if (e.exec) c += e.exec.provoked ? -0.15 : 0.05;
+    if (e.typeKey === 'heavy') c -= 0.15;
+    return Math.max(0, Math.min(0.95, c * (g.difficulty.react || 1)));
+  }
+  /** SHOUT: "Police! Drop the weapon!" Everyone who can hear it clearly weighs it up; refusing means he knows where you are. */
+  onShout() {
+    const g = this.game, p = g.player, W = g.level.world;
+    if (this.over || !p.alive || this.shoutCd > 0) return;
+    this.shoutCd = 1.3;
+    g.audio.playAt(`shout${(Math.random() * 3) | 0}`, p.eye.x, p.eye.y, p.eye.z, { vol: 1, ref: 3, max: 30 });
+    g.hud.pickup(['POLICE! DROP THE WEAPON!', 'POLICE! GET ON THE GROUND!', 'DROP IT! HANDS WHERE I CAN SEE THEM!'][(Math.random() * 3) | 0]);
+    for (const e of this.hostiles) {
+      if (!e.alive || e.surrendered) continue;
+      const d = Math.hypot(p.pos.x - e.pos.x, p.pos.z - e.pos.z);
+      const clear = W.los(p.eye.x, p.eye.y, p.eye.z, e.pos.x, e.pos.y + 1.6, e.pos.z);
+      if (d > (clear ? 16 : 6)) continue;
+      if (Math.random() < this._giveUpChance(e, true)) { e.surrender('shout'); continue; }
+      // refuses: he knows where you are now
+      e.alert = 2; e.awareness = Math.max(e.awareness, 1); e.lastKnown.copy(p.pos); e.lastSeen = g.time; e.replan();
+      if (e.exec && e.flashed <= 0 && clear) this._provoke(e, 'close');
+      if (Math.random() < 0.6) this._overhear(e, ['Screw you!', 'Back off or they die!', 'Never!'][(Math.random() * 3) | 0], 'shout');
+    }
+  }
+  /** Without a word: a suspect flashed or badly hurt with you right on him may give up anyway. */
+  _pressure(dt) {
+    const g = this.game, p = g.player, W = g.level.world;
+    this.pressT -= dt;
+    if (this.pressT > 0 || !p.alive) return;
+    this.pressT = 0.5;
+    for (const e of this.hostiles) {
+      if (!e.alive || e.surrendered || (e.exec && e.exec.provoked && e.flashed <= 0)) continue;
+      const d = Math.hypot(p.pos.x - e.pos.x, p.pos.z - e.pos.z);
+      if (d > 7 || (e.flashed <= 0 && e.hp > e.type.hp * 0.45)) continue;
+      if (!W.los(p.eye.x, p.eye.y, p.eye.z, e.pos.x, e.pos.y + 1.2, e.pos.z)) continue;
+      if (Math.random() < this._giveUpChance(e, false) * 0.25) e.surrender('pressure');
+    }
+  }
+  onSurrender(e) {
+    const g = this.game;
+    this.st.surrendered++;
+    this._overhear(e, ['Don\'t shoot! Don\'t shoot!', 'Okay, okay! I give up!', 'I\'m down! I\'m down!', 'Don\'t shoot, I\'m unarmed!'][(Math.random() * 4) | 0], 'shout');
+    this.award(200, 'SUSPECT SURRENDERED');
+    g.hud.pickup('SUSPECT SURRENDERED · CUFF HIM');
+  }
+  /** Shooting a suspect who has given up breaks the rules of engagement. */
+  onSurrenderedShot(e) {
+    const g = this.game;
+    this.st.roe++;
+    this.award(-800, 'SURRENDERED SUSPECT SHOT');
+    g.hud.banner('SURRENDERED SUSPECT SHOT', 'Rules of engagement violated', 2.5);
   }
 
   /** Something tipped the hostage taker off: he kills a hostage within a heartbeat. */
@@ -249,7 +330,7 @@ export class TowerMission extends Mission {
   debrief() {
     const s = this.st, g = this.game;
     const killed = this.hostiles.filter((e) => !e.alive).length;
-    let pts = 100 - s.hostagesLost * 22 - s.byPlayer * 30 - s.civHurt * 8 - Math.max(0, (this.t - 300) / 12) + Math.min(10, this.accuracy() / 8);
+    let pts = 100 - s.hostagesLost * 22 - s.byPlayer * 30 - s.civHurt * 8 - s.roe * 25 - Math.max(0, (this.t - 300) / 12) + Math.min(10, this.accuracy() / 8) + s.arrested * 3;
     if (!this.success) pts = Math.min(pts, 35);
     const grade = this.grade(pts);
     return {
@@ -258,7 +339,8 @@ export class TowerMission extends Mission {
       rows: [
         ['Result', this.success ? '<span class="hl">Complete</span>' : 'Failed'], ['Grade', `<span class="hl">${grade}</span>`],
         ['Time', fmtTime(this.t)], ['Hostages rescued', `${s.rescued} / ${this.hostages.length}`],
-        ['Hostiles neutralised', `${killed} / ${this.hostiles.length}`], ['Civilians harmed', s.civHurt + s.civKilled],
+        ['Hostiles neutralised', `${killed + s.surrendered} / ${this.hostiles.length}`], ['Suspects arrested', `${s.arrested} / ${s.surrendered}`],
+        ['Civilians harmed', s.civHurt + s.civKilled], ['Surrendered suspects shot', s.roe],
         ['Accuracy', `${this.accuracy()}%`], ['Score', `<span class="hl">${g.score}</span>`],
       ],
     };

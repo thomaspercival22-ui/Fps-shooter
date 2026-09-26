@@ -272,16 +272,32 @@ export class Soldier {
     this.fallAxis = new THREE.Vector3(0, 1, 0).cross(this.fallDir).normalize();
     this.fallAngle = 0; this.fallVel = 0;
     this.limp = [Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5];
-    // drop the weapon
+    this._dropGun(new THREE.Vector3(dirX * 1.5 + (Math.random() - 0.5), 1.5, dirZ * 1.5 + (Math.random() - 0.5)));
+  }
+
+  /** Lets go of the weapon: it keeps its place in the world and falls with velocity `vel`. */
+  _dropGun(vel) {
+    if (this.droppedGun) return;
     const g = this.gun;
     g.updateWorldMatrix(true, false);
     const wp = new THREE.Vector3(), wq = new THREE.Quaternion(), ws = new THREE.Vector3();
     g.matrixWorld.decompose(wp, wq, ws);
     this.scene.add(g);
     g.position.copy(wp); g.quaternion.copy(wq);
-    this.droppedGun = { vel: new THREE.Vector3(dirX * 1.5 + (Math.random() - 0.5), 1.5, dirZ * 1.5 + (Math.random() - 0.5)), spin: new THREE.Vector3(Math.random() * 6 - 3, Math.random() * 6 - 3, Math.random() * 6 - 3), rest: false };
+    this.droppedGun = { vel, spin: new THREE.Vector3(Math.random() * 6 - 3, Math.random() * 6 - 3, Math.random() * 6 - 3), rest: false };
     this.flashSprite.visible = false;
     if (this.glint) this.glint.visible = false;
+  }
+
+  /** Gives up: tosses the weapon away and goes down on both knees, hands on the head (behind the back once cuffed). */
+  surrender() {
+    if (this.surrendered || this.dead) return;
+    this.surrendered = true;
+    this.surrT = 0;
+    this.cuffed = false;
+    const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
+    this._dropGun(new THREE.Vector3(fx * 1.6 + (Math.random() - 0.5) * 0.6, 1.2, fz * 1.6 + (Math.random() - 0.5) * 0.6));
+    this.handsFrom = { R: this.handTarget.R.pos.clone(), L: this.handTarget.L.pos.clone() };
   }
 
   dispose() {
@@ -308,6 +324,7 @@ export class Soldier {
     this.gun.userData.heat = 0.3 + this.gunHeat;
     if (this.nvg) this.nvg.visible = soldierOptions.night;
     if (this.dead) { this._updateDead(dt, world); if (this.body) this.body.pose(this); return; }
+    if (this.surrendered) { this._updateSurrender(dt, world); if (this.body) this.body.pose(this); return; }
     const P = this.pose, mv = this.move;
     // hit reaction springs
     for (const s of [this.hit.x, this.hit.z]) { s.v += (-s.x * 90 - s.v * 11) * dt; s.x += s.v * dt; }
@@ -392,7 +409,7 @@ export class Soldier {
     if (this.body) this.body.pose(this);
   }
 
-  _solveArm(side, target) {
+  _solveArm(side, target, poleDir = null) {
     const arm = this.arm[side];
     const S = arm.shoulder;
     const a = this.rig.upper, b = this.rig.fore;
@@ -402,7 +419,7 @@ export class Soldier {
     const dir = new THREE.Vector3().subVectors(target, S);
     const d = Math.min(a + b - 0.002, Math.max(0.1, dir.length()));
     dir.normalize();
-    const pole = new THREE.Vector3(side === 'R' ? -0.6 : 0.6, -1, -0.3).normalize();
+    const pole = poleDir ? poleDir.clone().normalize() : new THREE.Vector3(side === 'R' ? -0.6 : 0.6, -1, -0.3).normalize();
     const cosA = (a * a + d * d - b * b) / (2 * a * d);
     const sinA = Math.sqrt(Math.max(0, 1 - cosA * cosA));
     const perp = pole.sub(dir.clone().multiplyScalar(pole.dot(dir))).normalize();
@@ -444,7 +461,34 @@ export class Soldier {
     this.arm.L.fo.rotation.x = lerp(this.arm.L.fo.rotation.x, 0.5, k * 0.1);
     this.spine.rotation.x = lerp(this.spine.rotation.x, this.limp[2] * 0.4, k * 0.1);
     this.head.rotation.x = lerp(this.head.rotation.x, this.limp[3] * 0.8, k * 0.1);
-    // dropped weapon physics
+    this._updateDroppedGun(dt, world);
+  }
+
+  /** On both knees, sitting back a little, head down; hands on the head, or behind the back once cuffed. */
+  _updateSurrender(dt, world) {
+    this.surrT += dt;
+    const k = smooth(this.surrT / 0.9), ls = this.legScale;
+    for (const s of this.hit ? [this.hit.x, this.hit.z] : []) { s.v += (-s.x * 90 - s.v * 11) * dt; s.x += s.v * dt; }
+    for (const [side, spread] of [['L', 0.1], ['R', -0.1]]) {
+      const L = this.leg[side];
+      L.th.rotation.set(lerp(L.th.rotation.x, 0.12, k), 0, lerp(L.th.rotation.z, spread, k));
+      L.sh.rotation.set(lerp(L.sh.rotation.x, 1.62, k), 0, 0);
+    }
+    this.hips.position.y = lerp(0.97 * ls, 0.5 * ls, k);
+    this.hips.rotation.y = 0;
+    this.spine.rotation.set(0.04 + this.hit.x.x * 0.1, 0, this.hit.z.x * 0.1);
+    this.head.rotation.set(0.28 * k, Math.sin(this.surrT * 0.7) * 0.15, 0);
+    const c = this.cuffed ? smooth((this.surrT - (this.cuffT ?? 0)) / 0.6) : 0;
+    for (const [side, sx] of [['R', -1], ['L', 1]]) {
+      const onHead = _v3.set(sx * 0.11, 0.7, -0.03), behind = _v2.set(sx * 0.1, 0.02, -0.2);
+      const t = onHead.clone().lerp(behind, c);
+      const from = this.handsFrom?.[side] || t;
+      this._solveArm(side, from.clone().lerp(t, k), _v.set(sx, c > 0.5 ? -1 : 0.25, c > 0.5 ? -0.3 : 0.35));
+    }
+    this._updateDroppedGun(dt, world);
+  }
+
+  _updateDroppedGun(dt, world) {
     const dg = this.droppedGun;
     if (dg && !dg.rest) {
       dg.vel.y -= 9.81 * dt;

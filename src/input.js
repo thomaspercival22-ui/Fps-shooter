@@ -143,6 +143,7 @@ export class Input {
     tap('btn-swap', () => this.events.add('swap'));
     tap('btn-frag', () => this.events.add('frag'));
     tap('btn-flash', () => this.events.add('flash'));
+    tap('btn-shout', () => this.events.add('shout'));
     tap('btn-pause', () => this.events.add('pause'));
     tap('btn-zoom', () => this.events.add('zoom'));
     tap('btn-lase', () => this.events.add('lase'));
@@ -209,6 +210,7 @@ export class Input {
         case 'KeyC': case 'ControlLeft': this.events.add('crouch'); this.downHeld = true; break;
         case 'KeyG': this.events.add('frag'); break;
         case 'KeyF': this.events.add('flash'); break;
+        case 'KeyE': this.events.add('shout'); break;
         case 'KeyN': this.events.add('nvg'); break;
         case 'KeyB': this.events.add('firemode'); break;
         case 'KeyT': this.events.add('thermal'); break;

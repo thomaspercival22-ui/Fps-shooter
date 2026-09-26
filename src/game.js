@@ -284,6 +284,7 @@ export class Game {
     this.mission?.dispose?.();
     this.mission = this.missionKey === 'tower' ? new TowerMission(this) : this.missionKey === 'sniper' ? new SniperMission(this) : null;
     document.body.classList.toggle('sniper-mission', this.missionKey === 'sniper');
+    document.body.classList.toggle('tower-mission', this.missionKey === 'tower');
     this.audio.setEnvironment(this.level.indoor ? 'indoor' : this.missionKey === 'sniper' ? 'ridge' : 'outdoor');
     if (this.mission) this.mission.start();
     else { this.hud.setWave(1, 0); this.hud.banner('OPERATION TIPS MANIA', 'Hold the compound', 3.5); }
@@ -391,7 +392,7 @@ export class Game {
     this.civilians.clear();
     this.mission?.dispose?.();
     this.mission = null;
-    document.body.classList.remove('sniper-mission');
+    document.body.classList.remove('sniper-mission', 'tower-mission');
     this.grenades.clear();
     this.ballistics.clear();
     this.drone.reset();            // a drone still in the air: land it and stop its motor
@@ -736,6 +737,7 @@ export class Game {
       if (input.consume('crouch')) p.toggleCrouch();
       if (input.consume('frag')) w.throwGrenade('frag');
       if (input.consume('flash')) w.throwGrenade('flash');
+      if (input.consume('shout')) this.mission?.onShout?.();
       w.setTrigger(input.fire);
     } else input.events.clear();
 
@@ -822,7 +824,7 @@ export class Game {
     if (input.fire && !this._droneFirePrev) d.detonate();
     this._droneFirePrev = input.fire;
     if (input.consume('swap')) d.exit();
-    for (const k of ['reload', 'crouch', 'frag', 'flash', 'slot1', 'slot2', 'firemode']) input.consume(k);
+    for (const k of ['reload', 'crouch', 'frag', 'flash', 'shout', 'slot1', 'slot2', 'firemode']) input.consume(k);
     input.jump = false;
     d.update(dt, input, look);
     this.weapons.setTrigger(false);
@@ -857,7 +859,7 @@ export class Game {
     }
     if (this.night) {
       for (const e of this.enemies.list) {
-        if (!e.alive || e.alert < 2 || e.soldier.pose.aim < 0.7 || e.flashed > 0) continue;
+        if (!e.alive || e.surrendered || e.alert < 2 || e.soldier.pose.aim < 0.7 || e.flashed > 0) continue;
         const m = e.soldier.muzzle;
         m.updateWorldMatrix(true, false);
         const from = new THREE.Vector3().setFromMatrixPosition(m.matrixWorld);
@@ -884,7 +886,7 @@ export class Game {
     let best = null, bestAng = 8 * DEG;
     const v = new THREE.Vector3();
     for (const e of this.enemies.list) {
-      if (!e.alive) continue;
+      if (!e.alive || e.surrendered) continue;
       v.copy(e.hb.neck).lerp(e.hb.hips, 0.35).sub(cam.position);
       const dist = v.length();
       if (dist > 150) continue;

@@ -250,6 +250,7 @@ export class Enemy {
     this.lastHurt = g.time;
     this.suppression = Math.min(3, this.suppression + 1);
     this.soldier.flinch(dirX, dirZ, part === 'head' ? 1.5 : 1);
+    if (this.surrendered && source === 'player') g.mission?.onSurrenderedShot?.(this);
     if (source === 'player') {
       this.lastKnown.copy(g.player.pos);
       this.awareness = 1.2;
@@ -275,6 +276,25 @@ export class Enemy {
   }
 
   replan() { this.thinkT = 0; }
+
+  /** Gives up: weapon away, down on his knees with his hands on his head. Out of the fight for good,
+   * but still a person the rules of engagement protect. */
+  surrender(why) {
+    if (!this.alive || this.surrendered) return;
+    this.surrendered = true;
+    this.order = 'surrendered';
+    this.path = null; this.vel.set(0, 0, 0);
+    this.burstLeft = 0; this.throwing = null; this.reloading = 0; this.seeing = false; this.crouch = false;
+    if (this.cover) { this.cover.occupant = null; this.cover = null; }
+    this.soldier.surrender();
+    this.game.mission?.onSurrender?.(this, why);
+  }
+  /** Hands cuffed behind his back. */
+  cuff() {
+    if (!this.surrendered || this.cuffed) return;
+    this.cuffed = true;
+    this.soldier.cuffed = true; this.soldier.cuffT = this.soldier.surrT;
+  }
 
   // ---------------- decision making ----------------
   think() {
@@ -533,6 +553,12 @@ export class Enemy {
   update(dt) {
     const g = this.game;
     if (!this.alive) { this.deadT += dt; this.soldier.update(dt, g.level.world); return; }
+    if (this.surrendered) {
+      this.soldier.setPosition(this.pos.x, this.pos.y, this.pos.z);
+      this.soldier.update(dt, g.level.world, (g.drone.active ? g.drone.camera : g.camera).position);
+      this._updateHitboxes();
+      return;
+    }
     this.orderT += dt;
     this.suppression = Math.max(0, this.suppression - dt * 0.6);
     if (this.flashed > 0) {
@@ -923,7 +949,7 @@ export class EnemyManager {
   }
 
   get alive() { return this.list.filter((e) => e.alive); }
-  aliveCount() { let n = 0; for (const e of this.list) if (e.alive) n++; return n; }
+  aliveCount() { let n = 0; for (const e of this.list) if (e.alive && !e.surrendered) n++; return n; }
 
   spawn(typeKey, x, z, intel) {
     const e = new Enemy(this, typeKey, x, z);
@@ -977,7 +1003,7 @@ export class EnemyManager {
   onNoise(pos, radius, kind) {
     const W = this.game.level.world;
     for (const e of this.list) {
-      if (!e.alive) continue;
+      if (!e.alive || e.surrendered) continue;
       const d = Math.hypot(e.pos.x - pos.x, e.pos.z - pos.z);
       if (d > radius) continue;
       let r = radius;
@@ -989,7 +1015,7 @@ export class EnemyManager {
 
   /** Bullet passing close by: suppression + alert. */
   nearMiss(e, fromPos) {
-    if (!e.alive) return;
+    if (!e.alive || e.surrendered) return;
     this.game.mission?.onNearMiss?.(e);
     e.suppression = Math.min(3, e.suppression + 0.6);
     if (e.alert < 2) { e.alert = 2; e.awareness = Math.max(e.awareness, 0.9); e.lastKnown.copy(fromPos); e.replan(); }
@@ -998,7 +1024,7 @@ export class EnemyManager {
   flashbang(pos, radius) {
     const W = this.game.level.world;
     for (const e of this.list) {
-      if (!e.alive) continue;
+      if (!e.alive || e.surrendered) continue;
       const eye = e.eye(_a);
       const d = eye.distanceTo(pos);
       if (d > radius) continue;
