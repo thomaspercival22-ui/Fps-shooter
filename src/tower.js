@@ -11,6 +11,7 @@ import { NavGrid } from './nav.js';
 import { pbrMaterial } from './assets.js';
 import { GeoBatch, bakeAO, applyBakedAO, makeCovers } from './level.js';
 import { PropSet } from './props.js';
+import { cityTowers, buildSkyline } from './city.js';
 import * as OT from './officetex.js';
 
 export const TOWER = { x0: -24, x1: 24, z0: -18, z1: 18, ceil: 2.8, storey: 3.9, street: -183, floor: 47 };
@@ -339,7 +340,10 @@ export function buildTower(scene, assets, opts = {}) {
   table(-21.9, -13.4, -20.9, -12.2, 0.42, 'wood');
   plant(-23.3, -11.7); plant(-15.8, -11.7);
   // boardroom: long table with chairs, credenza, screen
-  table(-12.8, -15.2, -6.2, -13.6, 0.74, 'wood');
+  if (P.has('boardTable')) {
+    P.put('boardTable', -9.5, 0, -14.4, 0, 6.6 / 4.43);
+    solid('none', -12.8, 0.7, -15.2, -6.2, 0.74, -13.6, 1, { mat: 'wood', pen: PEN.wood, noMap: true, noCover: true });
+  } else table(-12.8, -15.2, -6.2, -13.6, 0.74, 'wood');
   for (let x = -12.2; x < -6.4; x += 1.05) { chair(x, -15.75, Math.PI, 0, 0); chair(x, -13.05, 0, 0, 0); }
   cabinet(-12.5, -17.8, -6.5, -17.35, 0.75, 'wood');
   deco('plastic', -11.2, 1.1, -17.95, -7.8, 3.0 - 0.9, -17.9);
@@ -410,8 +414,13 @@ export function buildTower(scene, assets, opts = {}) {
 
   // ---------------- east band: reception, waiting, meeting rooms ----------------
   // reception desk facing the lifts and the company wall behind it
-  solid('woodLight', 12.3, 0, -2.2, 13.2, 1.08, 2.2, 1, { mat: 'wood', pen: PEN.wood });
-  deco('stone', 12.2, 1.08, -2.3, 13.3, 1.12, 2.3, 1.2);
+  if (P.has('receptionDesk')) {
+    P.put('receptionDesk', 12.75, 0, 0, -Math.PI / 2);
+    solid('none', 12.38, 0, -2.2, 13.12, 0.9, 2.2, 1, { mat: 'wood', pen: PEN.wood });
+  } else {
+    solid('woodLight', 12.3, 0, -2.2, 13.2, 1.08, 2.2, 1, { mat: 'wood', pen: PEN.wood });
+    deco('stone', 12.2, 1.08, -2.3, 13.3, 1.12, 2.3, 1.2);
+  }
   solid('laminate', 13.2, 0.72, -2.2, 14.0, 0.75, 2.2, 1, { mat: 'wood', noMap: true, noCover: true });
   monitor(13.6, -1.0, -Math.PI / 2, 0, 0); monitor(13.6, 1.0, -Math.PI / 2, 0, 0);
   chair(14.5, -1.0, -Math.PI / 2, 0, 0); chair(14.5, 1.0, -Math.PI / 2, 0, 0);
@@ -652,16 +661,34 @@ function cityAndShell(scene, assets) {
   addBox(0, street, 0, X1 - X0 + 0.3, -street - 0.35, Z1 - Z0 + 0.3, 0.5);           // floors below
   addBox(0, ST, 0, X1 - X0 + 0.3, 60, Z1 - Z0 + 0.3, 0.5);                              // floors above
   addBox(0, ST + 60, 0, 30, 6, 22, 0.52);                                               // plant room on the roof
-  // surrounding towers on a street grid (blocks of 70 m, streets 22 m)
+  // surrounding towers on a street grid (blocks of 70 m, streets 22 m): real building models (city.js),
+  // dealt from shuffled decks so no model repeats much; past 400 m only the light ones. Plain massing
+  // stands in if the models aren't loaded.
   const R = mulberry(12);
+  const real = cityTowers().filter((t) => Math.max(t.w, t.d) <= 66), light = real.filter((t) => t.tris <= 1500), placed = [];
+  const decks = new Map();
+  const draw = (list) => {
+    if (!decks.has(list)) decks.set(list, []);
+    const deck = decks.get(list);
+    if (!deck.length) { deck.push(...list); for (let i = deck.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [deck[i], deck[j]] = [deck[j], deck[i]]; } }
+    return deck.pop();
+  };
   for (let bx = -6; bx <= 6; bx++) for (let bz = -6; bz <= 6; bz++) {
     if (Math.abs(bx) <= 0 && Math.abs(bz) <= 0) continue;
     const cx = bx * 92, cz = bz * 92, d = Math.hypot(cx, cz);
     if (d > 560 || n >= 62) continue;
+    if (real.length && (d <= 400 || light.length)) {
+      const t = draw(d <= 400 ? real : light), turn = Math.floor(R() * 4), sc = 0.9 + R() * 0.2;
+      const w = (turn % 2 ? t.d : t.w) * sc, dd = (turn % 2 ? t.w : t.d) * sc;
+      const jx = Math.max(0, Math.min(8, (68 - w) / 2)), jz = Math.max(0, Math.min(8, (68 - dd) / 2));
+      placed.push({ name: t.name, x: cx + (R() - 0.5) * 2 * jx, y: street, z: cz + (R() - 0.5) * 2 * jz, turn, s: sc });
+      continue;
+    }
     const w = 26 + R() * 34, dd = 24 + R() * 34;
     const tall = R() < 0.35 ? 150 + R() * 140 : 40 + R() * 120;
     addBox(cx + (R() - 0.5) * 14, street, cz + (R() - 0.5) * 14, w, tall, dd, R());
   }
+  buildSkyline(group, placed, facadeMat.userData.cityUniforms.night);
   inst.count = n;
   inst.instanceMatrix.needsUpdate = true;
   inst.userData.heat = 0.3; inst.userData.noWet = true;

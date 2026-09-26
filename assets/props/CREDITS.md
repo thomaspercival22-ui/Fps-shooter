@@ -22,6 +22,8 @@ Poly Haven photo-scans (CC0, https://polyhaven.com) and Sketchfab models (CC BY 
 - steel_frame_shelves_01: https://polyhaven.com/a/steel_frame_shelves_01 (CC0)
 - drawer_cabinet: https://polyhaven.com/a/drawer_cabinet (CC0)
 - projector_screen: https://polyhaven.com/a/projector_screen (CC0)
+- **Conference Table - rectangular 6m** by mozillareality: https://sketchfab.com/3d-models/1ba845e95a964809a9437c2a92ac59ab (CC BY 4.0)
+- **Reception Desk 01** by koksky: https://sketchfab.com/3d-models/c1e6580ddcb74d26927470ac59d40787 (CC BY 4.0)
 - plastic_monobloc_chair_01: https://polyhaven.com/a/plastic_monobloc_chair_01 (CC0)
 - wooden_picnic_table: https://polyhaven.com/a/wooden_picnic_table (CC0)
 - metal_trash_can: https://polyhaven.com/a/metal_trash_can (CC0)

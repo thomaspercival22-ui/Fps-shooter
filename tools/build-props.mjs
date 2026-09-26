@@ -11,7 +11,7 @@ import path from 'path';
 import { execFileSync } from 'child_process';
 import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS, EXTMeshoptCompression, EXTTextureWebP } from '@gltf-transform/extensions';
-import { prune, dedup, textureCompress, meshopt, cloneDocument, flatten, join, weld, simplify, transformMesh, getBounds, clearNodeTransform } from '@gltf-transform/functions';
+import { prune, dedup, textureCompress, meshopt, cloneDocument, flatten, join, weld, simplify, transformMesh, getBounds } from '@gltf-transform/functions';
 import { MeshoptSimplifier, MeshoptEncoder } from 'meshoptimizer';
 import sharp from 'sharp';
 
@@ -46,6 +46,8 @@ export const PROPS = {
   shelves: { ph: 'steel_frame_shelves_01', tris: 2000, fit: ['y', 1.8] },
   drawers: { ph: 'drawer_cabinet', tris: 3000, rotY: 180 },
   projector: { ph: 'projector_screen', tris: 2000, rotY: 180 },
+  boardTable: { uid: '1ba845e95a964809a9437c2a92ac59ab', title: 'Conference Table - rectangular 6m', author: 'mozillareality', fit: ['y', 0.74], tris: 700 },
+  receptionDesk: { uid: 'c1e6580ddcb74d26927470ac59d40787', title: 'Reception Desk 01', author: 'koksky', fit: ['x', 4.4], tris: 1200 },
   // the compound
   monoChair: { ph: 'plastic_monobloc_chair_01', tris: 2500 },
   picnic: { ph: 'wooden_picnic_table', tris: 2000 },
@@ -89,10 +91,21 @@ async function buildProp(name, cfg) {
   if (cfg.keep) for (const n of root.listNodes()) if (n.getMesh() && !cfg.keep.test(n.getName())) n.setMesh(null);
   for (const s of root.listSkins()) s.dispose();
   const scene = root.getDefaultScene() || root.listScenes()[0];
-  // bake every node transform into its mesh, then: turn, scale, stand on the floor at the footprint centre
-  // (parents first: each node's transform is pushed into its children and its mesh, shared meshes cloned)
-  const order = []; scene.traverse((n) => order.push(n));
-  for (const n of order) clearNodeTransform(n);
+  // bake every node's world transform into its mesh (a mesh used twice is copied), then: turn, scale,
+  // stand on the floor at the footprint centre
+  {
+    const nodes = []; scene.traverse((n) => nodes.push(n));
+    const world = new Map(nodes.map((n) => [n, n.getWorldMatrix()]));
+    const used = new Set();
+    for (const n of nodes) {
+      let m = n.getMesh();
+      if (!m) continue;
+      if (used.has(m)) { const c = m.clone(); c.listPrimitives().forEach((p) => c.removePrimitive(p)); for (const p of m.listPrimitives()) c.addPrimitive(p.clone()); n.setMesh(c); m = c; }
+      used.add(m);
+      transformMesh(m, world.get(n));
+    }
+    for (const n of nodes) n.setMatrix([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+  }
   await doc.transform(flatten(), join(), weld({}));
   const a = ((cfg.rotY || 0) * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
   const R = [c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0, 0, 0, 1];

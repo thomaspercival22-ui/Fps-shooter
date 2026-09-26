@@ -9,6 +9,7 @@ import { loadRealGuns } from './realguns.js';
 import { loadPeople } from './people.js';
 import { loadProps } from './props.js';
 import { loadBuildings } from './buildings.js';
+import { loadCity } from './city.js';
 import { settings, saveSettings, getBest, textureCap, isCinematic, MOBILE } from './settings.js';
 import { WEAPONS, DIFFICULTY } from './config.js';
 import { MISSIONS } from './missions.js';
@@ -74,7 +75,7 @@ async function boot() {
     ]);
   }
   text.textContent = 'Loading weapons and soldiers...';
-  await Promise.all([loadRealGuns(renderer, isCinematic()), loadPeople(renderer, isCinematic()), loadProps(renderer, isCinematic()), loadBuildings(renderer, isCinematic() || !MOBILE)]);
+  await Promise.all([loadRealGuns(renderer, isCinematic()), loadPeople(renderer, isCinematic()), loadProps(renderer, isCinematic()), loadBuildings(renderer, isCinematic() || !MOBILE), loadCity(renderer, isCinematic() || !MOBILE)]);
   text.textContent = 'Building the compound...';
   await new Promise((r) => setTimeout(r, 30));
   const game = new Game(renderer, assets, audio, voices);

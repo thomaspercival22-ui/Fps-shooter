@@ -42,7 +42,8 @@ This is a debug-signed build for your own phones. Publishing on the Play Store n
   - **Enemy soldiers** are rigged, textured characters: Russian and Ukrainian soldiers, a S.W.A.T. operator and an FSB operator, with real helmets, night-vision goggles, plate carriers, pouches and magazines. The game's procedural animation drives their skeletons (walking, strafing, crouching, kneeling, aiming with the cheek on the stock, reloading, throwing, flinching and falling), their arms reach the rifle with IK and their hands close round the grip. They carry light copies of the real MK18, Benelli and M40A5.
   - **Civilians and hostages** are seven realistic office workers (shirts, suits, blouses, cardigans) posed the same way: hands up, cowering, kneeling bound with a hessian hood, walking out once rescued.
   - **The compound's buildings** are real models: the HQ is a two-storey house of weathered planks and rusted sheet with a porch, a balcony and a stair in its side annex; beside it is a flat-roofed rendered guard house; to the south-west are a two-storey shanty with an outside stair, a plank house with a lean-to and solar panel, and another rendered block. You can go inside all of them, and upstairs where there is a stair (some doorways are low enough that you have to crouch). Their collision is generated from each model's own geometry: the triangles are voxelised, merged into boxes and shrunk back onto the surfaces, so walls, floors, stairs, doorways and windows block and let through exactly where they are drawn, and bullets go through plank and sheet walls but not rendered block. Phones get 512 px textures (about 30 MB for all of them); computers get 1K.
-  - **Furniture and fixtures** are photo-scans and real models: office chairs, computers, potted plants, chesterfield sofas, leather armchairs, fire extinguishers and call points, wall clocks, framed pictures, water coolers, a coffee cart, security cameras, shelving and boxes on floor 47, and plastic chairs, a picnic table, bins, a barrel stove, a hand truck and a ladder in the compound.
+  - **The city around Meridian Tower** is real building models: art-deco and glass towers, a brick hotel and landmark skyscrapers stand on the street grid below, split out of six Sketchfab packs and placed as instanced copies (the lightest ones further out). At night random windows in their glass light up. Phones get 256 px textures (about 11 MB), computers 512 px.
+  - **Furniture and fixtures** are photo-scans and real models: office chairs, computers, a boardroom conference table, a marble and oak reception desk, potted plants, chesterfield sofas, leather armchairs, fire extinguishers and call points, wall clocks, framed pictures, water coolers, a coffee cart, security cameras, shelving and boxes on floor 47, and plastic chairs, a picnic table, bins, a barrel stove, a hand truck and a ladder in the compound.
 - **Tower Hostage Rescue (Mission → Tower Hostage Rescue):**
   - **The floor:** you breach from stairwell A into a full office floor, 48 × 36 m. It has a concrete core with lifts, restrooms and an IT closet, a glass curtain wall with the city 183 m below, glass-fronted private offices, a boardroom, the CEO's office, open-plan desks, a kitchen, a server room, reception with the company wall, a lounge and meeting rooms. Walls are plasterboard (rounds go through), the core is concrete, and the glass partitions let you see (and be seen) through rooms.
   - **Hostiles** stand guard or walk patrol routes. They only react to what they see and hear, and gunshots carry less through walls. There are no waves and no reinforcements.
@@ -220,6 +221,8 @@ src/
   arms.js      the rigged first-person arms: IK, grips, finger curls
   props.js     loads the real furniture and fixtures (assets/props) and places them as instanced meshes
   buildings.js loads the real buildings (assets/buildings) and places them with their generated collision boxes
+  city.js      loads the skyline towers (assets/city) and places them around the tower, lighting windows at night
+  gltf.js      the model loader shared by all of the above (keeps textures where blob: fetches are blocked)
   effects.js   particles, decals, brass, lights
   grenades.js  grenade physics
   audio.js     sound engine: recorded clips (assets/audio), synthesised fallbacks, reverb, positional audio
@@ -227,7 +230,7 @@ src/
   hud.js       HUD, minimap, scope, flash effects
   textures.js  procedural textures
 assets/        CC0 textures, props and sky (from Poly Haven)
-assets/guns, arms, people, props, buildings   the real models (built by tools/build-realguns.mjs, build-arms.mjs, build-people.mjs, build-props.mjs, build-buildings.mjs)
+assets/guns, arms, people, props, buildings, city   the real models (built by tools/build-realguns.mjs, build-arms.mjs, build-people.mjs, build-props.mjs, build-buildings.mjs, build-city.mjs)
 vendor/three/  three.js (bundled so nothing loads from the internet)
 vendor/meshopt/  meshoptimizer decoder for the compressed gun meshes
 ```
@@ -242,6 +245,7 @@ vendor/meshopt/  meshoptimizer decoder for the compressed gun meshes
   - guns, sights and suppressor: [assets/guns/CREDITS.md](assets/guns/CREDITS.md) (nixo_design, drcrazzie, Urpo, TheWarVet)
   - first-person arms: [assets/arms/CREDITS.md](assets/arms/CREDITS.md) (bumstrum)
   - soldiers and civilians: [assets/people/CREDITS.md](assets/people/CREDITS.md) (doctortex, jeandiz, egunoff)
-  - furniture: [assets/props/CREDITS.md](assets/props/CREDITS.md) (nokillnando, tylerhalterman, tboiston; the rest are Poly Haven scans, CC0)
+  - furniture: [assets/props/CREDITS.md](assets/props/CREDITS.md) (nokillnando, tylerhalterman, tboiston, mozillareality, koksky; the rest are Poly Haven scans, CC0)
   - buildings: [assets/buildings/CREDITS.md](assets/buildings/CREDITS.md) (yadrogames, 123a9el)
-- The office tower and the city, the compound's warehouse and perimeter wall, sandbags, HESCO barriers, the sculpted fallback guns and people, all effects and all synthesised audio are generated in code.
+  - city skyline: [assets/city/CREDITS.md](assets/city/CREDITS.md) (jvaughan, sumitmangela, mitya-petrov, novusod, hamma085)
+- The office tower itself, the compound's warehouse and perimeter wall, sandbags, HESCO barriers, the sculpted fallback guns and people, all effects and all synthesised audio are generated in code.
