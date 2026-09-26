@@ -9,6 +9,7 @@ import * as TX from './textures.js';
 import { groundMaterial, addWallGrime, addWireMesh, GROUND_TILE } from './terrain.js';
 import { CONTAINER, containerGeometry, containerGrimeTexture, applyContainerGrime } from './containers.js';
 import { PropSet } from './props.js';
+import { placeBuilding } from './buildings.js';
 
 const BOUND = 70;        // inner face of the HESCO ring
 const WALL = 42;         // compound wall half-size
@@ -223,7 +224,6 @@ export function buildLevel(scene, assets, opts = {}) {
     box(cur, b, 0, h);
   };
   const door = (from, w = 1.8, top = 2.2) => ({ from, to: from + w, bottom: 0, top });
-  const win = (from, w = 1.4, bottom = 1.0, top = 2.1) => ({ from, to: from + w, bottom, top });
 
   // ---------------- ground + distant dunes ----------------
   // The Overwatch sniper hide sits on a ridge ~580 m out, on the sun side (the light is behind the
@@ -243,7 +243,9 @@ export function buildLevel(scene, assets, opts = {}) {
     // the ridge: a flat top for the hide, steep towards the compound, long slopes behind and to the sides
     const a = rc - D;
     const e = Math.hypot(a > 0 ? a / 230 : -a / 55, lat / 170);
-    const ridge = H * (1 - THREE.MathUtils.smoothstep(e, 0.12, 1.0)) + (e > 0.12 ? (TX.fbm(x / 25, z / 25, 21, 3) - 0.5) * 6 * Math.min(1, e) : 0);
+    // (the lumps fade out before the HESCO ring: inside, the ground is flat under floors and props)
+    const lumps = e > 0.12 ? (TX.fbm(x / 25, z / 25, 21, 3) - 0.5) * 6 * Math.min(1, e) * THREE.MathUtils.smoothstep(r, 74, 110) : 0;
+    const ridge = H * (1 - THREE.MathUtils.smoothstep(e, 0.12, 1.0)) + lumps;
     y = Math.max(y, ridge);
     // sightline corridor: below the lines from the scope (crouched) to the near side of the compound
     if (rc > 80 && rc < D - 7) {
@@ -360,38 +362,30 @@ export function buildLevel(scene, assets, opts = {}) {
     solid('concrete', -28.7, 0, WALL - 1.0, -26.3, 0.3, WALL + 1.2, 1.5, { mat: 'concrete', noCover: true });
   }
 
-  // ---------------- HQ building ----------------
-  const HQ = { x0: -10, x1: 8, z0: -28, z1: -16, h: 3.4 };
-  {
-    const t = 0.35, { x0, x1, z0, z1, h } = HQ;
-    solid('floor', x0, 0, z0, x1, 0.08, z1, 3, { mat: 'concrete', noCover: true, noMap: true });
-    wall('plaster', 'x', x0, x1, z1 - t, z1, h, [door(-4.4), win(-8), win(1), win(4.5)]);
-    wall('plaster', 'x', x0, x1, z0, z0 + t, h, [win(2), win(4.5)]);
-    wall('plaster', 'z', z0 + t, z1 - t, x0, x0 + t, h, [door(-22.9)]);
-    wall('plaster', 'z', z0 + t, z1 - t, x1 - t, x1, h, [door(-21.9), win(-26)]);
-    wall('plaster', 'z', z0 + t, z1 - t, -1.175, -0.825, h, [door(-20.4)]);
-    // roof + parapet
-    solid('concrete', x0 - 0.2, h, z0, x1 + 0.2, h + 0.25, z1 + 0.2, 2.5, { mat: 'concrete', noCover: true });
-    const ph = h + 0.25, pt = 0.25, py = ph + 0.95;
-    solid('concrete', x0 - 0.2, ph, z1 - 0.05, x1 + 0.2, py, z1 + 0.2, 2, { mat: 'concrete' });
-    solid('concrete', x0 - 0.2, ph, z0, -1.7, py, z0 + pt, 2, { mat: 'concrete' });
-    solid('concrete', 0.3, ph, z0, x1 + 0.2, py, z0 + pt, 2, { mat: 'concrete' });
-    solid('concrete', x0 - 0.2, ph, z0 + pt, x0 + 0.05, py, z1 - 0.05, 2, { mat: 'concrete' });
-    solid('concrete', x1 - 0.05, ph, z0 + pt, x1 + 0.2, py, z1 - 0.05, 2, { mat: 'concrete' });
-    // exterior stairs to the roof (north side)
-    const steps = 14, rise = (h + 0.25) / steps, run = 0.55, sx = -8.8, sz0 = -29.3, sz1 = -28.03;
-    for (let i = 0; i < steps; i++) {
-      const xa = sx + run * i, xb = i === steps - 1 ? 0.3 : xa + run;
-      solid('concrete', xa, 0, sz0, xb, rise * (i + 1), sz1, 2, { mat: 'concrete', noCover: true });
-    }
-    // stair side wall
-    solid('concrete', sx, 0, sz0 - 0.2, 0.3, 0.6, sz0, 2, { mat: 'concrete', noCover: true });
-    // resupply crate + furniture
-    solid('planks', -7.4, 0.08, -26.9, -5.6, 0.85, -26.0, 1.2, { mat: 'wood', pen: PEN.crate });
-    solid('planks', 2.2, 0.08, -24.8, 4.2, 0.9, -23.9, 1.2, { mat: 'wood', pen: PEN.crate });
-    solid('planks', -6.5, 0.08, -19.5, -5.3, 0.9, -18.3, 1.2, { mat: 'wood', pen: PEN.crate });
-    solid('planks', 5.4, 0.08, -18.6, 6.6, 0.8, -17.4, 1.2, { mat: 'wood', pen: PEN.crate });
-  }
+  // ---------------- buildings (real models with their own collision: buildings.js) ----------------
+  const bldGroup = new THREE.Group();
+  scene.add(bldGroup);
+  const footprints = [];
+  /** Places a building; its walls give cover and draw on the minimap. */
+  const building = (name, x, z, turn) => {
+    const b = placeBuilding(name, x, z, turn, { parent: bldGroup, world });
+    if (!b) return null;
+    for (const w of b.walls) { coverBoxes.push(w); minimap.push(w); }
+    footprints.push(b.footprint);
+    return b;
+  };
+  /** True when (x, z) is clear of every building. */
+  const open = (x, z, pad = 0.6) => !footprints.some((f) => x > f.x0 - pad && x < f.x1 + pad && z > f.z0 - pad && z < f.z1 + pad);
+  // the HQ: a two-storey plank house, door on the courtyard, the stair in its side annex;
+  // a flat-roofed guard house beside it (the Overwatch marksman is on its roof)
+  const hq = building('house', -1, -22, 2);
+  const guard = building('block', -10.6, -22, 0);
+  // the houses (SW): a two-storey shanty with an outside stair, a plank house, a rendered block
+  const shanty = building('shanty', -30.5, 17, 0);
+  const post = building('post', -33.5, 30, 0);
+  const block2 = building('block', -18.5, 27, 1);
+  // resupply crate against the back wall of the HQ's main room (floor at 0.3 m)
+  solid('planks', 0.7, 0.3, -25.6, 2.5, 1.07, -24.75, 1.2, { mat: 'wood', pen: PEN.crate, noMap: true });
 
   // ---------------- Warehouse ----------------
   {
@@ -437,19 +431,6 @@ export function buildLevel(scene, assets, opts = {}) {
   container('white', 33, 28, false);
   container('tan', 8, 30, false);
 
-  // ---------------- Houses (SW) ----------------
-  const house = (x0, z0, x1, z1, doorSide, doorAt, wins) => {
-    const t = 0.3, h = 3.0;
-    solid('floor', x0, 0, z0, x1, 0.06, z1, 3, { mat: 'concrete', noCover: true, noMap: true });
-    const ops = { n: [], s: [], w: [], e: [] };
-    ops[doorSide].push(door(doorAt));
-    for (const [side, at] of wins) ops[side].push(win(at, 1.2));
-    wall('plasterB', 'x', x0, x1, z0, z0 + t, h, ops.n);
-    wall('plasterB', 'x', x0, x1, z1 - t, z1, h, ops.s);
-    wall('plasterB', 'z', z0 + t, z1 - t, x0, x0 + t, h, ops.w);
-    wall('plasterB', 'z', z0 + t, z1 - t, x1 - t, x1, h, ops.e);
-    solid('concrete', x0 - 0.15, h, z0 - 0.15, x1 + 0.15, h + 0.22, z1 + 0.15, 2.5, { mat: 'concrete', noCover: true });
-  };
   // rooftop water tank (ribbed black plastic on a steel stand) and satellite dish
   const waterTank = (x, y, z) => {
     for (const [dx, dz] of [[-0.45, -0.45], [0.45, -0.45], [-0.45, 0.45], [0.45, 0.45]]) G.box('frame', x + dx - 0.03, y, z + dz - 0.03, x + dx + 0.03, y + 0.5, z + dz + 0.03, 1);
@@ -468,27 +449,17 @@ export function buildLevel(scene, assets, opts = {}) {
     G.geometry('pvc', d, 1);
     G.box('frame', x - 0.025, y, z - 0.025, x + 0.025, y + 0.72, z + 0.025, 1);
   };
-  const drainpipe = (x, z, top) => {
-    const p = new THREE.CylinderGeometry(0.045, 0.045, top - 0.15, 12); p.translate(x, (top + 0.15) / 2, z); G.geometry('pvc', p, 1);
-    const e = new THREE.CylinderGeometry(0.045, 0.045, 0.3, 12); e.rotateZ(Math.PI / 2.6); e.translate(x + 0.08, 0.12, z); G.geometry('pvc', e, 1);
-  };
   /** Power cable sagging between two points (catenary-ish). */
   const cable = (a, b, sag = 0.9) => {
     const pts = [];
     for (let i = 0; i <= 24; i++) { const t = i / 24; pts.push(new THREE.Vector3().lerpVectors(a, b, t).add(new THREE.Vector3(0, -sag * 4 * t * (1 - t), 0))); }
     G.geometry('cable', new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 48, 0.009, 5, false), 1);
   };
-  waterTank(4.8, 3.65, -26.6); waterTank(-8.4, 3.65, -18.2);
-  dish(-3.4, 3.65, -27.2, 0.8);
-  waterTank(-28.8, 3.22, 18.6); dish(-17.3, 3.22, 28.8, 2.4); waterTank(-31.2, 3.22, 32.2);
-  drainpipe(8.12, -27.6, 3.4); drainpipe(-10.12, -16.4, 3.4); drainpipe(-26.88, 14.4, 3.0); drainpipe(-15.0 + 0.12, 29.6, 3.0);
-  cable(new THREE.Vector3(8.1, 3.5, -16.4), new THREE.Vector3(16.1, 5.6, -18.4), 0.6);
-  cable(new THREE.Vector3(21, 5.9, 17.9), new THREE.Vector3(8.1, 3.3, -15.9), 1.6);
-  cable(new THREE.Vector3(21, 5.9, 17.9), new THREE.Vector3(-15.1, 2.9, 24.2), 2.2);
-  cable(new THREE.Vector3(-10.1, 3.3, -16.1), new THREE.Vector3(-26.9, 2.9, 14.1), 2.4);
-  house(-34, 14, -27, 20, 'e', 16.1, [['s', -32], ['n', -31]]);
-  house(-22, 24, -15, 30, 'n', -19.9, [['e', 26], ['w', 26.5]]);
-  house(-36, 28, -29, 34, 'n', -33.4, [['e', 30]]);
+  // on the flat roofs: a tank and a dish on the guard house, a tank on the SW block; power lines from the pole
+  if (guard) { waterTank(-10.1, 3.31, -24.7); dish(-11.6, 3.31, -24.9, 0.8); }
+  if (block2) waterTank(-16.2, 3.31, 27.9);
+  cable(new THREE.Vector3(21, 5.9, 17.9), new THREE.Vector3(-8.78, 3.4, -18.12), 1.8);
+  cable(new THREE.Vector3(21, 5.9, 17.9), new THREE.Vector3(-14.6, 3.35, 25.15), 2.2);
   wall('plasterB', 'x', -27, -22, 21.5, 21.8, 1.2, [], 1.8, { mat: 'plaster' });
   wall('plasterB', 'z', 20, 24, -24.3, -24, 1.2, [], 1.8, { mat: 'plaster' });
 
@@ -696,8 +667,8 @@ export function buildLevel(scene, assets, opts = {}) {
   instanced(assets.models.old_tyre, tyrePl);
 
   // ammo boxes on the resupply crate
-  instanced(assets.models.ammo_box, [place(-7.0, 0.85, -26.45, Math.PI / 2), place(-6.6, 0.85, -26.45, Math.PI / 2 + 0.1), place(-6.1, 0.85, -26.4, Math.PI / 2 - 0.1)]);
-  instanced(assets.models.medical_box, [place(3.2, 0.9, -24.35, 0.3)]);
+  instanced(assets.models.ammo_box, [place(1.1, 1.07, -25.18, Math.PI / 2), place(1.5, 1.07, -25.18, Math.PI / 2 + 0.1), place(2.0, 1.07, -25.13, Math.PI / 2 - 0.1)]);
+  instanced(assets.models.medical_box, [place(2.3, 1.07, -25.2, 0.3)]);
 
   // ---------------- photo-scanned clutter ----------------
   const M = assets.models;
@@ -723,7 +694,7 @@ export function buildLevel(scene, assets, opts = {}) {
       world.add(x - 0.72, 0, z - 0.72, x + 0.72, layers * 0.17, z + 0.72, { mat: 'sand' });
       coverBoxes.push(world.boxes[world.boxes.length - 1]);
     };
-    stack(-25.6, 23.4, 0.2, 5); stack(-13.6, 26.5, 1.4, 3); stack(-31, 26.4, 0.5, 4);
+    for (const [x, z, ry, n] of [[-25.6, 23.4, 0.2, 5], [-13.6, 26.5, 1.4, 3], [-31, 22.4, 0.5, 4]]) if (open(x, z, 0.8)) stack(x, z, ry, n);
     instanced(M.cement_bag, pl, { heat: 0.3 });
   }
   // roller shutters on the warehouse's blank east wall
@@ -732,13 +703,6 @@ export function buildLevel(scene, assets, opts = {}) {
     M.rollershutter_door.children.forEach((c) => { if (!/graffiti/.test(c.name)) shutter.add(c.clone()); });
     instanced(shutter, [place(36.0, 0.06, -30.5, Math.PI / 2), place(36.0, 0.06, -26.2, Math.PI / 2), place(36.0, 0.06, -21.9, Math.PI / 2)], { heat: 0.33 });
   }
-  // wall-mounted AC condensers (the model is a pair of units, back at -z)
-  instanced(M.exterior_aircon_unit, [
-    place(8 + 0.22, 1.62, -24.5, Math.PI / 2), place(-34 - 0.22, 1.7, 17.2, -Math.PI / 2), place(-18.5, 1.7, 30 + 0.22, 0),
-  ], { heat: 0.36 });
-  world.add(8, 1.3, -25.4, 8.6, 2.25, -23.6, { mat: 'metal', pen: 0.6 });
-  world.add(-34.6, 1.38, 16.3, -34, 2.33, 18.1, { mat: 'metal', pen: 0.6 });
-  world.add(-19.4, 1.38, 30, -17.6, 2.33, 30.6, { mat: 'metal', pen: 0.6 });
   // electrical cabinets on the perimeter wall and the warehouse
   instanced(M.utility_box_02, [place(-15, 0, -WALL + 0.51, 0), place(WALL - 0.51, 0, 20, -Math.PI / 2), place(22, 0, -18 + 0.22, 0)], { heat: 0.33 });
   for (const [x0, z0, x1, z1] of [[-15.46, -41.7, -14.54, -41.27], [41.27, 19.54, 41.7, 20.46], [21.54, -18, 22.46, -17.57]]) {
@@ -754,12 +718,13 @@ export function buildLevel(scene, assets, opts = {}) {
     const b = world.add(x0, 0, z0, x1, 1.38, z1, { mat: 'metal', pen: 0.55 }); coverBoxes.push(b); minimap.push(b);
   }
   // gas bottles and rubbish around the houses and yards
-  instanced(M.propane_tank, [place(-26.6, 0, 15.2, 0.3), place(-26.2, 0, 15.62, 1.1), place(-15.4, 0, 31.2, 2.2), place(-28.6, 0, 27.4, 0.7)], { heat: 0.33 });
-  for (const [x, z] of [[-26.6, 15.2], [-26.2, 15.62], [-15.4, 31.2], [-28.6, 27.4]]) world.add(x - 0.17, 0, z - 0.17, x + 0.17, 0.55, z + 0.17, { mat: 'metal', tag: null });
+  const gas = [[-24.9, 15.2, 0.3], [-24.5, 15.62, 1.1], [-15.4, 30.2, 2.2], [-26.9, 27.4, 0.7]].filter(([x, z]) => open(x, z, 0.3));
+  instanced(M.propane_tank, gas.map(([x, z, ry]) => place(x, 0, z, ry)), { heat: 0.33 });
+  for (const [x, z] of gas) world.add(x - 0.17, 0, z - 0.17, x + 0.17, 0.55, z + 0.17, { mat: 'metal', tag: null });
   instanced(M.trashbag, [
-    place(13.5, 0, 9.4, 0.4), place(13.9, 0, 8.9, 2.1), place(13.2, 0, 8.7, 3.9), place(-28.3, 0, 20.7, 1.0), place(-27.8, 0, 21.0, 2.6),
-    place(-14.4, 0, 23.4, 0.2), place(35.4, 0, 26.2, 5.2), place(-9.6, 0, -15.3, 0.9), place(24.4, 0, -17.4, 1.7), place(-36.5, 0, 26.8, 4.4),
-  ], { castShadow: true, heat: 0.3 });
+    [13.5, 9.4, 0.4], [13.9, 8.9, 2.1], [13.2, 8.7, 3.9], [-28.3, 20.7, 1.0], [-27.8, 21.0, 2.6],
+    [-14.4, 23.4, 0.2], [35.4, 26.2, 5.2], [-9.6, -15.3, 0.9], [24.4, -17.4, 1.7], [-36.5, 23.8, 4.4],
+  ].filter(([x, z]) => open(x, z, 0.2)).map(([x, z, ry]) => place(x, 0, z, ry)), { castShadow: true, heat: 0.3 });
 
   // ---------------- real furniture and fixtures (props.js) ----------------
   {
@@ -779,12 +744,11 @@ export function buildLevel(scene, assets, opts = {}) {
     stand('barrelStove', -24.9, 0, 18.4, 0.7);
     stand('picnic', -17.2, 0, 21.3, Math.PI / 2);
     stand('monoChair', -15.0, 0, 20.3, 2.4); stand('trashCan', -26.4, 0, 13.3, 0.4);
-    // the HQ: a bin by the door, shelving and a drawer cabinet inside, chairs by the crates, a breaker box outside
-    stand('trashCan', -1.8, 0, -15.3, 0.3);
-    stand('shelves', 6.8, 0.08, -27.4, Math.PI); stand('drawers', -3.9, 0.08, -27.35, Math.PI);
-    stand('monoChair', 0.1, 0.08, -21.4, 0.5); stand('monoChair', 1.2, 0.08, -21.9, -0.4);
-    stand('cardboard', -2.9, 0.08, -24.2, 0); stand('cardboard', -2.4, 0.08, -24.3, 0);
-    if (P.has('powerBox')) { P.put('powerBox', 8.2, 1.05, -20.6, -Math.PI / 2); world.add(8, 1.05, -20.83, 8.4, 1.55, -20.37, { mat: 'metal', pen: 0.5 }); }
+    // the HQ: a bin by the door; shelving, a drawer cabinet and boxes in the main room, chairs in the hall
+    stand('trashCan', 2.6, 0, -16.9, 0.3);
+    stand('shelves', 2.45, 0.3, -22.6, Math.PI / 2); stand('drawers', -1.65, 0.3, -23.4, -Math.PI / 2);
+    stand('monoChair', 1.8, 0.3, -20.3, 2.6); stand('monoChair', -1.2, 0.3, -20.4, -2.4);
+    stand('cardboard', -1.4, 0.3, -21.7, 0); stand('cardboard', -1.2, 0.3, -24.9, 0.3);
     // the warehouse: a hand truck, a ladder against the wall, boxes by the crates
     stand('handTruck', 18.2, 0.06, -32.6, 0.6);
     stand('ladder', 16.3, 0.06, -20.2, -Math.PI / 2);
@@ -912,7 +876,7 @@ export function buildLevel(scene, assets, opts = {}) {
       lamps.add(l);
       lampLights.push(l);
     };
-    add(-3.5, 2.8, -15.614, Math.PI, false);
+    add(-0.2, 2.6, -17.35, Math.PI, false);
     add(15.614, 4.9, -26.2, Math.PI / 2, false);
     add(-3.95, 3.3, 41.164, 0, false);
     add(21, 6.0, 17.814, 0, true);
@@ -926,6 +890,7 @@ export function buildLevel(scene, assets, opts = {}) {
   for (const [k, m] of Object.entries(mats)) applyBakedAO(m, ao, 'ao-' + k);
   applyBakedAO(groundMatRef, ao, 'ao-ground');
   const aoDone = new Set();
+  props.add(bldGroup);
   props.traverse((o) => {
     if (!o.isMesh || aoDone.has(o.material) || o.material.alphaTest > 0) return;
     aoDone.add(o.material);
@@ -969,7 +934,7 @@ export function buildLevel(scene, assets, opts = {}) {
       { type: 'rifleman', x: -0.3, z: 36.0, yaw: S, hold: true },
       { type: 'rifleman', x: -36.4, z: 8.6, yaw: Wd, hold: true },
       { type: 'rifleman', x: 36.2, z: -3.4, yaw: E, hold: true },
-      { type: 'marksman', x: 1.5, y: 3.65, z: -18.2, yaw: S, hold: true },
+      { type: 'marksman', x: -10.6, y: 3.31, z: -20.6, yaw: S, hold: true },
       { type: 'rifleman', x: -0.8, z: -11.2, yaw: S, bodyguard: true },
       { type: 'rifleman', x: -4.2, z: -11.6, yaw: S, bodyguard: true },
       { type: 'rifleman', x: -30, z: -34, yaw: E, patrol: [[-30, -34], [34, -36], [36, 30], [-34, 34]] },
@@ -981,15 +946,17 @@ export function buildLevel(scene, assets, opts = {}) {
     ],
   };
   // indoor spots to run to when a sniper opens up
-  const shelters = [[-6, -22], [4, -22], [-3, -26], [22, -26], [30, -24], [20, -31], [-30.5, 17], [-18.5, 27], [-32.5, 31], [-33, -11.5], [15.5, 16], [31.5, 24]]
-    .map(([x, z]) => ({ x, z })).filter((p) => nav.walkable(p.x, p.z));
+  const indoor = (b, n) => (b ? b.spots.filter((p) => p.y > 0.05 && p.y < 1.2).filter((_, i, a) => i % Math.max(1, Math.floor(a.length / n)) === 0).slice(0, n) : []);
+  const shelters = [...indoor(hq, 3), ...indoor(guard, 1), ...indoor(shanty, 1), ...indoor(post, 2), ...indoor(block2, 1),
+    ...[[22, -26], [30, -24], [20, -31], [-33, -11.5], [15.5, 16], [31.5, 24]].map(([x, z]) => ({ x, z }))]
+    .filter((p) => nav.walkable(p.x, p.z));
 
   return {
     sniper, shelters,
     world, nav, covers, spawnPoints, waypoints, explosiveBarrels, minimap, meshes, props, grassUniforms, lamps,
     ao, groundUniforms: groundMatRef.userData.groundUniforms,
-    playerSpawn: { x: 3, z: -20.5, yaw: Math.PI },
-    resupply: { x: -6.5, z: -26.45, r: 2.0 },
+    playerSpawn: { x: 0.3, z: -19.5, y: 0.3, yaw: Math.PI },
+    resupply: { x: 1.6, z: -25.18, r: 2.0 },
     bounds: BOUND,
   };
 }

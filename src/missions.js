@@ -299,7 +299,7 @@ export class SniperMission extends Mission {
     this.spotter.yaw = Math.atan2(fx, fz);
     this.spotterAlive = true;
     this.calls = [];
-    // the counter-sniper on the HQ roof: once shooting starts he hunts for the hide
+    // the counter-sniper on the guard house roof: once shooting starts he hunts for the hide
     this.marksman = this.hostiles.find((e) => e.typeKey === 'marksman') || null;
     this.counterT = null; this.counterShots = 0; this.nextCounterShot = 0; this.spotterDeathAt = -1;
     this.pendingSpot = null;
@@ -546,12 +546,12 @@ export class SniperMission extends Mission {
     this.spotter.die(dx / l, dz / l, true);
     g.effects.bloodPuff(this.spotter.root.position.clone().add(new THREE.Vector3(0, 1.0, 0)), new THREE.Vector3(dx / l, 0, dz / l), 1.2);
     g.audio.play('imp_flesh0', { vol: 0.9 });
-    g.hud.banner('SPOTTER DOWN', 'Marksman on the HQ roof — you are on your own', 3.5);
+    g.hud.banner('SPOTTER DOWN', 'Marksman on the guard house roof — you are on your own', 3.5);
     this.st.spotterKilled = true;
     this.award(-500, 'SPOTTER KILLED');
   }
 
-  /** The HQ roof marksman looks for the hide, then shoots the spotter and walks his rounds onto the shooter. */
+  /** The rooftop marksman looks for the hide, then shoots the spotter and walks his rounds onto the shooter. */
   _counterSnipe(dt) {
     const g = this.game, m = this.marksman;
     if (!m || this.counterT === null || this.over) return;
@@ -562,7 +562,7 @@ export class SniperMission extends Mission {
     this.counterT -= dt;
     m.alert = 2; m.lastKnown.copy(g.enemies.farThreat); m.lastSeen = g.time;
     if (m.soldier.glint) m.soldier.glint.visible = this.counterT < 20 && Math.sin(g.time * 7) > -0.3;
-    if (this.counterT < 20 && !this.warned) { this.warned = true; this.say('Scope glint on the HQ roof! He\'s on us, take him out!', 0); }
+    if (this.counterT < 20 && !this.warned) { this.warned = true; this.say('Scope glint on the guard house roof, left of the HQ! He\'s on us, take him out!', 0); }
     if (this.counterT > 0 || g.time < this.nextCounterShot || m.flashed > 0 || m.reloading > 0) return;
     this.nextCounterShot = g.time + rand(5.5, 8.5) * g.difficulty.react;
     const p = g.player;
