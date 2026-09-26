@@ -1,0 +1,72 @@
+# Builds the Android app (APK) on every push and attaches it to the "latest-apk"
+# release, so it can be downloaded straight onto a phone from the repo's
+# Releases page. Also runnable by hand from the Actions tab.
+name: Android APK
+
+on:
+  push:
+    paths-ignore: ['README.md', 'docs/**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install tools
+        run: npm ci --ignore-scripts
+
+      - name: Web files -> www/
+        run: node tools/make-www.mjs
+
+      - name: Generate the Android project
+        run: |
+          npx cap add android
+          npx cap sync android
+          # full-screen landscape activity
+          cp tools/android/MainActivity.java android/app/src/main/java/com/tips/operationtipsmania/MainActivity.java
+          sed -i 's/<activity/<activity android:screenOrientation="sensorLandscape"/' android/app/src/main/AndroidManifest.xml
+          # app icon from the PWA icon
+          for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            cp icons/icon-512.png android/app/src/main/res/mipmap-$d/ic_launcher.png
+            cp icons/icon-512.png android/app/src/main/res/mipmap-$d/ic_launcher_round.png
+            cp icons/icon-maskable-512.png android/app/src/main/res/mipmap-$d/ic_launcher_foreground.png
+          done
+
+      - name: Build the APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+          cp app/build/outputs/apk/debug/app-debug.apk ../OperationTIPSMania.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OperationTIPSMania-apk
+          path: OperationTIPSMania.apk
+
+      - name: Publish to the "latest-apk" release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-apk
+          name: Operation TIPS Mania (Android, latest build)
+          prerelease: false
+          make_latest: true
+          body: |
+            Latest Android build from `${{ github.ref_name }}` (${{ github.sha }}).
+            Download **OperationTIPSMania.apk** on your phone and open it. Android asks once to allow installs from your browser or file manager.
+          files: OperationTIPSMania.apk

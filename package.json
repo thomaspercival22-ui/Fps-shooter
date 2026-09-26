@@ -16,6 +16,9 @@
     "build-sounds": "node tools/build-sounds.mjs"
   },
   "devDependencies": {
+    "@capacitor/android": "^6.2.2",
+    "@capacitor/cli": "^6.2.2",
+    "@capacitor/core": "^6.2.2",
     "lamejs": "^1.2.1",
     "meshoptimizer": "^1.2.0",
     "sharp": "^0.33.5",

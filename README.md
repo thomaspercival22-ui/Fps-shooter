@@ -24,6 +24,16 @@ The game is a static web app that installs itself as a Progressive Web App. It n
 
 > Tip: set **Graphics → Auto** (the default) and the game adjusts its render resolution to keep the frame rate smooth on your phone.
 
+### As a real Android app (APK)
+
+Every push to GitHub builds a native Android app with [Capacitor](https://capacitorjs.com) (`.github/workflows/android.yml`). It opens full screen in landscape, keeps the screen on and plays offline.
+
+1. On your phone, open the repo on GitHub → **Releases** → **Operation TIPS Mania (Android, latest build)**, and tap **OperationTIPSMania.apk**. (Also under **Actions → Android APK → the latest run → Artifacts**.)
+2. Open the downloaded file. Android asks once to allow installs from your browser or file manager; allow it, then tap **Install**.
+3. To build it yourself: `npm ci`, then `node tools/make-www.mjs && npx cap add android && npx cap sync android` and open `android/` in Android Studio (or run `./gradlew assembleDebug` in it).
+
+This is a debug-signed build for your own phones. Publishing on the Play Store needs a Google Play developer account and a signed release bundle (`./gradlew bundleRelease` with your own keystore).
+
 ## What's in it
 
 - **Tower Hostage Rescue (Mission → Tower Hostage Rescue):**
