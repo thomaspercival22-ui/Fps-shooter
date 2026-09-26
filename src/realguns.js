@@ -3,6 +3,7 @@
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from '../vendor/meshopt/meshopt_decoder.js';
 import { setRealGun, setRealArms } from './gunmodels.js';
+import { setEnemyGun } from './soldier.js';
 
 /**
  * Several source models were authored for a studio renderer: pure-black base colours (nothing real is
@@ -37,6 +38,7 @@ function tuneMaterial(m) {
 
 /** Guns with a real model (the rest are still the sculpted ones). */
 export const REAL_GUNS = ['m4', 'glock', 'm1014', 'sniper'];
+const ENEMY_GUNS = ['m4', 'm1014', 'sniper'];
 
 export async function loadRealGuns(renderer, hq = false) {
   await MeshoptDecoder.ready;
@@ -58,6 +60,13 @@ export async function loadRealGuns(renderer, hq = false) {
         for (const k of ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap']) if (o.material[k]) o.material[k].anisotropy = aniso;
       });
       setRealGun(key, gltf, meta);
+      if (ENEMY_GUNS.includes(key)) {
+        // the enemies' copy of the same gun
+        const far = await loader.loadAsync(`assets/guns/${key}_far.glb`);
+        const done = new Set();
+        far.scene.traverse((o) => { if (o.isMesh && !done.has(o.material)) { done.add(o.material); tuneMaterial(o.material); } });
+        setEnemyGun(key, far, meta);
+      }
     } catch (e) {
       console.warn(`${key}: real model unavailable, using the sculpted one`, e);
     }

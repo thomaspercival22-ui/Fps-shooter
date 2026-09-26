@@ -7,6 +7,7 @@
 // rules on its position and material, merged by material, and written as
 //   assets/guns/<gun>.glb      phones and every preset (simplified)
 //   assets/guns/<gun>_hq.glb   Cinematic (full detail)
+//   assets/guns/<gun>_far.glb  the enemies' copy (one piece, a few thousand triangles)
 // plus assets/guns/<gun>.json with the anchors (muzzle, sight, grip, magwell).
 //
 // Pieces are classified per connected island of triangles, not per mesh:
@@ -20,7 +21,7 @@ import path from 'path';
 import { execFileSync } from 'child_process';
 import { NodeIO, Document } from '@gltf-transform/core';
 import { ALL_EXTENSIONS, EXTMeshoptCompression, EXTTextureWebP } from '@gltf-transform/extensions';
-import { prune, dedup, simplify, weld, textureCompress, meshopt, cloneDocument, mergeDocuments } from '@gltf-transform/functions';
+import { prune, dedup, simplify, weld, textureCompress, meshopt, cloneDocument, mergeDocuments, flatten, join, compactPrimitive } from '@gltf-transform/functions';
 import { MeshoptSimplifier, MeshoptEncoder } from 'meshoptimizer';
 import sharp from 'sharp';
 import { GUNS } from './realguns.config.mjs';
@@ -286,6 +287,31 @@ async function buildGun(name, cfg) {
     await new NodeIO().registerExtensions([...ALL_EXTENSIONS, EXTMeshoptCompression, EXTTextureWebP]).registerDependencies({ 'meshopt.encoder': MeshoptEncoder }).write(file, d);
     let tris = 0; for (const m of d.getRoot().listMeshes()) for (const p of m.listPrimitives()) tris += (p.getIndices()?.getCount() || 0) / 3;
     console.log(`  ${path.relative(ROOT, file)}: ${tris} triangles, ${(fs.statSync(file).size / 1e6).toFixed(1)} MB`);
+  }
+  {
+    // third-person copy, carried by the enemies: one piece (the hidden bolt carrier left out),
+    // a few thousand triangles, small textures
+    const d = cloneDocument(doc);
+    for (const n of d.getRoot().listNodes()) if (n.getName() === 'bcg') n.dispose();
+    await MeshoptSimplifier.ready; await MeshoptEncoder.ready;
+    let full = 0; for (const m of d.getRoot().listMeshes()) for (const p of m.listPrimitives()) full += (p.getIndices()?.getCount() || 0) / 3;
+    await d.transform(flatten(), join(), weld({}));
+    // seen from metres away: tiny detached pieces may go, and UV seams may move
+    const ratio = Math.min(1, (cfg.farTris ?? 4000) / full);
+    for (const m of d.getRoot().listMeshes()) for (const p of m.listPrimitives()) {
+      const idx = new Uint32Array(p.getIndices().getArray()), pos = p.getAttribute('POSITION');
+      const P = new Float32Array(pos.getCount() * 3), e = [];
+      for (let i = 0; i < pos.getCount(); i++) { pos.getElement(i, e); P.set(e, i * 3); }
+      const target = Math.max(3, Math.floor(idx.length * ratio / 3) * 3);
+      const [out] = MeshoptSimplifier.simplify(idx, P, 3, target, 0.02, ['Prune', 'Permissive']);
+      p.setIndices(d.createAccessor().setArray(out).setType('SCALAR').setBuffer(d.getRoot().listBuffers()[0]));
+      compactPrimitive(p);
+    }
+    await d.transform(prune(), textureCompress({ encoder: sharp, targetFormat: 'webp', resize: [256, 256], quality: 85 }), meshopt({ encoder: MeshoptEncoder, level: 'medium' }));
+    const file = path.join(OUT, `${name}_far.glb`);
+    await new NodeIO().registerExtensions([...ALL_EXTENSIONS, EXTMeshoptCompression, EXTTextureWebP]).registerDependencies({ 'meshopt.encoder': MeshoptEncoder }).write(file, d);
+    let tris = 0; for (const m of d.getRoot().listMeshes()) for (const p of m.listPrimitives()) tris += (p.getIndices()?.getCount() || 0) / 3;
+    console.log(`  ${path.relative(ROOT, file)}: ${tris} triangles, ${(fs.statSync(file).size / 1e6).toFixed(2)} MB`);
   }
   if (debug) {
     const d = cloneDocument(doc);

@@ -89,9 +89,37 @@ function sculptedGunGeometry(type, spec, far = false) {
     grip: new THREE.Vector3(0, spec.grip[0], spec.grip[1]), fore: new THREE.Vector3(0, spec.fore[0], spec.fore[1]), butt: spec.butt,
   };
 }
+// the real guns' third-person copies (realguns.js), when loaded
+const REAL_ENEMY_GUNS = {};
+export function setEnemyGun(key, gltf, meta) { REAL_ENEMY_GUNS[key] = { gltf, meta }; }
+/** A real gun as one mesh (a material per part of the model), turned to aim down +Z, with its anchors. */
+function realGunGeometry(spec) {
+  const R = REAL_ENEMY_GUNS[spec.lod];
+  if (!R) return null;
+  const geos = [], mats = [];
+  const f32 = (a) => { const out = new Float32Array(a.count * a.itemSize); for (let i = 0; i < a.count; i++) for (let k = 0; k < a.itemSize; k++) out[i * a.itemSize + k] = a.getComponent(i, k); return new THREE.BufferAttribute(out, a.itemSize); };
+  R.gltf.scene.updateMatrixWorld(true);
+  R.gltf.scene.traverse((o) => {
+    if (!o.isMesh) return;
+    const g = new THREE.BufferGeometry(), src = o.geometry;
+    g.setAttribute('position', f32(src.attributes.position));
+    g.setAttribute('normal', src.attributes.normal ? f32(src.attributes.normal) : new THREE.BufferAttribute(new Float32Array(src.attributes.position.count * 3), 3));
+    g.setAttribute('uv', src.attributes.uv ? f32(src.attributes.uv) : new THREE.BufferAttribute(new Float32Array(src.attributes.position.count * 2), 2));
+    g.setIndex(src.index ? Array.from(src.index.array) : null);
+    g.applyMatrix4(o.matrixWorld);
+    geos.push(g); mats.push(o.material);
+  });
+  const geo = mergeGeometries(geos, true);
+  geo.rotateY(Math.PI); // modelled aiming down -Z (the player's view)
+  const m = R.meta, flip = (v) => new THREE.Vector3(-v[0], v[1], -v[2]);
+  const muzzle = flip(m.muzzle);
+  return { geo, mat: mats, muzzleY: muzzle.y, muzzleZ: muzzle.z, grip: flip(m.grip), fore: flip(m.handguard), butt: -m.bounds.body.max[2], real: true };
+}
 function gunGeometry(type, far = false) {
+  const spec = GUN_SPECS[type] || GUN_SPECS.rifle;
+  if (REAL_ENEMY_GUNS[spec.lod]) return gunCache[type + ':real'] || (gunCache[type + ':real'] = realGunGeometry(spec)); // light enough for every distance
   const k = far ? type + ':far' : type;
-  if (!gunCache[k]) gunCache[k] = sculptedGunGeometry(type, GUN_SPECS[type] || GUN_SPECS.rifle, far);
+  if (!gunCache[k]) gunCache[k] = sculptedGunGeometry(type, spec, far);
   return gunCache[k];
 }
 
