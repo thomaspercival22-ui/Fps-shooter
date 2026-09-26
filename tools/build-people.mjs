@@ -277,7 +277,8 @@ async function buildPerson(kit, cfg) {
   await MeshoptEncoder.ready;
   for (const [suffix, tex] of [['_hq', 1024], ['', 512]]) {
     const d = cloneDocument(doc);
-    await d.transform(textureCompress({ encoder: sharp, targetFormat: 'webp', resize: [tex, tex], quality: 88 }), meshopt({ encoder: MeshoptEncoder, level: 'medium' }));
+    // one quantization volume for every part: they then share one skin (and at runtime one skeleton)
+    await d.transform(textureCompress({ encoder: sharp, targetFormat: 'webp', resize: [tex, tex], quality: 88 }), meshopt({ encoder: MeshoptEncoder, level: 'medium', quantizationVolume: 'scene' }));
     const file = path.join(OUT, `${kit}${suffix}.glb`);
     await new NodeIO().registerExtensions([...ALL_EXTENSIONS, EXTMeshoptCompression, EXTTextureWebP]).registerDependencies({ 'meshopt.encoder': MeshoptEncoder }).write(file, d);
     console.log(`  ${path.relative(ROOT, file)}: ${(fs.statSync(file).size / 1e6).toFixed(1)} MB`);

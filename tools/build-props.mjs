@@ -25,12 +25,12 @@ const PH = 'https://api.polyhaven.com';
 // rotY: turn (degrees) so the front faces -Z (chairs: the sitter faces -Z). tris: budget.
 export const PROPS = {
   // offices
-  officeChair: { uid: 'b228a29fa84544c2be501c295653ffe7', title: 'Office Chair', author: 'nokillnando', fit: ['y', 1.0], rotY: 180, tris: 2200 },
+  officeChair: { uid: 'b228a29fa84544c2be501c295653ffe7', title: 'Office Chair', author: 'nokillnando', fit: ['y', 1.0], rotY: 180, tris: 1400 },
   computer: { uid: '561abc2fc95941609fc7bc6f232895c2', title: 'Desktop Computer', author: 'tylerhalterman', fit: ['x', 0.62], rotY: 180, tris: 2000 },
   waterCooler: { uid: '4b88c4c4e94c497ca39f831f374e89fc', title: 'Water cooler', author: 'tboiston', fit: ['y', 1.28], rotY: 0, tris: 2500 },
   // (leaves are open cards: their edges may move, a coarser bound is invisible)
-  plantTall: { ph: 'potted_plant_02', tris: 4000, free: true },
-  plantBush: { ph: 'potted_plant_01', tris: 5000, free: true },
+  plantTall: { ph: 'potted_plant_02', tris: 2500, free: true },
+  plantBush: { ph: 'potted_plant_01', tris: 3500, free: true },
   plantSmall: { ph: 'potted_plant_04', tris: 2500, free: true },
   sofa: { ph: 'sofa_02', tris: 6000, rotY: 180 },
   armchair: { ph: 'modern_arm_chair_01', tris: 4000, rotY: 180 },

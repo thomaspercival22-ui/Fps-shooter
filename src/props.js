@@ -60,21 +60,34 @@ export class PropSet {
     const [ax, az] = r % 2 ? [hz, hx] : [hx, hz];
     return { x0: x - ax, z0: z - az, x1: x + ax, z1: z + az, h: b.max[1] };
   }
+  /**
+   * One InstancedMesh per part, per 12 m cell (so rooms out of view are culled). Only tall props
+   * (people-height and up) cast shadows: chairs and desk clutter would double their triangles for little.
+   */
   build(parent, { heat = 0.31, shadows = true } = {}) {
     const out = [];
     for (const [name, mats] of this.list) {
-      MODELS[name].traverse((o) => {
-        if (!o.isMesh) return;
-        const im = new THREE.InstancedMesh(o.geometry, o.material, mats.length);
-        const m = new THREE.Matrix4();
-        mats.forEach((p, i) => { m.multiplyMatrices(p, o.matrixWorld); im.setMatrixAt(i, m); });
-        im.castShadow = shadows && (META[name].max[1] - META[name].min[1]) > 0.25;
-        im.receiveShadow = true;
-        im.userData.heat = heat; im.userData.env = true;
-        im.computeBoundingSphere();
-        parent.add(im);
-        out.push(im);
-      });
+      const cells = new Map();
+      for (const p of mats) {
+        const k = `${Math.floor(p.elements[12] / 12)},${Math.floor(p.elements[14] / 12)}`;
+        if (!cells.has(k)) cells.set(k, []);
+        cells.get(k).push(p);
+      }
+      const tall = META[name].max[1] - META[name].min[1] > 1.2;
+      for (const list of cells.values()) {
+        MODELS[name].traverse((o) => {
+          if (!o.isMesh) return;
+          const im = new THREE.InstancedMesh(o.geometry, o.material, list.length);
+          const m = new THREE.Matrix4();
+          list.forEach((p, i) => { m.multiplyMatrices(p, o.matrixWorld); im.setMatrixAt(i, m); });
+          im.castShadow = shadows && tall;
+          im.receiveShadow = true;
+          im.userData.heat = heat; im.userData.env = true;
+          im.computeBoundingSphere();
+          parent.add(im);
+          out.push(im);
+        });
+      }
     }
     return out;
   }

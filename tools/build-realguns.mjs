@@ -307,11 +307,41 @@ async function buildGun(name, cfg) {
       p.setIndices(d.createAccessor().setArray(out).setType('SCALAR').setBuffer(d.getRoot().listBuffers()[0]));
       compactPrimitive(p);
     }
+    // a model with many materials would cost a draw call each, for every enemy carrying it: each
+    // material's average colour and finish go into vertex colours, on one metal and one non-metal material
+    const mats = d.getRoot().listMaterials();
+    if (mats.length > 4) {
+      const lin = (v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+      const look = new Map();
+      for (const m of mats) {
+        let c = m.getBaseColorFactor().slice(0, 3), metal = m.getMetallicFactor(), rough = m.getRoughnessFactor();
+        const bt = m.getBaseColorTexture(), mr = m.getMetallicRoughnessTexture();
+        const ch = (st, k) => st.channels[Math.min(k, st.channels.length - 1)].mean / 255; // (greyscale images have one channel)
+        if (bt) { const st = await sharp(Buffer.from(bt.getImage())).stats(); c = c.map((v, k) => v * lin(ch(st, k))); }
+        if (mr) { const st = await sharp(Buffer.from(mr.getImage())).stats(); rough *= ch(st, 1); metal *= ch(st, 2); }
+        // studio-black finishes read as silhouettes: lift them to real black paint and polymer (as realguns.js does at runtime)
+        const lum = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+        if (lum < 0.04) c = lum > 0.004 ? c.map((v) => v * 0.04 / lum) : [0.04, 0.04, 0.04];
+        look.set(m, { c, metal: metal > 0.5 && lum > 0.1 });
+      }
+      const matMetal = d.createMaterial('metal').setMetallicFactor(1).setRoughnessFactor(0.36);
+      const matFinish = d.createMaterial('finish').setMetallicFactor(0.1).setRoughnessFactor(0.58);
+      const buf = d.getRoot().listBuffers()[0];
+      for (const m of d.getRoot().listMeshes()) for (const p of m.listPrimitives()) {
+        const L = look.get(p.getMaterial()) || { c: [0.5, 0.5, 0.5], metal: false };
+        const n = p.getAttribute('POSITION').getCount(), col = new Float32Array(n * 3);
+        for (let i = 0; i < n; i++) col.set(L.c, i * 3);
+        for (const sem of p.listSemantics()) if (sem !== 'POSITION' && sem !== 'NORMAL') p.setAttribute(sem, null);
+        p.setAttribute('COLOR_0', d.createAccessor().setArray(col).setType('VEC3').setBuffer(buf));
+        p.setMaterial(L.metal ? matMetal : matFinish);
+      }
+      await d.transform(join(), prune());
+    }
     await d.transform(prune(), textureCompress({ encoder: sharp, targetFormat: 'webp', resize: [256, 256], quality: 85 }), meshopt({ encoder: MeshoptEncoder, level: 'medium' }));
     const file = path.join(OUT, `${name}_far.glb`);
     await new NodeIO().registerExtensions([...ALL_EXTENSIONS, EXTMeshoptCompression, EXTTextureWebP]).registerDependencies({ 'meshopt.encoder': MeshoptEncoder }).write(file, d);
-    let tris = 0; for (const m of d.getRoot().listMeshes()) for (const p of m.listPrimitives()) tris += (p.getIndices()?.getCount() || 0) / 3;
-    console.log(`  ${path.relative(ROOT, file)}: ${tris} triangles, ${(fs.statSync(file).size / 1e6).toFixed(2)} MB`);
+    let tris = 0, prims = 0; for (const m of d.getRoot().listMeshes()) for (const p of m.listPrimitives()) { tris += (p.getIndices()?.getCount() || 0) / 3; prims++; }
+    console.log(`  ${path.relative(ROOT, file)}: ${tris} triangles in ${prims} draw calls, ${(fs.statSync(file).size / 1e6).toFixed(2)} MB`);
   }
   if (debug) {
     const d = cloneDocument(doc);

@@ -183,7 +183,8 @@ export class Body {
         o.castShadow = o.receiveShadow = true;
       }
     });
-    for (const m of this.far) m.visible = false;
+    // the light copy (beyond ~12 m) casts no shadow: a body is up to 11 draw calls in the shadow pass
+    for (const m of this.far) { m.visible = false; m.castShadow = false; }
     // one skeleton for every part (the clone gives each mesh its own): one bone texture, updated once a frame
     this.skeleton = this.near[0].skeleton;
     for (const m of [...this.near, ...this.far]) if (m.skeleton !== this.skeleton) m.bind(this.skeleton, m.bindMatrix);

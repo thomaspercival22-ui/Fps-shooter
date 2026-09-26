@@ -99,12 +99,15 @@ function realGunGeometry(spec) {
   const geos = [], mats = [];
   const f32 = (a) => { const out = new Float32Array(a.count * a.itemSize); for (let i = 0; i < a.count; i++) for (let k = 0; k < a.itemSize; k++) out[i * a.itemSize + k] = a.getComponent(i, k); return new THREE.BufferAttribute(out, a.itemSize); };
   R.gltf.scene.updateMatrixWorld(true);
+  let colored = false; // per-part colours baked into vertices (tools/build-realguns.mjs)
+  R.gltf.scene.traverse((o) => { if (o.isMesh && o.geometry.attributes.color) colored = true; });
   R.gltf.scene.traverse((o) => {
     if (!o.isMesh) return;
     const g = new THREE.BufferGeometry(), src = o.geometry;
     g.setAttribute('position', f32(src.attributes.position));
     g.setAttribute('normal', src.attributes.normal ? f32(src.attributes.normal) : new THREE.BufferAttribute(new Float32Array(src.attributes.position.count * 3), 3));
     g.setAttribute('uv', src.attributes.uv ? f32(src.attributes.uv) : new THREE.BufferAttribute(new Float32Array(src.attributes.position.count * 2), 2));
+    if (colored) g.setAttribute('color', src.attributes.color ? f32(src.attributes.color) : new THREE.BufferAttribute(new Float32Array(src.attributes.position.count * 3).fill(1), 3));
     g.setIndex(src.index ? Array.from(src.index.array) : null);
     g.applyMatrix4(o.matrixWorld);
     geos.push(g); mats.push(o.material);
