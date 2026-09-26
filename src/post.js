@@ -95,16 +95,19 @@ void main(){
 const AO = `
 uniform sampler2D tDepth; uniform mat4 projInv; uniform vec2 res; uniform float radius, intensity, projScale, far;
 varying vec2 vUv;
-#define NS 16
-vec3 vpos( vec2 uv ) { float d = texture2D( tDepth, uv ).r; vec4 p = projInv * vec4( uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0 ); return p.xyz / p.w; }
+// every depth read snaps to a texel centre: these passes run at a fraction of the depth buffer's resolution,
+// so their pixel centres sit on its texel corners where nearest sampling flips between neighbours and
+// the reconstructed normals band into dark stripes along flat walls
+vec3 vpos( vec2 uv ) { uv = ( floor( uv * res ) + 0.5 ) / res; float d = texture2D( tDepth, uv ).r; vec4 p = projInv * vec4( uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0 ); return p.xyz / p.w; }
 void main(){
-  float d = texture2D( tDepth, vUv ).r;
+  vec2 uv0 = ( floor( vUv * res ) + 0.5 ) / res;
+  float d = texture2D( tDepth, uv0 ).r;
   if ( d >= 0.99999 ) { gl_FragColor = vec4( 1.0, 60000.0, 0.0, 1.0 ); return; } // sky (half-float safe marker)
-  vec3 C = vpos( vUv );
+  vec3 C = vpos( uv0 );
   if ( -C.z > far ) { gl_FragColor = vec4( 1.0, -C.z, 0.0, 1.0 ); return; }
   vec2 px = 1.0 / res;
-  vec3 R = vpos( vUv + vec2( px.x, 0.0 ) ), L = vpos( vUv - vec2( px.x, 0.0 ) );
-  vec3 U = vpos( vUv + vec2( 0.0, px.y ) ), D = vpos( vUv - vec2( 0.0, px.y ) );
+  vec3 R = vpos( uv0 + vec2( px.x, 0.0 ) ), L = vpos( uv0 - vec2( px.x, 0.0 ) );
+  vec3 U = vpos( uv0 + vec2( 0.0, px.y ) ), D = vpos( uv0 - vec2( 0.0, px.y ) );
   vec3 dx = abs( R.z - C.z ) < abs( C.z - L.z ) ? R - C : C - L;
   vec3 dy = abs( U.z - C.z ) < abs( C.z - D.z ) ? U - C : C - D;
   vec3 N = normalize( cross( dx, dy ) );
@@ -116,7 +119,7 @@ void main(){
   for ( int i = 0; i < NS; i ++ ) {
     float a = ( float( i ) + 0.5 ) / float( NS );
     float th = a * 7.0 * 6.2831853 + ang;
-    vec3 Q = vpos( vUv + vec2( cos( th ), sin( th ) ) * a * ssR * px );
+    vec3 Q = vpos( uv0 + vec2( cos( th ), sin( th ) ) * a * ssR * px );
     vec3 v = Q - C;
     float vv = dot( v, v ), vn = dot( v, N );
     float f = max( r2 - vv, 0.0 );
@@ -153,16 +156,16 @@ void main(){
 const GI = `
 uniform sampler2D tDepth, tColor; uniform mat4 projInv; uniform vec2 res, depthRes; uniform float radius, projScale, far;
 varying vec2 vUv;
-#define NS 12
-vec3 vpos( vec2 uv ) { float d = texture2D( tDepth, uv ).r; vec4 p = projInv * vec4( uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0 ); return p.xyz / p.w; }
+vec3 vpos( vec2 uv ) { uv = ( floor( uv * depthRes ) + 0.5 ) / depthRes; float d = texture2D( tDepth, uv ).r; vec4 p = projInv * vec4( uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0 ); return p.xyz / p.w; }
 void main(){
-  float d = texture2D( tDepth, vUv ).r;
+  vec2 uv0 = ( floor( vUv * depthRes ) + 0.5 ) / depthRes;
+  float d = texture2D( tDepth, uv0 ).r;
   if ( d >= 0.99999 ) { gl_FragColor = vec4( 0.0, 0.0, 0.0, 60000.0 ); return; }
-  vec3 C = vpos( vUv ); float z = -C.z;
+  vec3 C = vpos( uv0 ); float z = -C.z;
   if ( z > far ) { gl_FragColor = vec4( 0.0, 0.0, 0.0, z ); return; }
   vec2 px = 1.0 / depthRes;
-  vec3 R = vpos( vUv + vec2( px.x, 0.0 ) ), L = vpos( vUv - vec2( px.x, 0.0 ) );
-  vec3 U = vpos( vUv + vec2( 0.0, px.y ) ), D = vpos( vUv - vec2( 0.0, px.y ) );
+  vec3 R = vpos( uv0 + vec2( px.x, 0.0 ) ), L = vpos( uv0 - vec2( px.x, 0.0 ) );
+  vec3 U = vpos( uv0 + vec2( 0.0, px.y ) ), D = vpos( uv0 - vec2( 0.0, px.y ) );
   vec3 N = normalize( cross( abs( R.z - C.z ) < abs( C.z - L.z ) ? R - C : C - L, abs( U.z - C.z ) < abs( C.z - D.z ) ? U - C : C - D ) );
   float ssR = min( projScale * radius / z, 0.35 * res.y );
   if ( ssR < 2.0 ) { gl_FragColor = vec4( 0.0, 0.0, 0.0, z ); return; }
@@ -171,7 +174,7 @@ void main(){
   for ( int i = 0; i < NS; i ++ ) {
     float a = ( float( i ) + 0.5 ) / float( NS );
     float th = float( i ) * 2.3999632 + ang;
-    vec2 suv = vUv + vec2( cos( th ), sin( th ) ) * sqrt( a ) * ssR / res;
+    vec2 suv = uv0 + vec2( cos( th ), sin( th ) ) * sqrt( a ) * ssR / res;
     if ( suv.x < 0.0 || suv.x > 1.0 || suv.y < 0.0 || suv.y > 1.0 ) continue;
     vec3 v = vpos( suv ) - C;
     float vv = dot( v, v );
@@ -527,11 +530,11 @@ export class PostFX {
       res: { value: new THREE.Vector2(1, 1) }, sunUV: { value: new THREE.Vector2(0.5, 0.5) }, sunVis: { value: 0 },
     });
     this.aoMat = mk(AO, { tDepth: { value: null }, projInv: { value: new THREE.Matrix4() }, res: { value: new THREE.Vector2() },
-      radius: { value: 0.75 }, intensity: { value: 1.1 }, projScale: { value: 1 }, far: { value: 90 } });
+      radius: { value: 0.75 }, intensity: { value: 1.1 }, projScale: { value: 1 }, far: { value: 90 } }, { defines: { NS: 16 } });
     this.copyMat = mk(COPY, { tSrc: { value: null } });
     this.blurMat = mk(AO_BLUR, { tSrc: { value: null }, dir: { value: new THREE.Vector2() } });
     this.giMat = mk(GI, { tDepth: { value: null }, tColor: { value: null }, projInv: { value: new THREE.Matrix4() }, res: { value: new THREE.Vector2() },
-      depthRes: { value: new THREE.Vector2() }, radius: { value: 2.2 }, projScale: { value: 1 }, far: { value: 70 } });
+      depthRes: { value: new THREE.Vector2() }, radius: { value: 2.2 }, projScale: { value: 1 }, far: { value: 70 } }, { defines: { NS: 12 } });
     this.giBlurMat = mk(GI_BLUR, { tSrc: { value: null }, dir: { value: new THREE.Vector2() } });
     this.applyMat = mk(APPLY, {
       tAO: { value: null }, tDepth: { value: null }, aoRes: { value: new THREE.Vector2() }, projInv: { value: new THREE.Matrix4() }, camWorld: { value: new THREE.Matrix4() },
@@ -561,7 +564,7 @@ export class PostFX {
     this.rt.setSize(w, h);
     const hw = Math.max(1, Math.ceil(w / 2)), hh = Math.max(1, Math.ceil(h / 2));
     this.aoA.setSize(hw, hh); this.aoB.setSize(hw, hh); this.colA.setSize(hw, hh);
-    const qw = Math.max(1, Math.ceil(w / 4)), qh = Math.max(1, Math.ceil(h / 4));
+    const gd = this.giDiv || 4, qw = Math.max(1, Math.ceil(w / gd)), qh = Math.max(1, Math.ceil(h / gd));
     this.giA.setSize(qw, qh); this.giB.setSize(qw, qh);
     let lw = w, lh = h;
     for (const l of this.levels) { lw = Math.max(1, Math.ceil(lw / 2)); lh = Math.max(1, Math.ceil(lh / 2)); l.setSize(lw, lh); }
@@ -570,10 +573,19 @@ export class PostFX {
 
   setQuality(q) {
     this.bloom = q !== 'low';
-    this.ao = q === 'ultra' || q === 'high' || q === 'auto';
+    this.ao = q === 'cinematic' || q === 'ultra' || q === 'high' || q === 'auto';
     this.gi = this.ao;
-    this.sharpen = q === 'low' ? 0.25 : q === 'medium' ? 0.35 : 0.3;
-    const s = q === 'low' ? 0 : 4;
+    this.sharpen = q === 'low' ? 0.25 : q === 'medium' ? 0.35 : q === 'cinematic' ? 0.2 : 0.3;
+    // Cinematic: twice the occlusion and bounce samples, bounce light at half instead of quarter resolution
+    const cine = q === 'cinematic';
+    if (cine !== !!this.cine) {
+      this.cine = cine;
+      this.aoMat.defines.NS = cine ? 32 : 16; this.aoMat.needsUpdate = true;
+      this.giMat.defines.NS = cine ? 24 : 12; this.giMat.needsUpdate = true;
+      this.giDiv = cine ? 2 : 4;
+      if (this.w) this.setSize(this.w, this.h);
+    }
+    const s = q === 'low' ? 0 : cine ? Math.min(8, this.r.capabilities.maxSamples || 4) : 4;
     if (s !== this.samples) {
       this.samples = s;
       this.rt.depthTexture.dispose();

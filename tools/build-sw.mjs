@@ -11,7 +11,8 @@ const files = [];
 const walk = (p) => {
   const st = fs.statSync(p);
   if (st.isDirectory()) for (const f of fs.readdirSync(p).sort()) walk(path.join(p, f));
-  else if (!p.endsWith('LICENSE') && !path.basename(p).startsWith('.') && !buildOnly.has(p.split(path.sep).join('/'))) files.push(p.split(path.sep).join('/'));
+  // (the Cinematic *_hq.js sculpts are only fetched by gaming PCs, then cached on first use)
+  else if (!p.endsWith('LICENSE') && !path.basename(p).startsWith('.') && !/_hq\.js$/.test(p) && !buildOnly.has(p.split(path.sep).join('/'))) files.push(p.split(path.sep).join('/'));
 };
 for (const r of roots) walk(r);
 const hash = crypto.createHash('sha256');
@@ -35,9 +36,21 @@ self.addEventListener('activate', (e) => {
   );
 });
 
+// Cinematic streams full-resolution scans from Poly Haven: keep them (they never change) so the
+// hundreds of megabytes download once; this cache survives game updates
+const SCANS = 'tips-scans-v1';
+
 self.addEventListener('fetch', (e) => {
   const req = e.request;
-  if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
+  if (req.method !== 'GET') return;
+  if (new URL(req.url).hostname === 'dl.polyhaven.org') {
+    e.respondWith(caches.open(SCANS).then((c) => c.match(req).then((hit) => hit || fetch(req).then((res) => {
+      if (res.ok) c.put(req, res.clone());
+      return res;
+    }))));
+    return;
+  }
+  if (new URL(req.url).origin !== location.origin) return;
   e.respondWith(
     caches.match(req, { ignoreSearch: true }).then((hit) => {
       if (hit) return hit;

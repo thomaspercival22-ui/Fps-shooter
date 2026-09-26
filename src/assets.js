@@ -2,7 +2,50 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
-import { textureCap, propTextureCap, skyFaceSize, MOBILE } from './settings.js';
+import { textureCap, propTextureCap, skyFaceSize, MOBILE, isCinematic } from './settings.js';
+
+// Cinematic (gaming PC): the original, full-resolution scans straight from Poly Haven's CDN
+const PH = 'https://dl.polyhaven.org/file/ph-assets';
+const PH_HDRI = 'kloofendal_48d_partly_cloudy_puresky';
+// surfaces that fill the screen get 4K colour and normal maps; everything else 2K
+const CINE_4K_SETS = new Set(['gravelly_sand', 'dry_ground_rocks', 'damaged_plaster', 'concrete_wall_008', 'concrete_floor_worn_001']);
+const CINE_4K_MODELS = new Set(['concrete_road_barrier_02', 'covered_car', 'wooden_military_crate', 'rock_09', 'quiver_tree_02', 'portable_generator']);
+// scattered hundreds of times: keeps its light mesh even here
+const CINE_LOCAL = new Set(['namaqualand_stones_01']);
+const PH_MAP = { diff: 'diff', nor: 'nor_gl', arm: 'arm' };
+
+/** A Poly Haven glTF from the CDN, with its buffer and texture paths pointed at where the CDN keeps them. */
+async function remoteGltf(loader, id, res) {
+  const base = `${PH}/Models/gltf/${res}/${id}/`;
+  const r = await fetch(`${base}${id}_${res}.gltf`);
+  if (!r.ok) throw new Error(`${id}: ${r.status}`);
+  const json = await r.json();
+  const local = (u) => u && !/^(data|https?|blob):/.test(u);
+  // download every buffer and texture first: a scan that can't be fetched whole isn't used at all
+  // (the loader would otherwise build the model without the textures that failed)
+  const blobs = [];
+  const grab = async (url) => {
+    const f = await fetch(url);
+    if (!f.ok) throw new Error(`${url}: ${f.status}`);
+    const u = URL.createObjectURL(await f.blob());
+    blobs.push(u);
+    return u;
+  };
+  try {
+    await Promise.all([
+      ...(json.buffers || []).filter((b) => local(b.uri)).map(async (b) => { b.uri = await grab(base + b.uri); }),
+      ...(json.images || []).filter((im) => local(im.uri)).map(async (im) => { im.uri = await grab(`${PH}/Models/jpg/${res}/${id}/${im.uri.split('/').pop()}`); }),
+    ]);
+    const g = await new Promise((res2, rej) => loader.parse(JSON.stringify(json), '', res2, rej));
+    // textures decode asynchronously: wait until every one is ready before letting the blobs go
+    const maps = [];
+    g.scene.traverse((o) => { if (o.isMesh) for (const t of Object.values(o.material)) if (t && t.isTexture) maps.push(t); });
+    if (maps.length < (json.textures || []).length) throw new Error(`${id}: textures missing`);
+    return g;
+  } finally {
+    setTimeout(() => blobs.forEach((u) => URL.revokeObjectURL(u)), 30000);
+  }
+}
 
 const TEXTURE_SETS = [
   'gravelly_sand', 'damaged_plaster', 'concrete_wall_008', 'concrete_floor_worn_001',
@@ -62,6 +105,8 @@ export async function loadAssets(renderer, onProgress) {
   const hdrLoader = new HDRLoader(manager).setDataType(THREE.FloatType);
   const aniso = Math.min(16, renderer.capabilities.getMaxAnisotropy());
   const cap = textureCap();
+  const cine = isCinematic();
+  const stats = { remote: 0, local: 0 };
 
   // each texture goes to the GPU as soon as it arrives and its decoded copy is
   // dropped, so loading never holds every image in memory at once
@@ -84,13 +129,23 @@ export async function loadAssets(renderer, onProgress) {
     for (const [key, srgb] of [['diff', true], ['nor', false], ['arm', false]]) {
       // the container colour map is re-tinted on the CPU when the level is built
       const keep = id === 'container_side' && key === 'diff';
-      jobs.push(loadTex(`assets/textures/${id}/${key}.jpg`, srgb, setCap, { keep }).then((t) => { textures[id][key] = t; }));
+      const local = () => loadTex(`assets/textures/${id}/${key}.jpg`, srgb, setCap, { keep });
+      let job = local;
+      if (cine) {
+        const res = CINE_4K_SETS.has(id) && key !== 'arm' ? '4k' : '2k';
+        job = () => loadTex(`${PH}/Textures/jpg/${res}/${id}/${id}_${PH_MAP[key]}_${res}.jpg`, srgb, 8192, { keep }).then((t) => { stats.remote++; return t; }).catch(() => { stats.local++; return local(); });
+      }
+      jobs.push(job().then((t) => { textures[id][key] = t; }));
     }
   }
   const models = {};
   for (const id of MODEL_IDS) {
     const mcap = BIG_PROPS.has(id) ? cap : propTextureCap();
-    jobs.push(new Promise((res, rej) => gltfLoader.load(`assets/models/${id}/${id}.gltf`, (g) => {
+    const localModel = () => new Promise((res, rej) => gltfLoader.load(`assets/models/${id}/${id}.gltf`, res, undefined, rej));
+    const source = cine && !CINE_LOCAL.has(id)
+      ? remoteGltf(gltfLoader, id, CINE_4K_MODELS.has(id) ? '4k' : '2k').then((g) => { stats.remote++; return g; }).catch((e) => { stats.local++; console.warn(`cinematic: ${id} fell back (${e.message})`); return localModel(); })
+      : localModel();
+    jobs.push(source.then((g) => new Promise((res) => {
       g.scene.traverse((o) => {
         if (!o.isMesh) return;
         for (const [k, t] of Object.entries(o.material)) {
@@ -103,12 +158,14 @@ export async function loadAssets(renderer, onProgress) {
         }
       });
       models[id] = g.scene; res();
-    }, undefined, rej)));
+    })));
   }
   let groundHeight = null;
   jobs.push(loadTex('assets/textures/ground_height.jpg', false).then((t) => { groundHeight = t; }));
   let hdr = null, skyCube = null;
-  jobs.push(new Promise((res, rej) => hdrLoader.load('assets/sky/sky_1k.hdr', (t) => { hdr = t; res(); }, undefined, rej)));
+  // Cinematic lights the scene from the 2K HDR (sharper reflections, a crisper sun)
+  const hdrLocal = () => new Promise((res, rej) => hdrLoader.load('assets/sky/sky_1k.hdr', (t) => { hdr = t; res(); }, undefined, rej));
+  jobs.push(cine ? new Promise((res, rej) => hdrLoader.load(`${PH}/HDRIs/hdr/2k/${PH_HDRI}_2k.hdr`, (t) => { hdr = t; stats.remote++; res(); }, undefined, rej)).catch(hdrLocal) : hdrLocal());
   // sky backdrop: the photo is turned into a cube map of a size the device can
   // afford (the renderer's automatic conversion would make 4096px faces, 400 MB)
   const face = skyFaceSize();
@@ -136,7 +193,8 @@ export async function loadAssets(renderer, onProgress) {
   hdr.dispose();
   hdr.image = null;
 
-  return { textures, models, envMap, skyTex: skyCube, sunDir, groundHeight, horizon: sunDir.horizon };
+  if (cine) console.info(`cinematic assets: ${stats.remote} from Poly Haven, ${stats.local} fell back to the bundled copies`);
+  return { textures, models, envMap, skyTex: skyCube, sunDir, groundHeight, horizon: sunDir.horizon, cinematic: cine ? stats : null };
 }
 
 function prepareHdr(tex) {
@@ -158,6 +216,9 @@ function prepareHdr(tex) {
   }
   hr /= hn; hg /= hn; hb /= hn;
   const avg = (hr + hg + hb) / 3;
+  // the environment is filtered in half-float targets: a sun pixel above 65504 turns into Infinity there and
+  // the blur spreads it into NaN lighting everywhere (the 2K scan's sun peaks at ~73000)
+  for (let k = 0; k < data.length; k++) if (data[k] > 6e4) data[k] = 6e4;
   // Ground bounce: sunlit sand reflects a lot of light back up into shadows.
   // Radiance = albedo x (sun irradiance + sky irradiance), divided by the scene's
   // environment intensity so the lit result matches the direct light.

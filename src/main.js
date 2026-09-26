@@ -3,13 +3,14 @@ import * as THREE from 'three';
 import { loadAssets } from './assets.js';
 import { AudioEngine, Voices } from './audio.js';
 import { Game } from './game.js';
-import { gunsReady } from './guns.js';
-import { settings, saveSettings, getBest, textureCap } from './settings.js';
+import { gunsReady, useGunData } from './guns.js';
+import { useMeshData } from './meshes.js';
+import { settings, saveSettings, getBest, textureCap, isCinematic, MOBILE } from './settings.js';
 import { WEAPONS, DIFFICULTY } from './config.js';
 import { MISSIONS } from './missions.js';
 
 const LOADING_KEY = 'dustfall.loading';
-const QUALITY_NAMES = { ultra: 'Ultra', high: 'High', medium: 'Medium', low: 'Low', auto: 'Auto' };
+const QUALITY_NAMES = { cinematic: 'Cinematic', ultra: 'Ultra', high: 'High', medium: 'Medium', low: 'Low', auto: 'Auto' };
 
 const $ = (id) => document.getElementById(id);
 const show = (id, on = true) => $(id).classList.toggle('hidden', !on);
@@ -28,7 +29,7 @@ function recoverFromCrashedLoad() {
   let crashed = false;
   try { crashed = localStorage.getItem(LOADING_KEY) === settings.quality; localStorage.setItem(LOADING_KEY, settings.quality); } catch { return null; }
   if (!crashed) return null;
-  const next = { ultra: 'high', high: 'medium', auto: 'medium', medium: 'low' }[settings.quality];
+  const next = { cinematic: 'ultra', ultra: 'high', high: 'medium', auto: 'medium', medium: 'low' }[settings.quality];
   if (!next) return null;
   settings.quality = next;
   saveSettings();
@@ -60,6 +61,14 @@ async function boot() {
     audio.generate((p) => { pb = p; progress(); }),
   ]);
   await gunsReady; // mesh decoder for the sculpted guns
+  if (isCinematic()) {
+    // gaming PC: the high-detail sculpts of the guns, gloves and people (regular set if missing)
+    text.textContent = 'Loading cinematic models...';
+    await Promise.all([
+      import('./meshdata_hq.js').then(useMeshData).catch(() => {}),
+      import('./gundata_hq.js').then(useGunData).catch(() => {}),
+    ]);
+  }
   text.textContent = 'Building the compound...';
   await new Promise((r) => setTimeout(r, 30));
   const game = new Game(renderer, assets, audio, voices);
@@ -269,11 +278,13 @@ function buildSettings(game) {
     row.appendChild(r);
     grid.appendChild(row);
   };
-  const loadedCap = textureCap();
-  seg('Graphics', 'quality', [['ultra', 'Ultra'], ['high', 'High'], ['medium', 'Medium'], ['low', 'Low'], ['auto', 'Auto']], () => {
+  const loadedCap = textureCap(), loadedCine = isCinematic();
+  const presets = [['ultra', 'Ultra'], ['high', 'High'], ['medium', 'Medium'], ['low', 'Low'], ['auto', 'Auto']];
+  if (!MOBILE) presets.unshift(['cinematic', 'Cinematic (PC)']);
+  seg('Graphics', 'quality', presets, () => {
     game.applyQuality();
-    // texture resolution is chosen while loading: reload from the menu to apply it
-    if (textureCap() !== loadedCap && game.state === 'menu') setTimeout(() => location.reload(), 150);
+    // texture resolution and the Cinematic asset set are chosen while loading: reload from the menu to apply them
+    if ((textureCap() !== loadedCap || isCinematic() !== loadedCine) && game.state === 'menu') setTimeout(() => location.reload(), 150);
   });
   range('Look sensitivity', 'lookSens', 0.2, 3, 0.05);
   range('Aim (ADS) sensitivity', 'adsSens', 0.2, 2, 0.05);

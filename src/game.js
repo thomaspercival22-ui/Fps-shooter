@@ -35,10 +35,11 @@ const QUALITY = {
   medium: { scale: 1.0, shadows: true, shadowSize: 1024, soft: false },
   high: { scale: 1.75, shadows: true, shadowSize: 2048, soft: true },
   ultra: { scale: 2.5, shadows: true, shadowSize: 4096, soft: true },
+  cinematic: { scale: 2.5, shadows: true, shadowSize: 8192, soft: true },
   auto: { scale: 1.35, shadows: true, shadowSize: 2048, soft: true },
 };
 // phones: every full-screen HDR buffer scales with the pixel count, so cap the render scale
-const MOBILE_SCALE = { ultra: 2.0, high: 1.5, auto: 1.35, medium: 1.0, low: 0.7 };
+const MOBILE_SCALE = { cinematic: 1.5, ultra: 2.0, high: 1.5, auto: 1.35, medium: 1.0, low: 0.7 };
 
 export class Game {
   constructor(renderer, assets, audio, voices) {
@@ -178,6 +179,12 @@ export class Game {
     const dpr = window.devicePixelRatio || 1;
     this.maxScale = Math.min(dpr, q.scale);
     this.renderScale = name === 'auto' ? Math.min(1.0, this.maxScale) : Math.min(dpr, q.scale);
+    this.cinematic = name === 'cinematic' && !MOBILE;
+    if (name === 'cinematic') {
+      // supersampled: at least 1.5x even on a 1080p screen, up to about a 4K frame
+      const px = window.innerWidth * window.innerHeight;
+      this.renderScale = this.maxScale = Math.min(q.scale, Math.max(dpr, 1.5), Math.sqrt(8.3e6 / px));
+    }
     const r = this.renderer;
     this.post.setQuality(name);
     const fog = this.post.ao ? null : this.fog;
@@ -190,7 +197,7 @@ export class Game {
     }
     // shadows are redrawn once per frame by render(), not on every render call
     r.shadowMap.autoUpdate = false;
-    const size = q.shadowSize;
+    const size = Math.min(q.shadowSize, r.capabilities.maxTextureSize);
     if (this.sun.shadow.mapSize.x !== size) {
       this.sun.shadow.mapSize.set(size, size);
       this.sun.shadow.map?.dispose(); this.sun.shadow.map = null;
@@ -736,7 +743,7 @@ export class Game {
     // camera zoom
     const zoom = 1 + ((d.scope ? w.scopeZoom : d.adsZoom) - 1) * (d.scope ? (w.isScoped ? 1 : 0) : w.adsT);
     const fov = this.baseFov / zoom;
-    soldierOptions.lodScale = 1 / zoom; // people seen through a scope keep their detail
+    soldierOptions.lodScale = (1 / zoom) * (this.cinematic ? 0.4 : 1); // people seen through a scope keep their detail
     // long sightlines: push the near plane out while looking through a scope (the gun is drawn separately)
     const near = this.missionKey === 'sniper' ? (w.isScoped ? 2.5 : 0.3) : 0.1;
     if (Math.abs(this.camera.fov - fov) > 0.01 || this.camera.near !== near) { this.camera.fov = fov; this.camera.near = near; this.camera.updateProjectionMatrix(); }

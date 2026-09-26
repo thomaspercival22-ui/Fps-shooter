@@ -58,6 +58,12 @@ This is a debug-signed build for your own phones. Publishing on the Play Store n
   - **Bullet impacts by material:** metal (a car body, steel plate, a thin-metal ping), wood, dirt and sand, glass that breaks, flesh, office carpet and concrete, each with several variations. Ricochets and gun handling (magazine out and in, bolt release, pistol slide, dry fire) are recorded too. Grenades and flashbangs are real explosions recorded in an open field.
   - **Offline fallback:** if the recordings haven't been downloaded yet, a synthesised set takes their place.
 - **Muzzle flashes:** unsuppressed guns now show a real fireball: a white-hot core with ragged, turbulent lobes, a flame plume with the intermediate flash, and a glow that lights up walls at night. The M1014 throws burning powder sparks, and the MK13's brake blasts two jets to the sides. Every unsuppressed shot leaves a puff of smoke.
+- **Cinematic (Graphics → Cinematic (PC), gaming PCs only):** the heaviest preset. It doesn't appear on phones, and it doesn't change what phones or the Android app download.
+  - **Full-resolution photo-scans:** every prop is the original, unsimplified Poly Haven scan, streamed from Poly Haven's CDN, with 4K textures on the big pieces and 2K on small ones. The ground, walls and floors get 4K colour and normal maps, and the scene is lit from the 2K sky HDR. It's about 500 MB on the first load. The service worker keeps it, so later loads are fast.
+  - **High-detail sculpts:** the guns keep 6× the triangles of the regular set at a tighter error bound (the first-person M4 is about 1.4 million triangles). The first-person gloves and every soldier and civilian are re-sculpted with voxels 2.2× finer and 8× the triangles (about 300,000 per soldier). People keep full detail 2.5× farther away.
+  - **Rendering:** supersampled (at least 1.5× even on a 1080p screen, up to a 4K frame), up to 8× MSAA, an 8192 px contact-hardening shadow map, twice the ambient-occlusion and bounce-light samples, and bounce light at half resolution.
+  - **What it needs:** a recent gaming GPU with about 6 GB of video memory or more, and a fast connection for the first load. If a download fails (or you're offline) each asset falls back to the bundled copy.
+  - **What it isn't:** it doesn't look identical to real life. No real-time game does, and the people in particular are sculpted, not scanned. Photoreal humans would need scanned people, skin and hair shading and motion capture.
 - **High-end graphics (Graphics → Ultra, the default on computers; phones start on High):**
   - **Photo-scanned world:** 4K ground scans with parallax occlusion mapping (pebbles and ruts have real depth), blended with rocky patches. Full-detail scans of concrete barriers, ammo crates, a tarped car, generator, fuel cans, gas bottles, cement bags, desert shrubs, quiver trees, boulders and pebbles. HESCO walls with bulging geotextile and welded mesh. Real corrugated containers with rust runs. Buildings with window frames, grilles, sills, rooftop water tanks, drainpipes and power cables.
   - **Lighting:** soft sun shadows that stay sharp where objects touch the ground (PCSS) and get softer further away. Screen-space ambient occlusion. Screen-space ray-traced contact shadows and reflections. Sunlight bouncing off the sand into shaded areas.
@@ -142,6 +148,13 @@ The recorded sounds in `assets/audio/` are built from public-domain freesound.or
 
 ```bash
 npm run build-sounds   # node tools/build-sounds.mjs
+```
+
+The Cinematic high-detail sculpts are built separately (they're only loaded by the Cinematic preset):
+
+```bash
+node tools/build-guns.mjs --hq     # -> src/gundata_hq.js
+node tools/build-meshes.mjs --hq   # -> src/meshdata_hq.js
 ```
 
 The gloves, soldier bodies and sculpted gun parts are modelled with signed distance fields in `src/sdfmodels.js` and prebuilt into `src/meshdata.js`. After editing them run:

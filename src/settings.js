@@ -44,6 +44,7 @@ function load() {
       const s = { ...DEFAULTS, ...JSON.parse(raw) };
       // revision 2 forced Ultra on every device; phones go back to their safe default once
       if (s.gfx !== 3) { if (s.gfx !== 2 || MOBILE) s.quality = DEFAULTS.quality; s.gfx = 3; }
+      if (s.quality === 'cinematic' && MOBILE) s.quality = 'high'; // a gaming-PC preset
       return s;
     }
   } catch { /* storage unavailable */ }
@@ -66,8 +67,13 @@ export function setBest(v) {
 /** Largest texture size loaded for a graphics preset (bigger ones are scaled down at load). */
 export function textureCap(q = settings.quality) {
   if (MOBILE) return q === 'ultra' ? 2048 : q === 'high' || q === 'auto' ? 1024 : 512;
-  return q === 'ultra' ? 8192 : q === 'high' || q === 'auto' ? 2048 : 1024;
+  return q === 'ultra' || q === 'cinematic' ? 8192 : q === 'high' || q === 'auto' ? 2048 : 1024;
 }
+/**
+ * Cinematic (gaming PC only): the full-resolution photo-scans streamed from Poly Haven, the
+ * high-detail sculpts of the guns and people, and the heaviest render settings.
+ */
+export function isCinematic(q = settings.quality) { return q === 'cinematic' && !MOBILE; }
 /** Texture cap for small props (they rarely fill much of the screen). */
 export function propTextureCap(q = settings.quality) {
   return MOBILE ? Math.max(512, textureCap(q) / 2) : textureCap(q);
@@ -75,5 +81,5 @@ export function propTextureCap(q = settings.quality) {
 /** Cube face size of the sky background (a 4096 face would cost 400 MB). */
 export function skyFaceSize(q = settings.quality) {
   if (MOBILE) return q === 'ultra' || q === 'high' ? 1024 : 768;
-  return q === 'ultra' ? 2048 : q === 'low' ? 768 : 1024;
+  return q === 'ultra' || q === 'cinematic' ? 2048 : q === 'low' ? 768 : 1024;
 }

@@ -3,7 +3,11 @@
 // normal, material region, edge wear, cavity) and index buffer.
 import * as THREE from 'three';
 import { MeshoptDecoder } from '../vendor/meshopt/meshopt_decoder.js';
-import { HEADER, DATA } from './gundata.js';
+import * as REGULAR from './gundata.js';
+
+let { HEADER, DATA } = REGULAR;
+/** Swaps in another gun set (the Cinematic high-detail sculpts) before any gun is built. */
+export function useGunData(mod) { ({ HEADER, DATA } = mod); bin = null; for (const k of Object.keys(cache)) delete cache[k]; }
 
 /** Resolves once the decoder is ready; await before building any gun. */
 export const gunsReady = MeshoptDecoder.ready;

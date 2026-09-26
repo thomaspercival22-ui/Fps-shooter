@@ -4,12 +4,17 @@
 // for enemy soldiers). Parts are meshed in parallel worker threads.
 //   node tools/build-guns.mjs            all guns
 //   node tools/build-guns.mjs m4 glock   only these guns (others are kept)
+//   node tools/build-guns.mjs --hq       Cinematic (gaming PC) set: 6x the triangles at a tighter
+//                                        error bound, written to src/gundata_hq.js
 import fs from 'fs';
 import os from 'os';
 import { Worker, isMainThread, parentPort, workerData } from 'worker_threads';
 import { MeshoptSimplifier, MeshoptEncoder } from 'meshoptimizer';
 
-const OUT = new URL('../src/gundata.js', import.meta.url);
+const HQ = process.argv.includes('--hq') || (!isMainThread && workerData.hq);
+const OUT = new URL(HQ ? '../src/gundata_hq.js' : '../src/gundata.js', import.meta.url);
+const TRIS = HQ ? 6 : 1;            // triangle budget multiplier
+const ERR = HQ ? 0.35 : 1;          // starting error bound multiplier
 
 async function buildPart(gun, index) {
   const { GUNS } = await import('../src/gunparts.js');
@@ -22,10 +27,11 @@ async function buildPart(gun, index) {
   const n = raw.reg.length, attr = new Float32Array(n * 4);
   for (let i = 0; i < n; i++) { attr[i * 4] = raw.nor[i * 3]; attr[i * 4 + 1] = raw.nor[i * 3 + 1]; attr[i * 4 + 2] = raw.nor[i * 3 + 2]; attr[i * 4 + 3] = raw.reg[i]; }
   // loosen the error bound step by step while the part stays far over its budget
-  let idx, err = part.error;
+  let idx, err = part.error * ERR;
+  const budget = part.tris * TRIS;
   for (;;) {
-    [idx] = MeshoptSimplifier.simplifyWithAttributes(raw.idx, raw.pos, 3, attr, 4, [0.6, 0.6, 0.6, 4], null, part.tris * 3, err, ['ErrorAbsolute']);
-    if (idx.length / 3 <= part.tris * 1.35 || err > 0.0005) break;
+    [idx] = MeshoptSimplifier.simplifyWithAttributes(raw.idx, raw.pos, 3, attr, 4, [0.6, 0.6, 0.6, 4], null, budget * 3, err, ['ErrorAbsolute']);
+    if (idx.length / 3 <= budget * 1.35 || err > 0.0005) break;
     err *= 1.5;
   }
   const [remap, unique] = MeshoptSimplifier.compactMesh(idx = new Uint32Array(idx));
@@ -51,7 +57,7 @@ if (!isMainThread) {
 const { GUNS } = await import('../src/gunparts.js');
 await MeshoptSimplifier.ready;
 const repack = process.argv.includes('--repack');
-const only = repack ? ['--none--'] : process.argv.slice(2);
+const only = repack ? ['--none--'] : process.argv.slice(2).filter((a) => !a.startsWith('--'));
 const guns = Object.keys(GUNS).filter((g) => !only.length || only.includes(g));
 const jobs = [];
 for (const g of guns) GUNS[g]().forEach((p, i) => jobs.push({ gun: g, index: i, name: p.name }));
@@ -65,7 +71,7 @@ await new Promise((resolve, reject) => {
     if (next >= jobs.length) { if (running === 0) resolve(); return; }
     const job = jobs[next++];
     running++;
-    const w = new Worker(new URL(import.meta.url), { workerData: job, resourceLimits: { maxOldGenerationSizeMb: 3000 } });
+    const w = new Worker(new URL(import.meta.url), { workerData: { ...job, hq: HQ }, resourceLimits: { maxOldGenerationSizeMb: 3000 } });
     w.on('message', (r) => {
       results[`${job.gun}.${r.name}`] = { gun: job.gun, ...r };
       console.log(`${job.gun}.${r.name}: ${r.rawTris} -> ${r.idx.length / 3} tris, ${r.ms} ms`);
@@ -93,7 +99,7 @@ for (const g of guns) {
   }
   const attr = new Float32Array(vcount * 4);
   for (let i = 0; i < vcount; i++) { attr[i * 4] = nor[i * 3]; attr[i * 4 + 1] = nor[i * 3 + 1]; attr[i * 4 + 2] = nor[i * 3 + 2]; attr[i * 4 + 3] = reg[i]; }
-  let [li] = MeshoptSimplifier.simplifyWithAttributes(new Uint32Array(idx), pos, 3, attr, 4, [0.3, 0.3, 0.3, 2], null, (GUNS[g].lodTris || 7000) * 3, GUNS[g].lodError || 0.0025, ['ErrorAbsolute', 'Prune']);
+  let [li] = MeshoptSimplifier.simplifyWithAttributes(new Uint32Array(idx), pos, 3, attr, 4, [0.3, 0.3, 0.3, 2], null, (GUNS[g].lodTris || 7000) * (HQ ? 3 : 1) * 3, (GUNS[g].lodError || 0.0025) * (HQ ? 0.5 : 1), ['ErrorAbsolute', 'Prune']);
   const [remap, unique] = MeshoptSimplifier.compactMesh(li = new Uint32Array(li));
   const L = { gun: g, name: 'lod', anim: 'lod', pivot: null, material: 'gun', pos: new Float32Array(unique * 3), nor: new Float32Array(unique * 3), reg: new Uint8Array(unique), wear: new Uint8Array(unique * 2), idx: li };
   for (let v = 0; v < remap.length; v++) {
@@ -103,6 +109,14 @@ for (const g of guns) {
   }
   results[`${g}.lod`] = L;
   console.log(`${g}.lod: ${li.length / 3} tris`);
+  if (HQ) {
+    // far-distance copy for enemies (tools/slim-guns.mjs adds this to the regular set)
+    const La = new Float32Array(L.reg.length * 4);
+    for (let i = 0; i < L.reg.length; i++) { La[i * 4] = L.nor[i * 3]; La[i * 4 + 1] = L.nor[i * 3 + 1]; La[i * 4 + 2] = L.nor[i * 3 + 2]; La[i * 4 + 3] = L.reg[i]; }
+    const [l2] = MeshoptSimplifier.simplifyWithAttributes(li, L.pos, 3, La, 4, [0.3, 0.3, 0.3, 2], null, 8000 * 3, 0.002, ['ErrorAbsolute', 'Prune']);
+    results[`${g}.lod2`] = { ...L, name: 'lod2', anim: 'lod2', idx: new Uint32Array(l2) };
+    console.log(`${g}.lod2: ${l2.length / 3} tris`);
+  }
 }
 
 // ---------------- pack ----------------
@@ -172,5 +186,5 @@ for (const [key, r] of Object.entries(results)) {
   header[key] = encode(metaOf(r), q, lo.map((v) => +v.toFixed(7)), sc.map((v) => +v.toPrecision(8)), nq, r.reg, r.wear, r.idx);
 }
 const b64 = Buffer.concat(chunks).toString('base64');
-fs.writeFileSync(OUT, `// Generated by tools/build-guns.mjs from src/gunparts.js. Do not edit.\nexport const HEADER = ${JSON.stringify(header)};\nexport const DATA = '${b64}';\n`);
+fs.writeFileSync(OUT, `// Generated by tools/build-guns.mjs${HQ ? ' --hq' : ''} from src/gunparts.js. Do not edit.\nexport const HEADER = ${JSON.stringify(header)};\nexport const DATA = '${b64}';\n`);
 console.log(`gundata: ${Object.keys(header).length} meshes, ${tris} tris (rebuilt), ${(off / 1024).toFixed(0)} KB compressed, ${((Date.now() - t0) / 1000).toFixed(1)} s`);

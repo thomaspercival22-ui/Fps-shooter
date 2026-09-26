@@ -497,7 +497,7 @@ function civShinModel() {
 
 
 function glove(g) {
-  const geo = simplify(g.m.mesh(g.min, g.max, 0.0009), 9000);
+  const geo = simplify(g.m.mesh(g.min, g.max, HQ ? 0.0005 : 0.0009), HQ ? 60000 : 9000, HQ ? 0.003 : 0.02);
   geo.userData.wrist = g.wrist;
   return geo;
 }
@@ -532,39 +532,44 @@ function soldierGlove(side) {
 }
 
 /** Builds every organic mesh (tool side). */
-export async function buildAll(onProgress, only = null) {
+let HQ = false;
+
+export async function buildAll(onProgress, only = null, { hq = false } = {}) {
+  // Cinematic (gaming PC) set: finer voxels and far larger triangle budgets
+  const c = (cell) => (hq ? cell * 0.45 : cell), S = (g, tris, err) => simplify(g, hq ? tris * 8 : tris, err ?? (hq ? 0.003 : 0.02));
+  HQ = hq;
   if (ready) return cache;
   await MeshoptSimplifier.ready;
   const jobs = [
     ['glove', () => glove(rightGlove())],
     ['gloveL', () => glove(leftGlove())],
     ['gloveLP', () => glove(leftPistolGlove())],
-    ['pelvis', () => simplify(pelvisModel().mesh([-0.24, -0.26, -0.22], [0.24, 0.1, 0.2], 0.0055), 3200)],
-    ['chest', () => simplify(chestModel(false).mesh([-0.28, 0.0, -0.26], [0.28, 0.64, 0.24], 0.0055), 7000)],
-    ['chestHeavy', () => simplify(chestModel(true).mesh([-0.3, 0.0, -0.28], [0.3, 0.64, 0.25], 0.0055), 7500)],
-    ['head', () => simplify(headModel().mesh([-0.15, -0.03, -0.18], [0.15, 0.26, 0.15], 0.0032), 5500)],
-    ['nvg', () => simplify(nvgModel().mesh([-0.07, 0.07, 0.09], [0.07, 0.21, 0.19], 0.002), 1500)],
-    ['upperArm', () => simplify(upperArmModel().mesh([-0.08, -0.37, -0.08], [0.08, 0.07, 0.08], 0.0045), 1600)],
-    ['foreArm', () => simplify(foreArmModel().mesh([-0.07, -0.34, -0.07], [0.07, 0.06, 0.07], 0.004), 1500)],
-    ['handR', () => { const g = soldierGlove(1); return simplify(g.m.mesh(g.min, g.max, 0.0016), 2200); }],
-    ['handL', () => { const g = soldierGlove(-1); return simplify(g.m.mesh(g.min, g.max, 0.0016), 2200); }],
-    ['thigh', () => simplify(thighModel().mesh([-0.12, -0.5, -0.11], [0.12, 0.1, 0.12], 0.0055), 2200)],
-    ['shin', () => simplify(shinModel().mesh([-0.08, -0.49, -0.09], [0.08, 0.08, 0.2], 0.0045), 2600)],
-    ['civPelvis', () => simplify(civPelvisModel().mesh([-0.22, -0.26, -0.2], [0.22, 0.12, 0.2], 0.005), 2400)],
-    ['civChest', () => simplify(civChestModel('shirt').mesh([-0.27, 0.0, -0.2], [0.27, 0.64, 0.2], 0.005), 4200)],
-    ['civChestSuit', () => simplify(civChestModel('suit').mesh([-0.27, 0.0, -0.2], [0.27, 0.64, 0.2], 0.005), 4500)],
-    ['civChestF', () => simplify(civChestModel('blouse').mesh([-0.26, 0.0, -0.2], [0.26, 0.64, 0.2], 0.005), 4200)],
-    ['civHead', () => simplify(civHeadModel('m').mesh([-0.13, -0.04, -0.14], [0.13, 0.24, 0.14], 0.003), 3800)],
-    ['civHeadF', () => simplify(civHeadModel('f').mesh([-0.13, -0.06, -0.18], [0.13, 0.24, 0.14], 0.003), 4200)],
-    ['civHood', () => simplify(civHeadModel('hood').mesh([-0.16, -0.14, -0.16], [0.16, 0.28, 0.16], 0.004), 3000)],
-    ['civUpperArm', () => simplify(civUpperArmModel(R.SHIRT).mesh([-0.08, -0.36, -0.08], [0.08, 0.07, 0.08], 0.0045), 1300)],
-    ['civUpperArmJ', () => simplify(civUpperArmModel(R.VEST).mesh([-0.08, -0.36, -0.08], [0.08, 0.07, 0.08], 0.0045), 1300)],
-    ['civForeArm', () => simplify(civForeArmModel(R.SHIRT).mesh([-0.07, -0.32, -0.07], [0.07, 0.06, 0.07], 0.004), 1400)],
-    ['civForeArmJ', () => simplify(civForeArmModel(R.VEST).mesh([-0.07, -0.32, -0.07], [0.07, 0.06, 0.07], 0.004), 1400)],
-    ['civHandR', () => simplify(civHandModel(-1).mesh([-0.07, -0.16, -0.04], [0.07, 0.03, 0.08], 0.0022), 1500)],
-    ['civHandL', () => simplify(civHandModel(1).mesh([-0.07, -0.16, -0.04], [0.07, 0.03, 0.08], 0.0022), 1500)],
-    ['civThigh', () => simplify(civThighModel().mesh([-0.11, -0.5, -0.1], [0.11, 0.1, 0.11], 0.005), 1800)],
-    ['civShin', () => simplify(civShinModel().mesh([-0.08, -0.49, -0.08], [0.08, 0.08, 0.2], 0.0045), 2400)],
+    ['pelvis', () => S(pelvisModel().mesh([-0.24, -0.26, -0.22], [0.24, 0.1, 0.2], c(0.0055)), 3200)],
+    ['chest', () => S(chestModel(false).mesh([-0.28, 0.0, -0.26], [0.28, 0.64, 0.24], c(0.0055)), 7000)],
+    ['chestHeavy', () => S(chestModel(true).mesh([-0.3, 0.0, -0.28], [0.3, 0.64, 0.25], c(0.0055)), 7500)],
+    ['head', () => S(headModel().mesh([-0.15, -0.03, -0.18], [0.15, 0.26, 0.15], c(0.0032)), 5500)],
+    ['nvg', () => S(nvgModel().mesh([-0.07, 0.07, 0.09], [0.07, 0.21, 0.19], c(0.002)), 1500)],
+    ['upperArm', () => S(upperArmModel().mesh([-0.08, -0.37, -0.08], [0.08, 0.07, 0.08], c(0.0045)), 1600)],
+    ['foreArm', () => S(foreArmModel().mesh([-0.07, -0.34, -0.07], [0.07, 0.06, 0.07], c(0.004)), 1500)],
+    ['handR', () => { const g = soldierGlove(1); return S(g.m.mesh(g.min, g.max, c(0.0016)), 2200); }],
+    ['handL', () => { const g = soldierGlove(-1); return S(g.m.mesh(g.min, g.max, c(0.0016)), 2200); }],
+    ['thigh', () => S(thighModel().mesh([-0.12, -0.5, -0.11], [0.12, 0.1, 0.12], c(0.0055)), 2200)],
+    ['shin', () => S(shinModel().mesh([-0.08, -0.49, -0.09], [0.08, 0.08, 0.2], c(0.0045)), 2600)],
+    ['civPelvis', () => S(civPelvisModel().mesh([-0.22, -0.26, -0.2], [0.22, 0.12, 0.2], c(0.005)), 2400)],
+    ['civChest', () => S(civChestModel('shirt').mesh([-0.27, 0.0, -0.2], [0.27, 0.64, 0.2], c(0.005)), 4200)],
+    ['civChestSuit', () => S(civChestModel('suit').mesh([-0.27, 0.0, -0.2], [0.27, 0.64, 0.2], c(0.005)), 4500)],
+    ['civChestF', () => S(civChestModel('blouse').mesh([-0.26, 0.0, -0.2], [0.26, 0.64, 0.2], c(0.005)), 4200)],
+    ['civHead', () => S(civHeadModel('m').mesh([-0.13, -0.04, -0.14], [0.13, 0.24, 0.14], c(0.003)), 3800)],
+    ['civHeadF', () => S(civHeadModel('f').mesh([-0.13, -0.06, -0.18], [0.13, 0.24, 0.14], c(0.003)), 4200)],
+    ['civHood', () => S(civHeadModel('hood').mesh([-0.16, -0.14, -0.16], [0.16, 0.28, 0.16], c(0.004)), 3000)],
+    ['civUpperArm', () => S(civUpperArmModel(R.SHIRT).mesh([-0.08, -0.36, -0.08], [0.08, 0.07, 0.08], c(0.0045)), 1300)],
+    ['civUpperArmJ', () => S(civUpperArmModel(R.VEST).mesh([-0.08, -0.36, -0.08], [0.08, 0.07, 0.08], c(0.0045)), 1300)],
+    ['civForeArm', () => S(civForeArmModel(R.SHIRT).mesh([-0.07, -0.32, -0.07], [0.07, 0.06, 0.07], c(0.004)), 1400)],
+    ['civForeArmJ', () => S(civForeArmModel(R.VEST).mesh([-0.07, -0.32, -0.07], [0.07, 0.06, 0.07], c(0.004)), 1400)],
+    ['civHandR', () => S(civHandModel(-1).mesh([-0.07, -0.16, -0.04], [0.07, 0.03, 0.08], c(0.0022)), 1500)],
+    ['civHandL', () => S(civHandModel(1).mesh([-0.07, -0.16, -0.04], [0.07, 0.03, 0.08], c(0.0022)), 1500)],
+    ['civThigh', () => S(civThighModel().mesh([-0.11, -0.5, -0.1], [0.11, 0.1, 0.11], c(0.005)), 1800)],
+    ['civShin', () => S(civShinModel().mesh([-0.08, -0.49, -0.08], [0.08, 0.08, 0.2], c(0.0045)), 2400)],
   ];
   for (let i = 0; i < jobs.length; i++) {
     if (only && !only.includes(jobs[i][0])) continue;
@@ -580,7 +585,7 @@ export async function buildAll(onProgress, only = null) {
   };
   for (const [name, tris] of Object.entries(LOD)) {
     if (only && !only.includes(name) && !only.includes(name + 'L')) continue;
-    if (cache[name]) cache[name + 'L'] = simplify(cache[name], tris, 0.08);
+    if (cache[name]) cache[name + 'L'] = simplify(cache[name], hq ? tris * 3 : tris, hq ? 0.04 : 0.08);
   }
   ready = true;
   return cache;

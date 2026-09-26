@@ -117,8 +117,21 @@ export function fabricMaterial(palette) {
           base *= 1.0 - (1.0 - web) * 0.18 * mol;
         }
         float grime = tri(weaveMap, vObjPos * 1.3, tw).g;
-        base *= 0.92 + grime * 0.12;
+        bool skin = ri == ${R.FACE} && regionWeave[ri] < 0.01;
+        if (skin) {
+          // skin: fine pores instead of cloth weave, and blotchy colour (redder here, paler there)
+          fh = (tri(weaveMap, vObjPos * 55.0, tw).g - 0.5) * 0.012;
+          float blot = tri(weaveMap, vObjPos * 2.1, tw).g - 0.5;
+          base *= vec3(1.0 + blot * 0.1, 1.0 - blot * 0.03, 1.0 - blot * 0.06);
+        } else base *= 0.92 + grime * 0.12;
         diffuseColor.rgb *= base;`)
+      .replace('#include <lights_physical_fragment>', `#include <lights_physical_fragment>
+        #ifdef USE_SHEEN
+          if (skin) material.sheenColor = vec3(0.0); // no cloth sheen on skin
+        #endif`)
+      .replace('#include <aomap_fragment>', `#include <aomap_fragment>
+        // light scattering under the skin: the lit side glows warm, shadow edges go red rather than grey
+        if (skin) { reflectedLight.directDiffuse *= vec3(1.12, 0.98, 0.9); reflectedLight.indirectDiffuse *= vec3(1.1, 0.97, 0.92); }`)
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = regionRough[ri];')
       .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = regionMetal[ri];')
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>

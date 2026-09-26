@@ -8,7 +8,9 @@ const OUT = path.join(ROOT, 'www');
 const FILES = ['index.html', 'style.css', 'manifest.webmanifest', 'sw.js', 'src', 'vendor', 'assets', 'icons'];
 
 fs.rmSync(OUT, { recursive: true, force: true });
-for (const f of FILES) fs.cpSync(path.join(ROOT, f), path.join(OUT, f), { recursive: true });
+// the Cinematic (gaming PC) sculpts never load on a phone: leave them out of the app
+const phone = (src) => !/_hq\.js$/.test(src);
+for (const f of FILES) fs.cpSync(path.join(ROOT, f), path.join(OUT, f), { recursive: true, filter: phone });
 let n = 0;
 const count = (p) => { for (const e of fs.readdirSync(p, { withFileTypes: true })) e.isDirectory() ? count(path.join(p, e.name)) : n++; };
 count(OUT);

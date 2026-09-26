@@ -1,9 +1,12 @@
 // Decodes the prebuilt SDF meshes (see tools/build-meshes.mjs) into geometries.
 import * as THREE from 'three';
-import { HEADER, DATA } from './meshdata.js';
+import * as REGULAR from './meshdata.js';
 
-let cache = null;
+let SRC = REGULAR, cache = null;
+/** Swaps in another mesh set (the Cinematic high-detail sculpts) before anything is built. */
+export function useMeshData(mod) { SRC = mod; cache = null; }
 export function meshes() {
+  const { HEADER, DATA } = SRC;
   if (cache) return cache;
   const bin = Uint8Array.from(atob(DATA), (c) => c.charCodeAt(0)).buffer;
   cache = {};
