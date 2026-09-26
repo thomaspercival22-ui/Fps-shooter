@@ -277,6 +277,7 @@ export class Game {
     this.hud.show(true);
     this.hud.setScore(0);
     this.hud.setObjective(null);
+    this.drone.reset(); // before the mission, which may issue fewer drones
     this.mission?.dispose?.();
     this.mission = this.missionKey === 'tower' ? new TowerMission(this) : this.missionKey === 'sniper' ? new SniperMission(this) : null;
     document.body.classList.toggle('sniper-mission', this.missionKey === 'sniper');
@@ -286,7 +287,6 @@ export class Game {
     this.audio.startAmbience();
     this.flashAmount = 0;
     this.viewMode = 'normal';
-    this.drone.reset();
     this.hud.droneMode(false);
     this.setTimeOfDay(settings.time === 'night');
   }

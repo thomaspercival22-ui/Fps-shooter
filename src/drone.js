@@ -87,9 +87,11 @@ export class Drone {
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
     fwd.y = Math.max(fwd.y, 0.1); fwd.normalize();
     const start = p.eye.clone().add(new THREE.Vector3(0, 0.25, 0));
-    const h = g.level.world.raycast(start.x, start.y, start.z, fwd.x, fwd.y, fwd.z, 1.2);
-    this.pos.copy(start).addScaledVector(fwd, h ? Math.max(0.2, h.t - 0.3) : 0.9);
-    this.vel.copy(fwd).multiplyScalar(4).add(new THREE.Vector3(0, 2, 0));
+    const h = g.level.world.raycast(start.x, start.y, start.z, fwd.x, fwd.y, fwd.z, 3);
+    const clear = h ? h.t : 3;
+    this.pos.copy(start).addScaledVector(fwd, Math.min(0.9, Math.max(0.2, clear - 0.3)));
+    // tossed forward, but only as hard as the space allows: launched facing a wall it goes up, not into it
+    this.vel.copy(fwd).multiplyScalar(Math.min(4, Math.max(0, (clear - 0.9) * 2))).add(new THREE.Vector3(0, 2, 0));
     this.yaw = p.yaw; this.pitch = -0.08;
     this.bodyPitch = 0; this.bodyRoll = 0;
     this.battery = 1; this.flightT = 0; this.lostT = 0;
