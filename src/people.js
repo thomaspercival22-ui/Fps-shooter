@@ -184,6 +184,9 @@ export class Body {
       }
     });
     for (const m of this.far) m.visible = false;
+    // one skeleton for every part (the clone gives each mesh its own): one bone texture, updated once a frame
+    this.skeleton = this.near[0].skeleton;
+    for (const m of [...this.near, ...this.far]) if (m.skeleton !== this.skeleton) m.bind(this.skeleton, m.bindMatrix);
     this.bones = tpl.names.map((n) => byName[n]);
     const n = this.bones.length;
     this.wq = Array.from({ length: n }, () => new THREE.Quaternion());
@@ -194,6 +197,8 @@ export class Body {
   }
 
   get meshes() { return [...this.near, ...this.far]; }
+  /** Frees the bone texture (the geometry and materials are shared with the template). */
+  dispose() { this.skeleton.dispose(); }
   /** Shows or hides the parts made of materials matching `re` (e.g. hair under a hood). */
   showParts(re, on) { for (const m of this.meshes) if (re.test(m.material.name)) m.userData.hidden = !on; this._vis(); }
   _vis() { for (const m of this.near) m.visible = !this.isFar && !m.userData.hidden; for (const m of this.far) m.visible = this.isFar && !m.userData.hidden; }

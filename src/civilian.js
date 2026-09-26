@@ -255,7 +255,7 @@ export class Civilian {
     this.mgr.onDeath(this, source);
   }
 
-  dispose() { this.game.scene.remove(this.root); }
+  dispose() { this.game.scene.remove(this.root); if (this.body) this.body.dispose(); }
 
   // ---------------- per frame ----------------
   update(dt) {

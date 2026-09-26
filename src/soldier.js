@@ -283,6 +283,7 @@ export class Soldier {
 
   dispose() {
     this.scene.remove(this.root);
+    if (this.body) this.body.dispose();
     if (this.gun.parent === this.scene) this.scene.remove(this.gun);
   }
 
