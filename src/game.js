@@ -22,6 +22,7 @@ import { Drone } from './drone.js';
 import { soldierOptions, Soldier } from './soldier.js';
 import { nightSkyTexture } from './textures.js';
 import { Rain } from './weather.js';
+import { POM_DEPTH } from './terrain.js';
 
 // Direction of the moon painted into the night sky texture.
 const MOON_DIR = (() => {
@@ -187,6 +188,8 @@ export class Game {
     }
     const r = this.renderer;
     this.post.setQuality(name);
+    // the ground's parallax ray-march is the costliest shader in view: Low goes without it
+    POM_DEPTH.value = name === 'low' ? 0 : 0.028;
     const fog = this.post.ao ? null : this.fog;
     const type = q.soft ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
     if (r.shadowMap.enabled !== q.shadows || r.shadowMap.type !== type || this.scene.fog !== fog) {

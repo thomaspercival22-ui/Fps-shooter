@@ -30,6 +30,9 @@ const WORLD_VARYING = `#include <worldpos_vertex>
  * stones and ruts have real depth. The patch mask blends by height (stones of
  * one material poke through the other) and a large-scale noise breaks up tiling.
  */
+/** Parallax depth of the ground, shared by every level; 0 turns the ray-march off (the Low preset). */
+export const POM_DEPTH = { value: 0.028 };
+
 export function groundMaterial(assets) {
   const mat = pbrMaterial(assets, 'gravelly_sand', { color: 0xf2e2c8, normalScale: 1.25 });
   mat.aoMap = null; // the scanned AO is applied in the shader below (blended with the dry ground)
@@ -39,7 +42,7 @@ export function groundMaterial(assets) {
   const uniforms = {
     heightMap: { value: assets.groundHeight }, macroMap: { value: macro },
     dryMap: { value: dry.diff }, dryNor: { value: dry.nor }, dryArm: { value: dry.arm },
-    pomDepth: { value: 0.028 }, dryTint: { value: new THREE.Color(0xe6cfb0) },
+    pomDepth: POM_DEPTH, dryTint: { value: new THREE.Color(0xe6cfb0) },
     wet: { value: 0 }, rainTime: { value: 0 },
   };
   mat.userData.groundUniforms = uniforms;
@@ -74,7 +77,7 @@ export function groundMaterial(assets) {
           vec3 toCam = cameraPosition - vSurfWorld;
           float dist = length(toCam);
           float fade = 1.0 - smoothstep(9.0, 26.0, dist);
-          if (fade > 0.01) {
+          if (fade > 0.01 && pomDepth > 0.0) {
             // tangent frame of the ground: u = +x, v = -z, n = +y
             vec3 V = toCam / dist;
             vec3 Vt = vec3(V.x, -V.z, max(V.y, 0.08));
