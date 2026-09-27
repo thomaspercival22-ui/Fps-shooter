@@ -18,3 +18,9 @@ Rigged characters licensed under Creative Commons Attribution 4.0 (CC BY 4.0); w
 - **MrsFirst - LOD Lady character** by egunoff: https://sketchfab.com/3d-models/625592f5ffc9470391ce30bbc24c70db (CC BY 4.0)
 - **Nasier - LOD Man character** by egunoff: https://sketchfab.com/3d-models/fa435c444771472d97a8bdbd3db6f545 (CC BY 4.0)
 - **Veronica - LOD Lady character** by egunoff: https://sketchfab.com/3d-models/93375bff36fe43958668f2d2333818a2 (CC BY 4.0)
+
+## Chaos mode cartoon characters
+
+- **Green Alien** by strielecki: https://sketchfab.com/3d-models/9096e628a04242708126cf7b7c8008a1 (CC BY 4.0)
+- **Gangnam Style Dancing Rabbit Character** by antonmoek: https://sketchfab.com/3d-models/a06d60f0ab144adc982cdc94bf24e368 (CC BY 4.0)
+- **Low Poly Game Character Skins [ PACK | RIGGED]** by micaelsampaio: https://sketchfab.com/3d-models/c23ffc918c7e4703aa13ec4abe9bfd4b (CC BY 4.0)

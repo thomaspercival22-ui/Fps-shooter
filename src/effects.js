@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import * as TX from './textures.js';
 import { gunMaterials, magazineGeometry, viewmodelGunMaterial } from './gunmodels.js';
+import { confettiTexture, creamTexture, CONFETTI_COLORS } from './chaos.js';
 
 class Particles {
   constructor(scene, max, map, blending, { depthWrite = false } = {}) {
@@ -65,7 +66,7 @@ class Particles {
       const dr = Math.max(0, 1 - q.drag * dt);
       q.vx *= dr; q.vy = q.vy * dr - q.grav * dt; q.vz *= dr;
       q.x += q.vx * dt; q.y += q.vy * dt; q.z += q.vz * dt;
-      if (q.y < 0.01 && q.grav > 0) { q.y = 0.01; q.vy *= -0.3; q.vx *= 0.6; q.vz *= 0.6; }
+      if (q.y < 0.01 && q.grav > 0) { q.y = 0.01; q.vy *= -0.3; q.vx *= 0.6; q.vz *= 0.6; q.spin *= 0.5; }
       q.rot += q.spin * dt;
       const t = q.life / q.maxLife;
       const alpha = q.a * (q.fadeIn ? Math.min(1, t / q.fadeIn) : 1) * (1 - Math.pow(t, q.fade));
@@ -152,6 +153,9 @@ export class Effects {
     this.sparks = new Particles(scene, 300, glow, THREE.AdditiveBlending);
     this.fire = new Particles(scene, 120, smoke, THREE.AdditiveBlending);
     this.debris = new Particles(scene, 300, glow, THREE.NormalBlending);
+    // chaos mode: paper confetti and blobs of cream
+    this.confettiP = new Particles(scene, 1800, confettiTexture(), THREE.NormalBlending);
+    this.cream = new Particles(scene, 240, smoke, THREE.NormalBlending);
 
     // decals
     const holeMat = new THREE.MeshStandardMaterial({ map: TX.bulletHoleTexture(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4, roughness: 0.9 });
@@ -164,6 +168,10 @@ export class Effects {
     this.scorch = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), scorchMat, 24);
     this.scorch.count = 0; this.scorchIdx = 0; this.scorch.frustumCulled = false;
     scene.add(this.scorch);
+    const creamMat = new THREE.MeshStandardMaterial({ map: creamTexture(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4, roughness: 0.35 });
+    this.creamDecals = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), creamMat, 40);
+    this.creamDecals.count = 0; this.creamIdx = 0; this.creamDecals.frustumCulled = false;
+    scene.add(this.creamDecals);
 
     // brass
     const m = gunMaterials();
@@ -197,10 +205,11 @@ export class Effects {
   }
 
   /** Unlit particles (dust, smoke) must darken with the scene at night; glowing ones don't. */
-  setLight(k) { for (const ps of [this.dust, this.smoke, this.debris]) ps.mat.uniforms.lightK.value = k; }
+  setLight(k) { for (const ps of [this.dust, this.smoke, this.debris, this.confettiP, this.cream]) ps.mat.uniforms.lightK.value = k; }
+  get systems() { return [this.dust, this.smoke, this.sparks, this.fire, this.debris, this.confettiP, this.cream]; }
 
   setFog(color, near, far, scale) {
-    for (const ps of [this.dust, this.smoke, this.sparks, this.fire, this.debris]) {
+    for (const ps of this.systems) {
       ps.mat.uniforms.fogColor.value.copy(color);
       ps.mat.uniforms.fogNear.value = near;
       ps.mat.uniforms.fogFar.value = far;
@@ -209,8 +218,9 @@ export class Effects {
   }
 
   clear() {
-    for (const ps of [this.dust, this.smoke, this.sparks, this.fire, this.debris]) ps.p.length = 0;
+    for (const ps of this.systems) ps.p.length = 0;
     this.holes.count = 0; this.holeIdx = 0;
+    this.creamDecals.count = 0; this.creamIdx = 0;
     this.scorch.count = 0; this.scorchIdx = 0;
     for (const s of Object.values(this.shellMeshes)) { s.list.length = 0; s.im.count = 0; }
     for (const m of this.mags) this.game.scene.remove(m.mesh);
@@ -275,6 +285,48 @@ export class Effects {
         r: 0.35, g: 0.03, b: 0.02, a: 0.8, fade: 1.2,
       });
     }
+  }
+
+  /**
+   * Chaos mode: a burst of paper confetti from `pos` along `dir` (a cone `cone` wide, radians),
+   * `n` pieces at about `speed` m/s. The strips flutter: heavy drag, light gravity, fast spin.
+   */
+  confetti(pos, dir, n, speed, cone = 0.35) {
+    for (let i = 0; i < n; i++) {
+      const c = CONFETTI_COLORS[(Math.random() * CONFETTI_COLORS.length) | 0], sp = speed * (0.35 + Math.random() * 0.8);
+      const jx = (Math.random() - 0.5) * 2 * cone, jy = (Math.random() - 0.5) * 2 * cone, jz = (Math.random() - 0.5) * 2 * cone;
+      this.confettiP.emit({ x: pos.x, y: pos.y, z: pos.z, vx: (dir.x + jx) * sp, vy: (dir.y + jy) * sp + Math.random() * 0.8, vz: (dir.z + jz) * sp,
+        size: 0.035 + Math.random() * 0.03, drag: 3.2 + Math.random() * 1.5, grav: 1.6 + Math.random() * 1.2, maxLife: 4 + Math.random() * 5,
+        r: c[0], g: c[1], b: c[2], a: 1, fade: 6, spin: (Math.random() - 0.5) * 22 });
+    }
+  }
+  /** A streamer of confetti hanging in the air along a round's path (from a to b). */
+  confettiTrail(a, b, step = 1.1) {
+    const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z, len = Math.hypot(dx, dy, dz);
+    const n = Math.min(24, Math.floor(len / step));
+    for (let i = 0; i < n; i++) {
+      const t = (i + Math.random()) / n, c = CONFETTI_COLORS[(Math.random() * CONFETTI_COLORS.length) | 0];
+      this.confettiP.emit({ x: a.x + dx * t, y: a.y + dy * t, z: a.z + dz * t, vx: (Math.random() - 0.5) * 0.8 + dx / len * 1.5, vy: Math.random() * 0.4, vz: (Math.random() - 0.5) * 0.8 + dz / len * 1.5,
+        size: 0.03 + Math.random() * 0.025, drag: 3, grav: 1.2 + Math.random(), maxLife: 1.5 + Math.random() * 2, r: c[0], g: c[1], b: c[2], a: 1, fade: 5, spin: (Math.random() - 0.5) * 20 });
+    }
+  }
+  /** A pie hitting something: cream spraying out along the surface normal, a blob stuck where it hit. */
+  creamSplat(pt, n, decal = true) {
+    for (let i = 0; i < 18; i++) {
+      const sp = 1 + Math.random() * 3.5;
+      this.cream.emit({ x: pt.x, y: pt.y, z: pt.z, vx: n.x * sp + (Math.random() - 0.5) * 3, vy: n.y * sp + Math.random() * 2.5, vz: n.z * sp + (Math.random() - 0.5) * 3,
+        size: 0.05 + Math.random() * 0.08, grow: 0.4, drag: 1.2, grav: 7, maxLife: 0.6 + Math.random() * 0.6, r: 0.98, g: 0.95, b: 0.86, a: 0.95, fade: 3, spin: Math.random() * 2 });
+    }
+    for (let i = 0; i < 6; i++) this.debris.emit({ x: pt.x, y: pt.y, z: pt.z, vx: (Math.random() - 0.5) * 4, vy: 1 + Math.random() * 3, vz: (Math.random() - 0.5) * 4,
+      size: 0.03 + Math.random() * 0.02, grav: 9.8, drag: 0.5, maxLife: 0.8, r: 0.78, g: 0.52, b: 0.26, a: 1, fade: 4 }); // bits of pastry
+    if (!decal) return;
+    const q = this._q.setFromUnitVectors(this._z, n).multiply(new THREE.Quaternion().setFromAxisAngle(this._z, Math.random() * 6.28));
+    const s = 0.45 + Math.random() * 0.25;
+    this._m.compose(pt.clone().addScaledVector(n, 0.006), q, this._s.set(s, s, s));
+    this.creamDecals.setMatrixAt(this.creamIdx, this._m);
+    this.creamIdx = (this.creamIdx + 1) % 40;
+    this.creamDecals.count = Math.min(40, this.creamDecals.count + 1);
+    this.creamDecals.instanceMatrix.needsUpdate = true;
   }
 
   muzzleLight(pos) { this.flashLight.position.copy(pos); this.flashLight.intensity = 5; }
@@ -360,7 +412,7 @@ export class Effects {
 
   update(dt) {
     const g = this.game, W = g.level.world;
-    for (const ps of [this.dust, this.smoke, this.sparks, this.fire, this.debris]) ps.update(dt);
+    for (const ps of this.systems) ps.update(dt);
     this.flashLight.intensity = Math.max(0, this.flashLight.intensity - dt * 110);
     this.enemyLight.intensity = Math.max(0, this.enemyLight.intensity - dt * 80);
     this.boomLight.intensity = Math.max(0, this.boomLight.intensity - dt * 260);

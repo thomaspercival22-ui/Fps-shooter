@@ -2,11 +2,12 @@
 
 *TIPS ultimate FPS shooter game*
 
-A tactical first-person shooter built for phones. You play in landscape with touch controls, and after the first load it runs completely offline. There are three missions (pick one under **Mission** in the menu):
+A tactical first-person shooter built for phones. You play in landscape with touch controls, and after the first load it runs completely offline. There are four missions (pick one under **Mission** in the menu):
 
 - **Compound Defence:** hold a desert compound against waves of squad-based enemies that take cover, flank you, suppress you and throw grenades.
 - **Tower Hostage Rescue:** a close-quarters assault on floor 47 of an office tower. There are no waves: 16 hostiles are at their posts, 4 hostages are held at gunpoint, and civilians hide among the desks.
 - **Overwatch:** a sniper mission from a ridge about 580 m from the compound. You make precision shots with wind, bullet drop, a rangefinder, a variable-power scope and a spotter who calls your shots.
+- **Chaos:** the compound under a rainbow sky, overrun by waves of cartoon characters. Every gun shoots confetti, which hurts nobody. Only a cream pie takes anyone out, and the toons throw them back.
 
 ![Gameplay](docs/screenshot.jpg)
 
@@ -59,6 +60,13 @@ This is a debug-signed build for your own phones. Publishing on the Play Store n
   - **The spotter** kneels beside you on his spotting scope. He gives you range, dial and wind hold when you lase ("594 metres. Dial 600, hold 0.7 mil left."), calls every shot ("Miss, 40 cm high, 1.1 m left. Splash 0.6 mil high, 1.8 mil left. Hold the dot on him." / "Hit. Target down."), and updates the wind.
   - **Splash dot:** after each call, the spotter marks the round's splash on your reticle. The dot shows where the round went relative to where your crosshair was when the shot broke: orange for a miss, green for a hit, red for a civilian. It includes the reading in mils. Put the dot on the target and fire to correct for the wind and range you just saw. The dot dims when you fire again and clears after 25 s. It disappears for good if the marksman kills your spotter.
   - **Counter-sniper:** there is a marksman on the guard house roof, beside the HQ. Once you start shooting, every muzzle blast helps him find the hide. When he has it, his scope glints. If you take too long, his first round cracks past, his second kills your spotter, and then he walks his rounds onto you. Kill him first. Other hostiles run for cover or into buildings when rounds land near them. Civilian workers are around the compound, so make sure of your target.
+- **Chaos mode (Mission → Chaos):**
+  - **The toons:** original cartoon characters (a green alien, a rabbit in swimming trunks, a bearded grandpa in a tracksuit, a mad scientist, a secret agent and a masked hero) come in waves, with the same squad AI as the soldiers. They have silly callouts ("Pie incoming!", "Hey! That tickles!") and names in the kill feed.
+  - **The sky** is a rainbow, from red on the horizon to violet overhead, with fat white clouds. Chaos is always daytime and dry, whatever the time and weather settings say.
+  - **Confetti guns:** every gun, yours and theirs, fires party poppers. Rounds trail streamers and burst into confetti on walls and people. A toon you tag squeaks and flinches, but nobody takes damage, no bullet holes and no brass.
+  - **Pies are the only weapon.** The grenade button throws a lemon meringue pie (a real model) in a flat arc to the crosshair. A direct hit, or a pie landing at a toon's feet, takes him out with a slide-whistle and leaves the pie on his face. You start with 5 and carry up to 8: clearing a wave gives you 3 more, fallen toons drop some, and the HQ crate fills you up.
+  - **They throw back:** a toon who can see you lobs a pie at you, leading you if you move. A pink dot on the minimap and the grenade warning show pies in the air: step aside. A hit costs health (scaled by difficulty) and plasters cream over your view until it slides off.
+  - **The FPV drone carries a pie:** it bursts into cream and confetti and takes out every toon close by.
 - **Real gunshots:** every gun plays real recordings of real firearms (public domain, from freesound.org), not synthesised sound.
   - **Your guns:** the suppressed M4 is a suppressed shot's pop layered with the supersonic crack of a 5.56 round and the AR's bolt carrier cycling. The G17 is a Glock 19X and a 9 mm. The M1014 is a shotgun, pitched down towards 12-gauge. The MK13 is a 6.5×55 bolt rifle fired in a forest, with its long natural roll but not its echo.
   - **Enemies:** AK-47 recordings for the riflemen and AR15 recordings for the marksman and heavy.
@@ -193,6 +201,7 @@ src/
   main.js      boot, menus, settings, mission select, debrief
   game.js      main loop, level switching, waves, scoring, explosions, flashbangs
   missions.js  the Tower hostage rescue and Overwatch sniper missions (objectives, executions, spotter, counter-sniper, grading)
+  chaos.js     chaos mode's pieces: rainbow sky, confetti and cream textures, the pie, toon names and lines
   level.js     the compound map, the sniper ridge and hide, collision boxes, nav grid, cover points
   tower.js     Meridian Tower floor 47, its scenario and the city below
   officetex.js procedural carpet, ceiling tiles, wood, stone, screens, signage
@@ -246,8 +255,8 @@ vendor/meshopt/  meshoptimizer decoder for the compressed gun meshes
 - Real 3D models from Sketchfab under Creative Commons Attribution 4.0 (CC BY 4.0); they were resized, cut into parts, simplified and re-encoded for the game. Titles, authors and links:
   - guns, sights and suppressor: [assets/guns/CREDITS.md](assets/guns/CREDITS.md) (nixo_design, drcrazzie, Urpo, TheWarVet)
   - first-person arms: [assets/arms/CREDITS.md](assets/arms/CREDITS.md) (bumstrum)
-  - soldiers and civilians: [assets/people/CREDITS.md](assets/people/CREDITS.md) (doctortex, jeandiz, egunoff)
-  - furniture: [assets/props/CREDITS.md](assets/props/CREDITS.md) (nokillnando, tylerhalterman, tboiston, mozillareality, koksky; the rest are Poly Haven scans, CC0)
+  - soldiers, civilians and chaos mode's cartoon characters: [assets/people/CREDITS.md](assets/people/CREDITS.md) (doctortex, jeandiz, egunoff, strielecki, antonmoek, micaelsampaio)
+  - furniture and the pie: [assets/props/CREDITS.md](assets/props/CREDITS.md) (nokillnando, tylerhalterman, tboiston, mozillareality, koksky, mauricesvay; the rest are Poly Haven scans, CC0)
   - buildings: [assets/buildings/CREDITS.md](assets/buildings/CREDITS.md) (yadrogames, 123a9el)
   - city skyline: [assets/city/CREDITS.md](assets/city/CREDITS.md) (jvaughan, sumitmangela, mitya-petrov, novusod, hamma085)
 - The office tower itself, the compound's warehouse and perimeter wall, sandbags, HESCO barriers, the sculpted fallback guns and people, all effects and all synthesised audio are generated in code.

@@ -35,6 +35,12 @@ export class HUD {
     this.white = document.createElement('div');
     Object.assign(this.white.style, { position: 'fixed', inset: '0', background: '#fff', opacity: '0', pointerEvents: 'none', zIndex: '7' });
     document.body.appendChild(this.white);
+    // chaos mode: a pie in the face
+    this.creamEl = document.createElement('canvas');
+    this.creamEl.width = 480; this.creamEl.height = 270;
+    Object.assign(this.creamEl.style, { position: 'fixed', inset: '0', width: '100%', height: '100%', opacity: '0', pointerEvents: 'none', zIndex: '6' });
+    document.body.appendChild(this.creamEl);
+    this.creamT = 0;
     this.hitT = 0;
     this.hurtT = 0;
     this.suppressT = 0;
@@ -49,7 +55,7 @@ export class HUD {
     this.spread = 0;
   }
 
-  show(on) { this.el.hud.classList.toggle('hidden', !on); document.getElementById('touch').classList.toggle('hidden', !on || !this.game.input.touchMode);
+  show(on) { this.creamT = 0; this.creamEl.style.opacity = '0'; this.el.hud.classList.toggle('hidden', !on); document.getElementById('touch').classList.toggle('hidden', !on || !this.game.input.touchMode);
     document.getElementById('pause-hint').classList.toggle('hidden', this.game.input.touchMode); }
 
   resize(w, h) {
@@ -122,6 +128,40 @@ export class HUD {
     el.className = 'dmg-ind';
     this.el.dmg.appendChild(el);
     this.indicators.push({ el, x, z, t: 1.6 });
+  }
+
+  /** Chaos mode: cream all over the view, sliding off over a few seconds. */
+  cream() {
+    const c = this.creamEl, ctx = c.getContext('2d'), W = c.width, H = c.height;
+    ctx.clearRect(0, 0, W, H);
+    const R = (a, b) => a + Math.random() * (b - a);
+    // whipped cream: lumpy splats of overlapping dollops, each with drips running down
+    for (let k = 0; k < 4; k++) {
+      const cx = R(0.12, 0.88) * W, cy = R(0.1, 0.7) * H, size = R(0.1, 0.19) * W;
+      ctx.fillStyle = '#fbf6e8';
+      ctx.shadowColor = 'rgba(120,100,70,0.45)'; ctx.shadowBlur = 10; ctx.shadowOffsetY = 4;
+      for (let i = 0; i < 4; i++) {
+        const x = cx + R(-0.25, 0.25) * size, drop = R(0.3, 1.1) * size, w = R(0.05, 0.1) * size;
+        ctx.beginPath(); ctx.roundRect(x - w, cy, w * 2, drop, w); ctx.fill();
+      }
+      for (let i = 0; i < 14; i++) {
+        const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * size * 0.55, r = R(0.18, 0.38) * size;
+        ctx.beginPath(); ctx.arc(cx + Math.cos(a) * d, cy + Math.sin(a) * d * 0.8, r, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.shadowColor = 'transparent';
+      // a glossy highlight on the top left of the dollops
+      for (let i = 0; i < 5; i++) {
+        const x = cx + R(-0.4, 0.2) * size, y = cy + R(-0.4, 0.1) * size, r = R(0.08, 0.16) * size;
+        const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+        g.addColorStop(0, 'rgba(255,255,255,0.9)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2);
+      }
+    }
+    // a few specks of pastry
+    ctx.fillStyle = '#c98a45';
+    for (let i = 0; i < 16; i++) { ctx.beginPath(); ctx.arc(R(0, W), R(0, H), R(1, 3), 0, Math.PI * 2); ctx.fill(); }
+    this.creamT = 3.2;
+    this.creamEl.style.transform = 'translateY(0)';
   }
 
   hurt(amount) { this.hurtT = Math.min(1.5, this.hurtT + amount / 30); }
@@ -314,6 +354,12 @@ export class HUD {
     if (q !== this.last.dmgDraw) { this._drawDamage(dmgK); this.last.dmgDraw = q; }
     const vig = (0.7 + this.suppressT * 0.3).toFixed(2);
     if (this.last.vig !== vig) { e.vignette.style.opacity = vig; this.last.vig = vig; }
+    // pie in the face: clears from the middle out as it slides down
+    if (this.creamT > 0) {
+      this.creamT = Math.max(0, this.creamT - dt);
+      this.creamEl.style.opacity = Math.min(1, this.creamT / 1.4).toFixed(3);
+      this.creamEl.style.transform = `translateY(${((3.2 - this.creamT) * 6).toFixed(1)}vh)`;
+    }
     // flashbang
     if (this.flashT > 0) {
       this.flashT -= dt;
@@ -350,7 +396,7 @@ export class HUD {
 
   _grenadeIndicators(fx, fz, rx, rz) {
     const g = this.game, p = g.player;
-    const list = g.grenades.list.filter((gr) => gr.type === 'frag' && gr.pos.distanceTo(p.pos) < 11);
+    const list = g.grenades.list.filter((gr) => (gr.type === 'frag' || (gr.type === 'pie' && gr.owner !== 'player')) && gr.pos.distanceTo(p.pos) < 11);
     const els = this.el.gren.children;
     while (els.length < list.length) {
       const el = document.createElement('div'); el.className = 'gren-ind'; el.innerHTML = '<span>!</span>';
@@ -407,7 +453,7 @@ export class HUD {
       ctx.fill();
     }
     for (const gr of g.grenades.list) {
-      ctx.fillStyle = gr.type === 'frag' ? '#ffcc33' : '#bde4ff';
+      ctx.fillStyle = gr.type === 'frag' ? '#ffcc33' : gr.type === 'pie' ? '#ff8fd0' : '#bde4ff';
       ctx.beginPath();
       ctx.arc((gr.pos.x - p.pos.x) * scale, (gr.pos.z - p.pos.z) * scale, 5, 0, Math.PI * 2);
       ctx.fill();

@@ -6,7 +6,7 @@ import { Game } from './game.js';
 import { gunsReady, useGunData } from './guns.js';
 import { useMeshData } from './meshes.js';
 import { loadRealGuns } from './realguns.js';
-import { loadPeople } from './people.js';
+import { loadPeople, bodyTemplate, CARTOON_KITS } from './people.js';
 import { loadProps } from './props.js';
 import { loadBuildings } from './buildings.js';
 import { loadCity } from './city.js';
@@ -133,7 +133,7 @@ function setupUI(game) {
       b.onclick = () => { click(); settings.mission = k; saveSettings(); renderMissions(); renderPrimaries(); };
       mc.appendChild(b);
     }
-    $('menu-tag').textContent = { compound: 'Hold the compound. Survive the waves.', tower: 'Floor 47. Hostages. No second chances.', sniper: 'One ridge. One rifle. 600 metres.' }[settings.mission] || '';
+    $('menu-tag').textContent = { compound: 'Hold the compound. Survive the waves.', tower: 'Floor 47. Hostages. No second chances.', sniper: 'One ridge. One rifle. 600 metres.', chaos: 'Rainbow skies. Confetti guns. Pies only.' }[settings.mission] || '';
   };
   const dc = $('difficulty-choices');
   const renderDiff = () => {
@@ -185,8 +185,9 @@ function setupUI(game) {
     show('menu', false); show('gameover', false);
     // a level that has not been built yet takes a moment: show the loading screen while it builds
     const kind = MISSIONS[settings.mission]?.level || 'compound';
-    if (game.levelKind !== kind) {
-      $('load-text').textContent = kind === 'tower' ? 'Building Meridian Tower...' : 'Building the compound...';
+    const toons = MISSIONS[settings.mission]?.chaos && !CARTOON_KITS.every((k) => bodyTemplate(k));
+    if (game.levelKind !== kind || toons) {
+      $('load-text').textContent = toons ? 'Inflating the cartoon characters...' : kind === 'tower' ? 'Building Meridian Tower...' : 'Building the compound...';
       $('load-fill').style.width = '100%';
       show('loading');
       await new Promise((r) => setTimeout(r, 40));

@@ -66,6 +66,7 @@ export const WEAPONS = {
 export const GRENADES = {
   frag: { fuse: 3.2, radius: 9, damage: 170, throwSpeed: 15.5 },
   flash: { fuse: 1.6, radius: 22, throwSpeed: 16.5 },
+  pie: { fuse: 6, throwSpeed: 18 }, // chaos mode: flies until it hits something
   startFrag: 2, startFlash: 2, maxFrag: 3, maxFlash: 3,
 };
 

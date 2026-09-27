@@ -427,6 +427,47 @@ function impact(kind) {
   return s.render();
 }
 
+// ---------------- chaos mode ----------------
+/** Party popper: a paper snap, a soft thump and the rustle of streamers. */
+function popper(seed) {
+  const s = new Synth(0.5), r = rng(seed), R = (a, b) => a + r() * (b - a);
+  s.chain(s.noise(0.03), s.filter('highpass', R(1400, 2000)), s.env(0, 0.0004, 0.9, R(0.02, 0.035)));
+  s.chain(s.osc('sine', R(200, 260), 80, 0, 0.06), s.env(0, 0.001, 0.6, 0.05));
+  for (let i = 0; i < 16; i++) { const t = R(0.01, 0.3); s.chain(s.noise(0.015, t), s.filter('bandpass', R(3500, 7500), 3), s.env(t, 0.0005, R(0.04, 0.14), R(0.008, 0.02))); }
+  return s.render();
+}
+/** A cream pie landing: a wet slap with a squelch sweeping down, then a couple of drips. */
+function splat(seed) {
+  const s = new Synth(0.7), r = rng(seed), R = (a, b) => a + r() * (b - a);
+  const bp = s.filter('bandpass', 1400, 1.4);
+  bp.frequency.setValueAtTime(R(1300, 1700), 0); bp.frequency.exponentialRampToValueAtTime(R(220, 300), 0.22);
+  s.chain(s.noise(0.3), bp, s.env(0, 0.002, 1, 0.2));
+  s.chain(s.noise(0.05), s.filter('lowpass', 2500), s.env(0, 0.0006, 0.7, 0.03));
+  s.chain(s.osc('sine', R(95, 120), 45, 0, 0.14), s.env(0, 0.002, 0.8, 0.12));
+  for (let i = 0; i < 2; i++) { const t = R(0.2, 0.45), f = R(600, 900); s.chain(s.osc('sine', f, f * 2, t, 0.05), s.env(t, 0.002, 0.18, 0.04)); }
+  return s.render();
+}
+/** Squeaky-toy chirp: a toon tagged by confetti. */
+function squeak(f) {
+  const s = new Synth(0.3);
+  const lp = s.filter('lowpass', 3200, 1);
+  s.chain(s.osc('square', f, f * 1.9, 0, 0.07), lp, s.env(0, 0.004, 0.25, 0.07));
+  s.chain(s.osc('square', f * 1.2, f * 2.1, 0.08, 0.08), s.filter('lowpass', 3400, 1), s.env(0.08, 0.004, 0.22, 0.08));
+  return s.render();
+}
+/** Slide whistle falling: a toon going down. */
+function slideDown() {
+  const s = new Synth(0.9);
+  const o = s.osc('sine', 1500, 280, 0, 0.7);
+  const vib = s.ctx.createOscillator(); vib.frequency.value = 7; const vg = s.ctx.createGain(); vg.gain.value = 25;
+  vib.connect(vg); vg.connect(o.frequency); vib.start(0);
+  const g = s.ctx.createGain();
+  g.gain.setValueAtTime(0, 0); g.gain.linearRampToValueAtTime(0.4, 0.03); g.gain.setValueAtTime(0.4, 0.55); g.gain.exponentialRampToValueAtTime(0.001, 0.75);
+  g.connect(s.out);
+  o.connect(g);
+  return s.render();
+}
+
 /** Ricochet: the deformed bullet tumbling away with a falling whine. */
 function ricochet() {
   const s = new Synth(0.9);
@@ -635,6 +676,9 @@ export class AudioEngine {
     add('thunder', thunder());
     add('nvg', tone([[0, 2400, 0.05, 0.5], [0.05, 4800, 0.03, 0.45], [0, 900, 0.3, 0.03, 'triangle']], 0.6));
     add('thermal', tone([[0, 1250, 0.18, 0.06, 'square'], [0.1, 1650, 0.14, 0.06, 'square']], 0.25));
+    for (let i = 0; i < 3; i++) { add(`popper${i}`, popper(501 + i * 37)); add(`splat${i}`, splat(907 + i * 41)); }
+    add('squeak0', squeak(820)); add('squeak1', squeak(1040));
+    add('slideDown', slideDown());
     let done = 0;
     // real recordings (assets/audio, public domain) replace the synthesised versions they cover;
     // if they can't be loaded (first visit offline) the synthesised set is still complete

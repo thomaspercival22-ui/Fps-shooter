@@ -31,3 +31,4 @@ Poly Haven photo-scans (CC0, https://polyhaven.com) and Sketchfab models (CC BY 
 - ladder_sectioned_01: https://polyhaven.com/a/ladder_sectioned_01 (CC0)
 - barrel_stove: https://polyhaven.com/a/barrel_stove (CC0)
 - power_box_01: https://polyhaven.com/a/power_box_01 (CC0)
+- **#3DST6 Tarte au citron meringuée** by mauricesvay: https://sketchfab.com/3d-models/e20c3851d52c4261891b692a1dfc18c6 (CC BY 4.0)

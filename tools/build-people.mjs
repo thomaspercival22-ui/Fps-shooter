@@ -37,6 +37,10 @@ export const PEOPLE = {
   civ4: { title: 'MrsFirst - LOD Lady character', author: 'egunoff', uid: '625592f5ffc9470391ce30bbc24c70db', nearTris: 14000, farTris: 2500, civilian: true, height: 1.63 },
   civ5: { title: 'Nasier - LOD Man character', author: 'egunoff', uid: 'fa435c444771472d97a8bdbd3db6f545', nearTris: 14000, farTris: 2500, civilian: true, height: 1.75 },
   civ6: { title: 'Veronica - LOD Lady character', author: 'egunoff', uid: '93375bff36fe43958668f2d2333818a2', nearTris: 14000, farTris: 2500, civilian: true, height: 1.68 },
+  // Chaos mode: original cartoon characters (Mixamo rigs). `skin`: which character of a pack
+  toonAlien: { title: 'Green Alien', author: 'strielecki', uid: '9096e628a04242708126cf7b7c8008a1', nearTris: 9000, farTris: 1500, toon: true, height: 1.85 },
+  toonRabbit: { title: 'Gangnam Style Dancing Rabbit Character', author: 'antonmoek', uid: 'a06d60f0ab144adc982cdc94bf24e368', nearTris: 1300, farTris: 700, toon: true, height: 1.8 },
+  ...Object.fromEntries([0, 1, 2, 3].map((i) => [`toon${i}`, { title: 'Low Poly Game Character Skins [ PACK | RIGGED]', author: 'micaelsampaio', uid: 'c23ffc918c7e4703aa13ec4abe9bfd4b', skin: i, nearTris: 1500, farTris: 700, toon: true, height: 1.55 }])),
 };
 
 function source(uid) {
@@ -83,7 +87,7 @@ async function buildPerson(kit, cfg) {
   const doc = await io.read(source(cfg.uid));
   const root = doc.getRoot();
   await doc.transform(metalRough()); // spec-gloss materials to metal-rough
-  const skin = root.listSkins()[0];
+  const skin = root.listSkins()[cfg.skin || 0];
   const joints = skin.listJoints();
   const ibm = skin.getInverseBindMatrices();
   const jointIndex = new Map(joints.map((j, i) => [j, i]));
@@ -123,6 +127,7 @@ async function buildPerson(kit, cfg) {
   let dropped = 0;
   for (const node of meshNodes) {
     if (cfg.drop && cfg.drop.test(pathOf(node))) { dropped++; continue; }
+    if (cfg.skin !== undefined && node.getSkin() !== skin) continue; // another character of the pack
     const skinned = !!node.getSkin();
     const bone = skinned ? null : jointOf(node);
     // rigid attachments: into bind space of their bone (world_rest = boneRest * IBM * v_bind)
@@ -287,6 +292,6 @@ async function buildPerson(kit, cfg) {
 
 const only = process.argv.slice(2);
 for (const [kit, cfg] of Object.entries(PEOPLE)) if (!only.length || only.includes(kit)) await buildPerson(kit, cfg);
-const list = (civ) => Object.values(PEOPLE).filter((c) => !!c.civilian === civ).map((c) => `- **${c.title}** by ${c.author}: https://sketchfab.com/3d-models/${c.uid} (CC BY 4.0)`).join('\n');
+const list = (kind) => [...new Set(Object.values(PEOPLE).filter((c) => (c.toon ? 'toon' : c.civilian ? 'civ' : 'soldier') === kind).map((c) => `- **${c.title}** by ${c.author}: https://sketchfab.com/3d-models/${c.uid} (CC BY 4.0)`))].join('\n');
 fs.writeFileSync(path.join(OUT, 'CREDITS.md'), '# People\n\nRigged characters licensed under Creative Commons Attribution 4.0 (CC BY 4.0); weapons removed, parts merged, simplified and re-encoded for the game.\n\n## Soldiers\n\n' +
-  list(false) + '\n\n## Civilians\n\n' + list(true) + '\n');
+  list('soldier') + '\n\n## Civilians\n\n' + list('civ') + '\n\n## Chaos mode cartoon characters\n\n' + list('toon') + '\n');

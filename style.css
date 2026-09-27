@@ -156,6 +156,8 @@ body.drone #btn-nvg, body.drone #btn-thermal, body.drone #btn-mode, body.drone #
   touch-action: none;
 }
 .tbtn svg { width: 55%; height: 55%; fill: currentColor; }
+.tbtn .pie-icon, body.chaos-mode .tbtn .frag-icon { display: none; }
+body.chaos-mode .tbtn .pie-icon { display: block; }
 .tbtn.on { background: rgba(217,179,92,.45); border-color: var(--accent-2); }
 .tbtn.pressed { background: rgba(255,255,255,.28); }
 .tbtn b { position: absolute; right: -2px; bottom: -2px; font: 700 11px var(--font); background: #111; border: 1px solid #555; border-radius: 8px; padding: 0 5px; }

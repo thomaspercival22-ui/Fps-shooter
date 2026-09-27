@@ -23,6 +23,8 @@ import { soldierOptions, Soldier } from './soldier.js';
 import { nightSkyTexture } from './textures.js';
 import { Rain } from './weather.js';
 import { POM_DEPTH } from './terrain.js';
+import { CHAOS, rainbowSky, RAINBOW_HAZE, pieMesh } from './chaos.js';
+import { loadKits, CARTOON_KITS } from './people.js';
 
 // Direction of the moon painted into the night sky texture.
 const MOON_DIR = (() => {
@@ -169,6 +171,7 @@ export class Game {
   /** Builds (if needed) and switches to the mission's level, then compiles its shaders off the main thread. */
   async prepareMission(missionKey) {
     const M = MISSIONS[missionKey] || MISSIONS.compound;
+    if (M.chaos) await loadKits(CARTOON_KITS);
     if (!this._useLevel(M.level)) return;
     try { await this.renderer.compileAsync(this.scene, this.camera); } catch { /* compiled on first use instead */ }
   }
@@ -233,6 +236,7 @@ export class Game {
     this.difficulty = DIFFICULTY[settings.difficulty] || DIFFICULTY.regular;
     const M = MISSIONS[settings.mission] || MISSIONS.compound;
     this.missionKey = MISSIONS[settings.mission] ? settings.mission : 'compound';
+    this.chaos = !!M.chaos;
     this.enemies.clear();
     this.civilians.clear();
     if (this._useLevel(M.level)) this.renderer.compile(this.scene, this.camera);
@@ -255,6 +259,7 @@ export class Game {
       this.weapons.stats = { shots: 0, hits: 0 };
       this.weapons.zoomIdx = 0; this.weapons.zero = 100;
     }
+    if (this.chaos) this.weapons.frags = CHAOS.pies; // the frag pouch holds pies
     this.grenades.clear();
     this.ballistics.clear();
     this.effects.clear();
@@ -285,8 +290,10 @@ export class Game {
     this.mission = this.missionKey === 'tower' ? new TowerMission(this) : this.missionKey === 'sniper' ? new SniperMission(this) : null;
     document.body.classList.toggle('sniper-mission', this.missionKey === 'sniper');
     document.body.classList.toggle('tower-mission', this.missionKey === 'tower');
+    document.body.classList.toggle('chaos-mode', this.chaos);
     this.audio.setEnvironment(this.level.indoor ? 'indoor' : this.missionKey === 'sniper' ? 'ridge' : 'outdoor');
     if (this.mission) this.mission.start();
+    else if (this.chaos) { this.hud.setWave(1, 0); this.hud.banner('CHAOS MODE', 'Confetti can\'t hurt anyone. Pies can.', 3.5); }
     else { this.hud.setWave(1, 0); this.hud.banner('OPERATION TIPS MANIA', 'Hold the compound', 3.5); }
     this.audio.startAmbience();
     this.flashAmount = 0;
@@ -297,6 +304,7 @@ export class Game {
 
   /** Day: sun + HDR sky. Night: moonlight, stars, sodium lamps, darker fog. */
   setTimeOfDay(night) {
+    if (this.chaos) night = false; // chaos is always a bright rainbow day
     this.night = night;
     soldierOptions.night = night;
     const s = this.scene;
@@ -324,7 +332,14 @@ export class Game {
       if (this.level.lamps.parent) s.remove(this.level.lamps);
     }
     this.level.setNight?.(night);
-    this._applyWeather(settings.weather === 'rain');
+    this._applyWeather(settings.weather === 'rain' && !this.chaos);
+    if (this.chaos) {
+      s.background = rainbowSky(); s.backgroundIntensity = 1.5;
+      this.fogColor.copy(RAINBOW_HAZE);
+      this.atmos.fogColor.copy(RAINBOW_HAZE).multiplyScalar(0.8);
+      this.atmos.sunColor.setRGB(1.0, 0.72, 0.85);
+      this.atmos.fogDensity = 0.0006;
+    }
     if (this.missionKey === 'sniper' && this.state === 'playing') {
       // Overwatch: the target is 600 m out, so the air has to be clear enough to shoot through
       this.fog.near = Math.max(this.fog.near * 4, 300); this.fog.far = Math.max(this.fog.far * 3.2, 1400);
@@ -392,8 +407,9 @@ export class Game {
     this.civilians.clear();
     this.mission?.dispose?.();
     this.mission = null;
-    document.body.classList.remove('sniper-mission', 'tower-mission');
+    document.body.classList.remove('sniper-mission', 'tower-mission', 'chaos-mode');
     this.grenades.clear();
+    if (this.chaos) { this.chaos = false; this.setTimeOfDay(settings.time === 'night'); } // the menu gets its own sky back
     this.ballistics.clear();
     this.drone.reset();            // a drone still in the air: land it and stop its motor
     this.audio.ctx?.resume();
@@ -460,7 +476,7 @@ export class Game {
     this.waveTotal = count;
     this.waveState = 'active';
     this.spawnTimer = 1;
-    this.hud.banner(`WAVE ${n}`, `${count} hostiles inbound`, 3);
+    this.hud.banner(`WAVE ${n}`, `${count} ${this.chaos ? 'toons' : 'hostiles'} inbound`, 3);
     this.audio.play('ui', { vol: 0.6 });
   }
 
@@ -491,7 +507,8 @@ export class Game {
       this.score += bonus;
       this.hud.setScore(this.score);
       this.hud.banner('WAVE CLEARED', `+${bonus} · Resupply at HQ`, 3.5);
-      this.weapons.frags = Math.min(GRENADES.maxFrag, this.weapons.frags + 1);
+      if (this.chaos) this.weapons.frags = Math.min(CHAOS.maxPies, this.weapons.frags + CHAOS.wavePies);
+      else this.weapons.frags = Math.min(GRENADES.maxFrag, this.weapons.frags + 1);
       this.weapons.flashes = Math.min(GRENADES.maxFlash, this.weapons.flashes + 1);
       this.waveState = 'intermission';
       this.waveTimer = 14;
@@ -516,14 +533,15 @@ export class Game {
     const tags = [];
     if (info.headshot) { pts += SCORE.headshot; tags.push('HEADSHOT'); this.stats.headshots++; }
     if (info.grenade) { pts += SCORE.grenadeKill; tags.push('GRENADE'); this.stats.grenadeKills++; }
-    if (info.drone) { pts += SCORE.grenadeKill; tags.push('FPV DRONE'); }
+    if (info.pie) { pts += SCORE.grenadeKill; tags.push('PIE'); this.stats.grenadeKills++; }
+    if (info.drone) { pts += SCORE.grenadeKill; tags.push(this.chaos ? 'PIE DRONE' : 'FPV DRONE'); }
     if (info.stunned) { pts += SCORE.stunnedKill; tags.push('STUNNED'); }
     if (info.distance > 50) { pts += Math.round(info.distance); tags.push(`${Math.round(info.distance)}m`); }
     this.stats.kills++;
     this.stats.longest = Math.max(this.stats.longest, info.distance || 0);
     this.score += pts;
     this.hud.setScore(this.score);
-    this.hud.killfeed(`${tags.length ? `<b>${tags.join(' · ')}</b> ` : ''}${e.type.name} <b>+${pts}</b>`);
+    this.hud.killfeed(`${tags.length ? `<b>${tags.join(' · ')}</b> ` : ''}${e.toonName || e.type.name} <b>+${pts}</b>`);
   }
 
   onEnemyKilled(e) {
@@ -532,12 +550,13 @@ export class Game {
     const r = Math.random();
     const kind = r < 0.5 ? 'ammo' : r < 0.72 ? 'health' : null;
     if (kind) this._dropPickup(kind, e.pos.x + (Math.random() - 0.5), e.pos.z + (Math.random() - 0.5));
-    if (e.grenades > 0 && Math.random() < 0.5) this._dropPickup('frag', e.pos.x + 0.4, e.pos.z);
+    if (e.grenades > 0 && Math.random() < (this.chaos ? 0.35 : 0.5)) this._dropPickup('frag', e.pos.x + 0.4, e.pos.z);
   }
 
   _dropPickup(kind, x, z) {
     let mesh;
-    if (kind === 'frag') { mesh = this.grenades.templates.frag.clone(); mesh.scale.setScalar(1.3); }
+    if (kind === 'frag' && this.chaos) { mesh = pieMesh(); mesh.position.y = 0.085; const g = new THREE.Group(); g.add(mesh); mesh = g; }
+    else if (kind === 'frag') { mesh = this.grenades.templates.frag.clone(); mesh.scale.setScalar(1.3); }
     else { mesh = this.pickupModels[kind].clone(); if (kind === 'ammo') mesh.scale.setScalar(1.2); }
     mesh.traverse((o) => { if (o.isMesh) o.castShadow = true; });
     const y = this.level.world.groundAt(x, z, 0.1, 3);
@@ -557,7 +576,7 @@ export class Game {
       if (d < 1.4 && p.alive) {
         if (pk.kind === 'ammo') { w.addAmmo(0.3); this.hud.pickup('+ AMMO'); take = true; }
         else if (pk.kind === 'health' && p.health < 100) { p.health = Math.min(100, p.health + 45); this.hud.pickup('+ MEDKIT'); take = true; }
-        else if (pk.kind === 'frag' && w.frags < GRENADES.maxFrag) { w.frags++; this.hud.pickup('+ FRAG'); take = true; }
+        else if (pk.kind === 'frag' && w.frags < (this.chaos ? CHAOS.maxPies : GRENADES.maxFrag)) { w.frags++; this.hud.pickup(this.chaos ? '+ PIE' : '+ FRAG'); take = true; }
       }
       if (take) this.audio.play('pickup', { vol: 0.7 });
       if (take || pk.t > 45) { this.scene.remove(pk.mesh); this.pickups.splice(i, 1); }
@@ -567,7 +586,7 @@ export class Game {
     this.resupplyT -= dt;
     if (Math.hypot(rs.x - p.pos.x, rs.z - p.pos.z) < rs.r + 0.6 && this.resupplyT <= 0 && p.alive) {
       // a mission's ammo box can carry less than the HQ crate (Overwatch: rifle rounds only)
-      const frags = rs.frags ?? GRENADES.maxFrag, flashes = rs.flashes ?? GRENADES.maxFlash, drones = rs.drones ?? 2;
+      const frags = rs.frags ?? (this.chaos ? CHAOS.maxPies : GRENADES.maxFrag), flashes = rs.flashes ?? GRENADES.maxFlash, drones = rs.drones ?? 2;
       const needs = Object.values(w.slots).some((s) => s.reserve < s.def.reserve) || w.frags < frags || w.flashes < flashes || this.drone.count < drones;
       if (needs) {
         w.refill(frags, flashes);
@@ -611,6 +630,7 @@ export class Game {
   }
 
   explode(pos, R, dmg, owner) {
+    if (this.chaos) { this._creamBomb(pos, R, owner); return; }
     const W = this.level.world, p = this.player;
     this.effects.explosion(pos);
     this.audio.playAt(this.audio.pick('explosion_') || 'explosion', pos.x, pos.y, pos.z, { vol: 1.7, ref: 12, travel: true, max: 900, occlude: false, wet: 0.7 });
@@ -656,9 +676,71 @@ export class Game {
     }
   }
 
+  /** Chaos mode: a pie hit something (or someone). A pie is the only thing that takes anyone out. */
+  pieSplat(pt, n, owner, victim, dir) {
+    const p = this.player;
+    this.effects.creamSplat(pt, n, !victim);
+    this.effects.confetti(pt, n, 12, 3, 0.8);
+    this.audio.playAt(this.audio.pick('splat') || 'splat0', pt.x, pt.y, pt.z, { vol: 1.1, ref: 5, max: 90, occlude: false, rate: 0.9 + Math.random() * 0.2 });
+    this.emitNoise(pt, 12, 'impact');
+    if (owner === 'player') {
+      let e = victim;
+      if (!e) {
+        // landed at a toon's feet or just beside him: still counts
+        let bd = CHAOS.pieSplash;
+        for (const o of this.enemies.list) {
+          if (!o.alive || o.surrendered || pt.y > o.pos.y + 1.9 || pt.y < o.pos.y - 0.3) continue;
+          const d = Math.hypot(o.pos.x - pt.x, o.pos.z - pt.z);
+          if (d < bd) { bd = d; e = o; }
+        }
+      }
+      if (e) this._pieKill(e, dir, false);
+    } else if (owner === 'enemy' && p.alive) {
+      const near = Math.hypot(p.pos.x - pt.x, p.pos.z - pt.z) < 0.5 && pt.y > p.pos.y - 0.3 && pt.y < p.pos.y + p.height + 0.2;
+      if (victim === p || near) {
+        p.damage(CHAOS.pieDamage * this.difficulty.dmg, new THREE.Vector3(pt.x - dir.x * 5, 0, pt.z - dir.z * 5));
+        this.hud.cream();
+      }
+    }
+  }
+
+  _pieKill(e, dir, drone) {
+    const p = this.player, head = new THREE.Vector3(e.pos.x, e.pos.y + 1.5, e.pos.z);
+    const dist = Math.hypot(e.pos.x - p.pos.x, e.pos.z - p.pos.z);
+    this.effects.creamSplat(head, new THREE.Vector3(-dir.x, 0.3, -dir.z).normalize(), false);
+    this.effects.confetti(head, new THREE.Vector3(0, 1, 0), 30, 4, 1);
+    this.audio.playAt('slideDown', head.x, head.y, head.z, { vol: 0.9, ref: 6, max: 80, occlude: false, rate: 0.9 + Math.random() * 0.25 });
+    this.hud.hitMarker('kill');
+    // the pie stays on his face, tin and all
+    const s = e.soldier, top = s.rig.headTop, plate = pieMesh();
+    plate.rotation.x = -Math.PI / 2; plate.scale.set(1, 0.6, 1);
+    plate.position.set(0, top * 0.4, top * 0.55 + 0.06);
+    s.head.add(plate);
+    if (e.takeDamage(1e4, 'head', dir.x, dir.z, 'player')) this.registerKill(e, { pie: !drone, drone, distance: dist });
+  }
+
+  /** Chaos mode's "explosion" (the FPV drone carries a pie): cream and confetti everywhere, toons nearby creamed. */
+  _creamBomb(pos, R, owner) {
+    const W = this.level.world, UP = new THREE.Vector3(0, 1, 0), r = Math.min(R, 4.5);
+    for (let i = 0; i < 4; i++) this.effects.creamSplat(pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.5, 0.3 + Math.random(), (Math.random() - 0.5) * 1.5)), new THREE.Vector3(Math.random() - 0.5, 1, Math.random() - 0.5).normalize(), false);
+    if (pos.y < 1) this.effects.creamSplat(new THREE.Vector3(pos.x, 0.02, pos.z), UP);
+    this.effects.confetti(pos, UP, 90, 9, 1.2);
+    this.audio.playAt(this.audio.pick('popper') || 'popper0', pos.x, pos.y, pos.z, { vol: 1.6, ref: 8, max: 200, occlude: false, rate: 0.7 });
+    this.audio.playAt(this.audio.pick('splat') || 'splat0', pos.x, pos.y, pos.z, { vol: 1.4, ref: 8, max: 120, occlude: false, rate: 0.8 });
+    this.enemies.onNoise(pos, 60, 'gunshot');
+    if (owner !== 'player' && owner !== 'drone') return;
+    for (const e of this.enemies.list) {
+      if (!e.alive || e.surrendered) continue;
+      const c = new THREE.Vector3(e.pos.x, e.pos.y + 1.1, e.pos.z);
+      if (c.distanceTo(pos) >= r || !W.los(pos.x, pos.y + 0.3, pos.z, c.x, c.y, c.z, RAY_ALL)) continue;
+      this._pieKill(e, c.sub(pos).normalize(), owner === 'drone');
+    }
+  }
+
   flashbangAt(pos) {
     const W = this.level.world, p = this.player;
     this.effects.explosion(pos, true);
+    if (this.chaos) this.effects.confetti(pos, new THREE.Vector3(0, 1, 0), 70, 8, 1.3); // glitter bomb
     this.audio.playAt('flashbang', pos.x, pos.y, pos.z, { vol: 1.5, ref: 12, travel: true, max: 700, occlude: false, wet: 0.8 });
     this.enemies.flashbang(pos, GRENADES.flash.radius);
     this.civilians.flashbang(pos, GRENADES.flash.radius);

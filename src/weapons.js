@@ -5,6 +5,7 @@ import { WEAPONS, GRENADES } from './config.js';
 import { settings } from './settings.js';
 import { buildM4, buildGlock, buildM1014, buildSniper, buildFragMesh, buildFlashMesh, createArms, gunMaterials as gunMaterialsRef } from './gunmodels.js';
 import * as TX from './textures.js';
+import { pieMesh } from './chaos.js';
 
 const BUILDERS = { m4: buildM4, glock: buildGlock, m1014: buildM1014, sniper: buildSniper };
 const DEG = Math.PI / 180;
@@ -246,11 +247,21 @@ export class WeaponSystem {
     if (this.throwing || this.state === 'draw' || this.state === 'holster') return;
     if (type === 'frag' ? this.frags <= 0 : this.flashes <= 0) return;
     if (type === 'frag') this.frags--; else this.flashes--;
+    if (type === 'frag' && this.game.chaos) type = 'pie'; // chaos mode: the frag pouch holds pies
     if (this.reload) { this.reload = null; }
-    this.throwing = { type, t: 0, released: false, pinned: false };
+    this.throwing = { type, t: 0, released: false, pinned: type === 'pie' };
     this.state = 'throw';
-    const held = type === 'frag' ? this.heldFrag : this.heldFlash;
-    held.visible = true;
+    this._held(type).visible = true;
+  }
+  /** The grenade (or pie) in the left hand during a throw. */
+  _held(type) {
+    if (type === 'pie' && !this.heldPie) {
+      this.heldPie = pieMesh();
+      this.heldPie.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.userData.heat = 0.45; } });
+      this.heldPie.visible = false;
+      this.scene.add(this.heldPie);
+    }
+    return type === 'pie' ? this.heldPie : type === 'frag' ? this.heldFrag : this.heldFlash;
   }
 
   setTrigger(down) {
@@ -393,7 +404,7 @@ export class WeaponSystem {
     const pellets = d.pellets || 1;
     for (let i = 0; i < pellets; i++) {
       const dir = coneDir(fwd, (spread + (pellets > 1 ? d.pelletSpread : 0)) * DEG, cam);
-      const tracer = d.tracerEvery && (this.stats.shots % d.tracerEvery === 0) && i === 0;
+      const tracer = !g.chaos && d.tracerEvery && (this.stats.shots % d.tracerEvery === 0) && i === 0;
       g.ballistics.fire({
         owner: 'player', x: origin.x, y: origin.y, z: origin.z, dir, speed: d.velocity,
         damage: d.damage, weapon: d, tracer, tracerFrom: muzzleWorld,
@@ -441,14 +452,21 @@ export class WeaponSystem {
     this.flashGlow.visible = !!F;
     if (F) { this.flashGlow.scale.setScalar(F.core * 2.6); this.flashGlow.material.opacity = g.night ? 0.45 : 0.25; }
     this.muzzleLight.intensity = d.suppressed ? (firstPop ? 0.5 : 0.12) : F.light;
-    if (!d.suppressed || firstPop) g.effects.muzzleLight(muzzleWorld);
-    if (F) g.effects.muzzleBlast(muzzleWorld, _v3.set(0, 0, -1).applyQuaternion(cam.quaternion), F);
+    if (g.chaos) {
+      // chaos mode: a party popper, not a gunshot
+      this.flash.visible = false; this.muzzleLight.intensity = 0;
+      g.effects.confetti(muzzleWorld, _v3.set(0, 0, -1).applyQuaternion(cam.quaternion), pellets > 1 ? 26 : 14, 14, 0.18);
+    } else {
+      if (!d.suppressed || firstPop) g.effects.muzzleLight(muzzleWorld);
+      if (F) g.effects.muzzleBlast(muzzleWorld, _v3.set(0, 0, -1).applyQuaternion(cam.quaternion), F);
+    }
     if (d.suppressed) c.suppHeat = Math.min(1.25, (c.suppHeat || 0) + 0.0125);
     this.gasLife = this.gasT = d.suppressed ? 0.13 : 0.1;
     this.gasSize = d.suppressed ? 0.1 + Math.min(1, c.suppHeat) * 0.04 : d.pellets > 1 ? 0.36 : 0.28;
     // recordings carry their own space; the reverb only adds a touch of the room / terrain
     const A = g.audio, send = A.recorded ? (g.level.indoor ? 0.08 : 0.04) : (d.suppressed ? 0.15 : 0.3);
-    A.play(A.gunshotName(d.sound), { vol: d.suppressed ? 0.75 : d.sound === 'pistol' ? 0.85 : 0.95, rate: 0.985 + Math.random() * 0.03, send });
+    if (g.chaos) A.play(A.pick('popper') || 'popper0', { vol: 0.8, rate: (d.pellets > 1 ? 0.8 : d.sound === 'pistol' ? 1.15 : 1) * (0.92 + Math.random() * 0.16), send });
+    else A.play(A.gunshotName(d.sound), { vol: d.suppressed ? 0.75 : d.sound === 'pistol' ? 0.85 : 0.95, rate: 0.985 + Math.random() * 0.03, send });
     g.emitNoise(p.eye, d.sound === 'pistol' ? 55 : d.suppressed ? 38 : 85, 'gunshot');
     g.hud.onFire();
     // actions
@@ -463,6 +481,7 @@ export class WeaponSystem {
   }
 
   _ejectShell() {
+    if (this.game.chaos) return; // nothing to eject from a confetti gun
     const g = this.game, d = this.def, m = this.cur.model;
     const pos = this._toWorld(m.eject, new THREE.Vector3());
     const cam = g.camera;
@@ -538,14 +557,14 @@ export class WeaponSystem {
     if (!th.pinned && th.t > 0.18) { th.pinned = true; g.audio.play('pin', { vol: 0.7 }); }
     if (!th.released && th.t > 0.52) {
       th.released = true;
-      const held = th.type === 'frag' ? this.heldFrag : this.heldFlash;
-      held.visible = false;
+      this._held(th.type).visible = false;
       const cam = g.camera;
       const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
       const pos = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld).addScaledVector(fwd, 0.4);
       pos.y -= 0.1;
       const spd = GRENADES[th.type].throwSpeed;
-      const vel = fwd.multiplyScalar(spd).add(new THREE.Vector3(0, 2.8, 0)).add(g.player.vel.clone().multiplyScalar(0.8));
+      // a pie goes flatter, towards the crosshair (it has to hit someone, not land near them)
+      const vel = fwd.multiplyScalar(spd).add(new THREE.Vector3(0, th.type === 'pie' ? 2.2 : 2.8, 0)).add(g.player.vel.clone().multiplyScalar(0.8));
       g.grenades.spawn(th.type, pos, vel, 'player');
     }
     if (th.t > 0.95) {
@@ -742,8 +761,13 @@ export class WeaponSystem {
     if (heldPos) {
       const ql = new THREE.Quaternion().setFromEuler(_e.set(-0.6, 0.3, 0.2));
       this.arms.solve('L', heldPos, ql, handLVisible, false, 'ball');
-      const held = this.throwing?.type === 'frag' ? this.heldFrag : this.heldFlash;
-      held.position.copy(heldPos).add(new THREE.Vector3(0.0, 0.03, -0.03));
+      const held = this._held(this.throwing?.type);
+      if (this.throwing?.type === 'pie') {
+        // carried flat on the palm like a waiter's plate, tipped so the cream shows
+        held.position.copy(heldPos).add(new THREE.Vector3(-0.01, 0.06, -0.08));
+        held.rotation.set(0.35, this.throwing.t * 2, 0);
+        held.scale.setScalar(0.62); // seen this close, a full-size pie would fill the screen
+      } else held.position.copy(heldPos).add(new THREE.Vector3(0.0, 0.03, -0.03));
     } else {
       const lTarget = handL || this._handTarget(m.handL, m.handL.support);
       const lWorld = lTarget.clone().applyMatrix4(this.rig.matrix);

@@ -56,6 +56,8 @@ export const PROPS = {
   ladder: { ph: 'ladder_sectioned_01', tris: 2500 },
   barrelStove: { ph: 'barrel_stove', tris: 2000 },
   powerBox: { ph: 'power_box_01', tris: 1500 },
+  // chaos mode
+  pie: { uid: 'e20c3851d52c4261891b692a1dfc18c6', title: '#3DST6 Tarte au citron meringuée', author: 'mauricesvay', fit: ['x', 0.26], tris: 1500 },
 };
 
 function sketchfab(uid) {

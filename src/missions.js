@@ -13,6 +13,7 @@ export const MISSIONS = {
   compound: { name: 'Compound Defence', tag: 'Endless waves · hold the compound', level: 'compound' },
   tower: { name: 'Tower Hostage Rescue', tag: 'Floor 47 CQB · hostages & civilians · no waves', level: 'tower' },
   sniper: { name: 'Overwatch', tag: '550-650 m precision shots · wind · HVT', level: 'compound', primary: 'sniper' },
+  chaos: { name: 'Chaos', tag: 'Cartoon mayhem · confetti guns · pies only', level: 'compound', chaos: true },
 };
 
 const rand = (a, b) => a + Math.random() * (b - a);

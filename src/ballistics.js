@@ -53,6 +53,8 @@ export class Ballistics {
       bounces: 0,
       // the spotter watching this round: who it was aimed at and how close it came
       spot: o.owner === 'player' ? this.game.mission?.takeSpot?.() || null : null,
+      // chaos mode: a harmless round that trails confetti (for its first 30 m)
+      confetti: !!this.game.chaos,
     });
   }
 
@@ -87,6 +89,11 @@ export class Ballistics {
         }
         // save world-hit data before other queries overwrite the shared hit object
         const wh = hw ? { t: hw.t, x: hw.x, y: hw.y, z: hw.z, nx: hw.nx, ny: hw.ny, nz: hw.nz, box: hw.box, exitT: hw.exitT, mat: hw.mat } : null;
+        if (b.confetti) {
+          if (this._chaosStep(b, start, dir, tMax, len)) { alive = false; break; }
+          b.pos.set(ex, ey, ez); b.vel.y = vy; remaining = 0;
+          continue;
+        }
 
         const hc = g.civilians.list.length ? g.civilians.intersect(start.x, start.y, start.z, dir.x, dir.y, dir.z, tMax) : null;
         if (hc) {
@@ -210,6 +217,56 @@ export class Ballistics {
       if (!alive && b.tracer) this._fadeTracer(b);
     }
     this._drawTracers(dt);
+  }
+
+  /**
+   * Chaos mode: one step of a confetti round. It can't hurt anyone: toons it tags squeak and
+   * flinch, the player gets a face full of paper, walls get a puff. Returns true when it stops.
+   */
+  _chaosStep(b, start, dir, tMax, len) {
+    const g = this.game, p = g.player, fx = g.effects;
+    const at = (t) => new THREE.Vector3(start.x + dir.x * t, start.y + dir.y * t, start.z + dir.z * t);
+    let stopT = -1;
+    if (b.owner === 'player') {
+      const he = g.enemies.intersect(start.x, start.y, start.z, dir.x, dir.y, dir.z, tMax, null);
+      for (const e of g.enemies.list) {
+        if (!e.alive || e.suppressedBy === b) continue;
+        const d = pointSegDist(e.pos.x, e.pos.y + 1.3, e.pos.z, start.x, start.y, start.z, start.x + dir.x * tMax, start.y + dir.y * tMax, start.z + dir.z * tMax);
+        if (d < 1.6) { e.suppressedBy = b; g.enemies.nearMiss(e, p.pos); }
+      }
+      if (he) {
+        stopT = he.t;
+        he.enemy.tickle(dir.x, dir.z);
+        g.weapons.stats.hits++;
+        g.hud.hitMarker('hit');
+        fx.confetti(at(he.t), dir.clone().negate(), 10, 2.5, 0.9);
+      }
+    } else if (p.alive) {
+      const top = p.pos.y + p.height - 0.1, bot = p.pos.y + 0.2;
+      const tp = rayCapsule(start.x, start.y, start.z, dir.x, dir.y, dir.z, p.pos.x, bot, p.pos.z, p.pos.x, top, p.pos.z, 0.3);
+      if (tp >= 0 && tp <= tMax) {
+        stopT = tp;
+        // it only tickles: a shower of paper in front of the face
+        const f = new THREE.Vector3(0, 0, -1).applyQuaternion(g.camera.quaternion);
+        fx.confetti(p.eye.clone().addScaledVector(f, 0.45), new THREE.Vector3(0, 0.6, 0).addScaledVector(dir, 0.5), 8, 1.5, 1);
+        if (b.shooter) g.hud.damageFrom(b.shooter.pos.x, b.shooter.pos.z);
+      } else if (!b.whizzed) {
+        const d = pointSegDist(p.eye.x, p.eye.y, p.eye.z, start.x, start.y, start.z, start.x + dir.x * tMax, start.y + dir.y * tMax, start.z + dir.z * tMax);
+        if (d < 2.2) { b.whizzed = true; g.audio.playVariant('whiz', 2, { vol: 0.3 * (1 - d / 2.4), rate: 1.4 + Math.random() * 0.3 }); }
+      }
+    }
+    const endT = stopT >= 0 ? stopT : tMax;
+    if (b.traveled < 30) fx.confettiTrail(start, at(Math.min(endT, 30 - b.traveled)), b.owner === 'player' ? 1.1 : 1.8);
+    b.traveled += endT;
+    if (stopT >= 0) return true;
+    if (tMax < len) {
+      // a wall: a little puff of paper and no damage, no hole, no ricochet
+      const pt = at(tMax);
+      if (b.traveled < 120) fx.confetti(pt, dir.clone().negate(), 5, 1.5, 0.9);
+      if (b.owner === 'player') g.mission?.onImpact?.(pt);
+      return true;
+    }
+    return false;
   }
 
   /** Records the splash and where the spotted target was as the round got there. */

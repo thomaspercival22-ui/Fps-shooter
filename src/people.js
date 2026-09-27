@@ -10,13 +10,23 @@ import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 
 export const SOLDIER_KITS = ['olive', 'tan', 'black', 'heavy'];
 export const CIVILIAN_BODIES = ['civ0', 'civ1', 'civ2', 'civ3', 'civ4', 'civ5', 'civ6'];
+/** Chaos mode's cartoon characters: loaded only when that mode is played (loadKits). */
+export const CARTOON_KITS = ['toonAlien', 'toonRabbit', 'toon0', 'toon1', 'toon2', 'toon3'];
 const PEOPLE_KITS = [...SOLDIER_KITS, ...CIVILIAN_BODIES];
 const TEMPLATES = {};
+let loadOpts = null;
 
 export async function loadPeople(renderer, hq = false) {
+  loadOpts = { renderer, hq };
+  await loadKits(PEOPLE_KITS);
+}
+/** Loads these kits' bodies if they aren't loaded yet (after loadPeople). */
+export async function loadKits(kits) {
+  if (!loadOpts) return;
+  const { renderer, hq } = loadOpts;
   const loader = await modelLoader();
   const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
-  await Promise.all(PEOPLE_KITS.map(async (kit) => {
+  await Promise.all(kits.filter((k) => !TEMPLATES[k]).map(async (kit) => {
     try {
       let gltf = hq ? await loader.loadAsync(`assets/people/${kit}_hq.glb`).catch(() => null) : null;
       if (!gltf) gltf = await loader.loadAsync(`assets/people/${kit}.glb`);
@@ -111,10 +121,13 @@ class BodyTemplate {
       const I1 = wp(side + 'HandIndex1'), M1 = has(side + 'HandMiddle1') ? wp(side + 'HandMiddle1') : I1;
       // hand frame: forward (wrist to knuckles) and palm normal (out of the palm). Some bodies have
       // no ring or little finger bones (or only an index for all four): then across the knuckles is
-      // index to middle finger, or away from the thumb
+      // index to middle finger, or away from the thumb; a mitten with no thumb (cartoon characters)
+      // is taken as palm down, across being level and square to the fingers
       const F = M1.clone().sub(W).normalize();
       const across = has(side + 'HandPinky1') ? wp(side + 'HandPinky1').sub(I1)
-        : has(side + 'HandMiddle1') ? M1.clone().sub(I1) : W.clone().sub(wp(side + 'HandThumb1'));
+        : has(side + 'HandMiddle1') ? M1.clone().sub(I1)
+          : has(side + 'HandThumb1') ? W.clone().sub(wp(side + 'HandThumb1'))
+            : new THREE.Vector3().crossVectors(Y, F).multiplyScalar(s === 'R' ? 1 : -1);
       across.addScaledVector(F, -across.dot(F)).normalize();
       const N = s === 'R' ? new THREE.Vector3().crossVectors(F, across) : new THREE.Vector3().crossVectors(across, F);
       const palm = W.clone().lerp(M1, 0.75).addScaledVector(N, 0.014);

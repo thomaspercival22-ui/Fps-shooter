@@ -6,6 +6,8 @@ import * as THREE from 'three';
 import { ENEMY_TYPES } from './config.js';
 import { Soldier } from './soldier.js';
 import { RAY_ALL, RAY_SIGHT, pointSegDist, raySphere, rayCapsule } from './physics.js';
+import { CARTOON_KITS } from './people.js';
+import { CHAOS, CHAOS_LINES, TOON_NAMES } from './chaos.js';
 
 const LINES = {
   contact: ['Contact front!', 'Enemy spotted!', 'Contact!', 'Eyes on target!'],
@@ -48,9 +50,12 @@ export class Enemy {
     this.pos = new THREE.Vector3(x, 0, z);
     this.vel = new THREE.Vector3();
     this.yaw = 0; this.aimPitch = 0; this.yawOff = 0;
-    this.soldier = new Soldier(this.game.scene, opts.kit || this.type.kit, this.type.weapon);
+    // chaos mode: a cartoon character instead of a soldier
+    const kit = opts.kit || (this.game.chaos ? pick(CARTOON_KITS) : this.type.kit);
+    if (this.game.chaos) this.toonName = TOON_NAMES[kit];
+    this.soldier = new Soldier(this.game.scene, kit, this.type.weapon);
     this.soldier.setPosition(x, 0, z);
-    this.voicePitch = rand(0.55, 1.0);
+    this.voicePitch = this.game.chaos ? rand(1.3, 1.9) : rand(0.55, 1.0);
     // knowledge
     this.alert = 1;
     this.awareness = 0;
@@ -74,7 +79,8 @@ export class Enemy {
     this.shotCount = 0;
     this.suppression = 0;
     this.flashed = 0;
-    this.grenades = Math.random() < this.type.grenadeChance ? (Math.random() < 0.3 ? 2 : 1) : 0;
+    this.grenades = this.game.chaos ? 99 : Math.random() < this.type.grenadeChance ? (Math.random() < 0.3 ? 2 : 1) : 0; // toons never run out of pies
+    this.nextPie = this.game.time + rand(1.5, 4);
     this.hasFlash = Math.random() < this.type.flashChance;
     this.throwing = null;
     this.lastHurt = -99;
@@ -265,6 +271,22 @@ export class Enemy {
     return false;
   }
 
+  /** Chaos mode: hit by confetti. It doesn't hurt, but he knows where it came from. */
+  tickle(dirX, dirZ) {
+    const g = this.game;
+    if (!this.alive || this.surrendered) return;
+    this.soldier.flinch(dirX, dirZ, 0.5);
+    this.suppression = Math.min(3, this.suppression + 0.5);
+    this.lastKnown.copy(g.player.pos);
+    this.awareness = Math.max(this.awareness, 1);
+    if (this.alert < 2) { this.alert = 2; this.replan(); }
+    if (g.time - (this.squeakT || -9) > 0.35) {
+      this.squeakT = g.time;
+      g.audio.playAt(`squeak${(Math.random() * 2) | 0}`, this.pos.x, this.pos.y + 1.5, this.pos.z, { vol: 0.7, max: 60, rate: 0.85 + Math.random() * 0.4 });
+    }
+    if (Math.random() < 0.15) this.say('hit');
+  }
+
   die(dirX, dirZ, headshot) {
     const g = this.game;
     this.alive = false;
@@ -318,6 +340,12 @@ export class Enemy {
     const tSince = g.time - this.lastSeen;
     const dist = this.pos.distanceTo(this.lastKnown);
 
+    // chaos mode: guns only throw confetti, so a toon who can see the player throws a pie at him
+    if (g.chaos && this.seeing && dist > 2.5 && dist < 24 && g.time > this.nextPie && g.time - (mgr.lastPie || -9) > CHAOS.squadPieGap / g.difficulty.grenade) {
+      this.nextPie = g.time + rand(...CHAOS.enemyPieCooldown) / g.difficulty.grenade;
+      if (this.throwPie()) return;
+    }
+
     // a sniper far away: no searching or pushing towards him, just get out of his sight
     if (mgr.farThreat && !this.seeing) {
       if (!((this.order === 'cover' && this.cover) || this.order === 'shelter')) {
@@ -353,7 +381,7 @@ export class Enemy {
     // 4) player dug in out of sight: flush with a grenade
     if (tSince > 3 && tSince < 14 && this.grenades > 0 && mgr.canThrow() && dist > 6 && dist < 30 && Math.random() < 0.55 * g.difficulty.grenade) {
       const flash = this.hasFlash && Math.random() < 0.5;
-      if (this.tryThrow(flash ? 'flash' : 'frag')) return;
+      if (this.tryThrow(flash ? 'flash' : g.chaos ? 'pie' : 'frag')) return;
     }
 
     // 5) lost contact for a while: search
@@ -513,7 +541,7 @@ export class Enemy {
   tryThrow(kind) {
     const g = this.game, W = g.level.world;
     const from = _a.set(this.pos.x, this.pos.y + 1.7, this.pos.z);
-    const tgt = _c.copy(this.lastKnown); tgt.y = 0.3;
+    const tgt = _c.copy(this.lastKnown); tgt.y = kind === 'pie' ? this.lastKnown.y + 1 : 0.3;
     for (const T of [1.2, 1.6, 2.1]) {
       const vx = (tgt.x - from.x) / T, vz = (tgt.z - from.z) / T;
       const vy = (tgt.y - from.y + 0.5 * 9.81 * T * T) / T;
@@ -539,6 +567,41 @@ export class Enemy {
       return true;
     }
     return false;
+  }
+
+  /** Chaos mode: a pie thrown straight at the player (leading him a little), if the path is clear. */
+  throwPie() {
+    const g = this.game, W = g.level.world;
+    const from = _a.set(this.pos.x, this.pos.y + 1.75, this.pos.z);
+    const err = 0.07 * g.difficulty.spread;
+    const aim = { ex: rand(-err, err), ez: rand(-err, err), side: rand(-0.5, 0.5) * err * 8, lift: rand(-0.05, 0.05) };
+    const v = this._pieVelocity(from, aim, new THREE.Vector3(), 0.55);
+    // the arc must be clear of walls for most of the way
+    const T = aim.T;
+    let px = from.x, py = from.y, pz = from.z;
+    for (let i = 1; i <= 8; i++) {
+      const t = (T * i) / 8;
+      const nx = from.x + v.x * t, ny = from.y + v.y * t - 4.905 * t * t, nz = from.z + v.z * t;
+      const dx = nx - px, dy = ny - py, dz = nz - pz, d = Math.hypot(dx, dy, dz);
+      if (i < 7 && W.raycast(px, py, pz, dx / d, dy / d, dz / d, d, RAY_ALL)) return false;
+      px = nx; py = ny; pz = nz;
+    }
+    this.throwing = { t: 0, kind: 'pie', released: false, v, aim };
+    this.mgr.lastPie = g.time;
+    this.say('frag');
+    this.path = null;
+    return true;
+  }
+  /** Velocity to lob a pie from `from` to the player's chest (where he'll be, `delay` s before it leaves the hand), with this throw's error. */
+  _pieVelocity(from, aim, out, delay = 0) {
+    const p = this.game.player;
+    const d0 = Math.hypot(p.pos.x - from.x, p.pos.z - from.z);
+    const T = aim.T = THREE.MathUtils.clamp(d0 / 14, 0.3, 1.4);
+    const lead = delay + T * 0.5;
+    const tx = p.pos.x + p.vel.x * lead, ty = p.pos.y + 1.1, tz = p.pos.z + p.vel.z * lead;
+    const vx = (tx - from.x) / T, vz = (tz - from.z) / T, vy = (ty - from.y + 4.905 * T * T) / T;
+    const h = Math.hypot(vx, vz) || 1;
+    return out.set(vx * (1 + aim.ex) - vz / h * aim.side, vy * (1 + aim.lift), vz * (1 + aim.ez) + vx / h * aim.side);
   }
 
   startReload() {
@@ -615,6 +678,8 @@ export class Enemy {
       if (th.t >= 0.55 && !th.released) {
         th.released = true;
         const hand = _a.set(this.pos.x, this.pos.y + 1.75, this.pos.z);
+        // a pie is aimed at the player again as it leaves the hand (he may have moved during the wind-up)
+        if (th.aim) this._pieVelocity(hand, th.aim, th.v);
         g.grenades.spawn(th.kind, hand.clone(), th.v.clone(), 'enemy');
       }
       if (th.t >= 0.95) { this.throwing = null; this.replan(); }
@@ -908,8 +973,14 @@ export class Enemy {
     }
     this.ammo--;
     if (this.ammo <= 0) this.startReload();
-    this.soldier.muzzleFlash();
+    if (!g.chaos) this.soldier.muzzleFlash();
     this.lastFired = g.time;
+    if (g.chaos) {
+      // a confetti popper, not a gunshot
+      g.effects.confetti(muzzle, dir, pellets > 1 ? 16 : 9, 9, 0.3);
+      g.audio.playAt(g.audio.pick('popper') || 'popper0', muzzle.x, muzzle.y, muzzle.z, { vol: 0.9, ref: 5, max: 200, rate: 0.85 + Math.random() * 0.3 });
+      return;
+    }
     g.audio.playGunshotAt(T.sound, muzzle.x, muzzle.y, muzzle.z, { vol: 1.15, ref: 6, travel: true, max: 1000, wet: 1 });
     g.effects.enemyMuzzle(muzzle);
   }
@@ -1090,12 +1161,12 @@ export class EnemyManager {
     const d = e.pos.distanceTo(g.player.pos);
     if (d > 60) return;
     this.lineTimes[key] = now; this.lineTimes._any = now;
-    const line = pick(LINES[key]);
+    const line = pick((g.chaos && CHAOS_LINES[key]) || LINES[key]);
     // on the tower floor you can hear them (muffled voice + subtitle within earshot)
     if (this.overhear) { this.overhear(e, line, key === 'suspicious' || key === 'heard' || key === 'lost' ? 'talk' : 'shout'); return; }
     // elsewhere enemy chatter stays silent and off-screen; the timing still paces the AI callouts
     if (!g.voices.enabled) return;
-    g.hud.radio(e.type.name, line);
+    g.hud.radio(e.toonName || e.type.name, line);
     if (d < 45) g.voices.say(line, e.voicePitch, 1.15, Math.max(0.15, 0.9 - d / 60));
   }
 
