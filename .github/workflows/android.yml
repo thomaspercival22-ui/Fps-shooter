@@ -46,6 +46,11 @@ jobs:
             cp icons/icon-512.png android/app/src/main/res/mipmap-$d/ic_launcher_round.png
             cp icons/icon-maskable-512.png android/app/src/main/res/mipmap-$d/ic_launcher_foreground.png
           done
+          # every build signed with the same key (tools/android/debug.keystore), so a new APK
+          # installs over the old one as an update; the run number is the version
+          sed -i "s#^android {#android {\n    signingConfigs { debug { storeFile file('../../tools/android/debug.keystore'); storePassword 'android'; keyAlias 'androiddebugkey'; keyPassword 'android' } }#" android/app/build.gradle
+          sed -i 's/versionCode 1$/versionCode ${{ github.run_number }}/; s/versionName "1.0"/versionName "1.0.${{ github.run_number }}"/' android/app/build.gradle
+          grep -q "debug.keystore" android/app/build.gradle && grep -q "versionCode ${{ github.run_number }}" android/app/build.gradle
 
       - name: Build the APK
         working-directory: android
@@ -53,6 +58,13 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
           cp app/build/outputs/apk/debug/app-debug.apk ../OperationTIPSMania.apk
+
+      - name: Check it is signed with the app's key
+        run: |
+          want=$(keytool -list -v -keystore tools/android/debug.keystore -storepass android | grep -m1 'SHA256:' | awk '{print $2}')
+          got=$(keytool -printcert -jarfile OperationTIPSMania.apk | grep -m1 'SHA256:' | awk '{print $2}')
+          echo "keystore $want"; echo "apk      $got"
+          test -n "$want" && test "$want" = "$got"
 
       - uses: actions/upload-artifact@v4
         with:

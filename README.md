@@ -30,10 +30,11 @@ The game is a static web app that installs itself as a Progressive Web App. It n
 Every push to GitHub builds a native Android app with [Capacitor](https://capacitorjs.com) (`.github/workflows/android.yml`). It opens full screen in landscape, keeps the screen on and plays offline.
 
 1. On your phone, open the repo on GitHub → **Releases** → **Operation TIPS Mania (Android, latest build)**, and tap **OperationTIPSMania.apk**. (Also under **Actions → Android APK → the latest run → Artifacts**.)
-2. Open the downloaded file. Android asks once to allow installs from your browser or file manager; allow it, then tap **Install**.
-3. To build it yourself: `npm ci`, then `node tools/make-www.mjs && npx cap add android && npx cap sync android` and open `android/` in Android Studio (or run `./gradlew assembleDebug` in it).
+2. Open the downloaded file. Android asks once to allow installs from your browser or file manager; allow it, then tap **Install**. If Play Protect says it doesn't recognise the app, tap **More details → Install anyway** (it isn't from the Play Store, that's all).
+3. **Updating:** download the new APK from the same release and install it over the old one; your settings and best score stay. Every build is signed with the same key (`tools/android/debug.keystore`) and numbered by its build run, so the version in **Settings → Apps → Operation TIPS Mania** tells you which one you have. (Builds from before November 2026 were signed with a different key each time: uninstall one of those once before installing a newer build.)
+4. To build it yourself: `npm ci`, then `node tools/make-www.mjs && npx cap add android && npx cap sync android` and open `android/` in Android Studio (or run `./gradlew assembleDebug` in it). The workflow file shows the extra steps it applies (landscape, icon, signing key, version number).
 
-This is a debug-signed build for your own phones. Publishing on the Play Store needs a Google Play developer account and a signed release bundle (`./gradlew bundleRelease` with your own keystore).
+This is a debug-signed build for your own phones. Its signing key is in this public repo so every build can update the last one; anyone could sign an app with it, so only install the APK from this repo's releases. Publishing on the Play Store needs a Google Play developer account and a signed release bundle (`./gradlew bundleRelease` with your own private keystore).
 
 ## What's in it
 
